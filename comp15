@@ -12,7 +12,7 @@ if len(all_competitor_data) > 0:
     
     # Set minimum thresholds for "material" threats
     MIN_ACCOUNTS = 100  # Must have at least 100 accounts
-    MIN_SPEND = 50000   # Must have at least $50K in spend
+    MIN_SPEND = 50000   # Must have at least 50K in spend
     
     material_data = []
     
@@ -75,23 +75,23 @@ if len(all_competitor_data) > 0:
         display_df['category'] = display_df['category'].str.replace('_', ' ').str.title()
         display_df['unique_accounts'] = display_df['unique_accounts'].apply(lambda x: f"{x:,}")
         display_df['penetration_pct'] = display_df['penetration_pct'].apply(lambda x: f"{x:.2f}%")
-        display_df['total_spend'] = display_df['total_spend'].apply(lambda x: f"${x:,.0f}")
+        display_df = display_df.drop(columns=['total_spend'])
         display_df['growth_rate'] = display_df['growth_rate'].apply(lambda x: f"{x:+.1f}%")
         display_df['threat_score'] = display_df['threat_score'].apply(lambda x: f"{x:.1f}")
         
         display_df.columns = [
-            'Bank', 'Category', 'Accounts', 'Penetration', 
-            'Total Spend', 'Growth (6mo)', 'Threat Score'
+            'Bank', 'Category', 'Accounts', 'Penetration',
+            'Growth (6mo)', 'Threat Score'
         ]
         
         print("\nTop 15 Material Bank Threats:")
-        print(f"Minimum Thresholds: {MIN_ACCOUNTS:,} accounts AND ${MIN_SPEND:,} spend")
+        print(f"Minimum Thresholds: {MIN_ACCOUNTS:,} accounts AND {MIN_SPEND:,} spend")
         print("Threat Score = 50% Penetration + 50% Total Spend (Growth shown separately)\n")
         display(display_df.style.hide(axis='index'))
         
-        print("\n💡 Filters out small players - focuses on banks with meaningful market presence")
-        print("   High score = Significant market share + Large absolute dollars at risk")
+        print("\nFilters out small players - focuses on banks with meaningful market presence")
+        print("   High score = Significant market share + Large transaction volume")
     else:
-        print(f"\n⚠ No banks meet minimum thresholds ({MIN_ACCOUNTS} accounts, ${MIN_SPEND} spend)")
+        print(f"\nNo banks meet minimum thresholds ({MIN_ACCOUNTS} accounts, {MIN_SPEND:,} spend)")
 
 print("="*120)

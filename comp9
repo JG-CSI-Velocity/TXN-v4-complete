@@ -29,12 +29,9 @@ if len(all_competitor_data) > 0:
     # Format for display
     monthly_display = monthly_trends.copy()
     monthly_display.index = monthly_display.index.astype(str)
-    monthly_display['Total Spend'] = monthly_display['Total Spend'].apply(lambda x: f"${x:,.0f}")
+    monthly_display = monthly_display.drop(columns=['Total Spend', 'Spend Growth %'])
     monthly_display['Transaction Count'] = monthly_display['Transaction Count'].apply(lambda x: f"{int(x):,}")
     monthly_display['Unique Accounts'] = monthly_display['Unique Accounts'].apply(lambda x: f"{int(x):,}")
-    monthly_display['Spend Growth %'] = monthly_display['Spend Growth %'].apply(
-        lambda x: f"{x:+.1f}%" if pd.notna(x) else "-"
-    )
     monthly_display['Transaction Growth %'] = monthly_display['Transaction Growth %'].apply(
         lambda x: f"{x:+.1f}%" if pd.notna(x) else "-"
     )

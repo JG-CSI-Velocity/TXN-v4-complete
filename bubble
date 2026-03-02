@@ -72,12 +72,12 @@ def plot_top_bank_threats_spend_growth_thin(
 
     # Titles & axes labels
     ax.set_title(title, fontsize=12, fontweight='bold')
-    ax.set_xlabel("Spend per Account ($)", fontsize=10, fontweight='bold')
+    ax.set_xlabel("Activity per Account (index)", fontsize=10, fontweight='bold')
     ax.set_ylabel("Growth (Last 6 Months, %)", fontsize=10, fontweight='bold')
 
     # Format axes
     ax.xaxis.set_major_formatter(
-        plt.FuncFormatter(lambda x, _: f"${x:,.0f}")
+        plt.FuncFormatter(lambda x, _: f"{x:,.0f}")
     )
     ax.yaxis.set_major_formatter(
         plt.FuncFormatter(lambda y, _: f"{y:.1f}%")

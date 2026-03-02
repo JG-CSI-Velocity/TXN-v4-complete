@@ -13,17 +13,11 @@ if len(all_competitor_data) > 0:
     top_20 = summary_df.head(20).copy()
     top_20_display = top_20.copy()
     top_20_display['category'] = top_20_display['category'].str.replace('_', ' ').str.title()
-    top_20_display['total_amount'] = top_20_display['total_amount'].apply(lambda x: f"${x:,.0f}")
+    top_20_display = top_20_display.drop(columns=['total_amount'])
     top_20_display['total_transactions'] = top_20_display['total_transactions'].apply(lambda x: f"{x:,}")
     top_20_display['unique_accounts'] = top_20_display['unique_accounts'].apply(lambda x: f"{x:,}")
     
-    # Add average per account
-    top_20_display['avg_per_account'] = top_20.apply(
-        lambda row: f"${row['total_amount'] / row['unique_accounts']:,.2f}", 
-        axis=1
-    )
-    
-    top_20_display.columns = ['Competitor', 'Category', 'Transactions', 'Unique Accounts', 'Total Spend', 'Avg per Account']
+    top_20_display.columns = ['Competitor', 'Category', 'Transactions', 'Unique Accounts']
     
     display(top_20_display.style.hide(axis='index'))
 

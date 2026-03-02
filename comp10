@@ -22,15 +22,15 @@ if len(all_competitor_data) > 0:
     display_df = display_df.sort_values('total_amount', ascending=False)
     
     display_df['category'] = display_df['category'].str.replace('_', ' ').str.title()
-    display_df['total_amount'] = display_df['total_amount'].apply(lambda x: f"${x:,.0f}")
+    display_df = display_df.drop(columns=['total_amount'])
     display_df['unique_accounts'] = display_df['unique_accounts'].apply(lambda x: f"{x:,}")
     display_df['market_share_pct'] = display_df['market_share_pct'].apply(lambda x: f"{x:.1f}%")
-    
-    display_df.columns = ['Category', 'Top Competitor', 'Total Spend', 'Unique Accounts', '% of Category']
+
+    display_df.columns = ['Category', 'Top Competitor', 'Unique Accounts', '% of Category']
     
     print("\n")
     display(display_df.style.hide(axis='index'))
     
-    print("\n💡 Insight: Shows the dominant competitor in each competitive category")
+    print("\nInsight: Shows the dominant competitor in each competitive category")
 
 print("="*120)

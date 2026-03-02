@@ -42,19 +42,18 @@ if len(all_competitor_data) > 0:
         display_df['category'] = display_df['category'].str.replace('_', ' ').str.title()
         display_df['unique_accounts'] = display_df['unique_accounts'].apply(lambda x: f"{x:,}")
         display_df['penetration_pct'] = display_df['penetration_pct'].apply(lambda x: f"{x:.2f}%")
-        display_df['total_spend'] = display_df['total_spend'].apply(lambda x: f"${x:,.0f}")
         display_df['transaction_count'] = display_df['transaction_count'].apply(lambda x: f"{x:,}")
-        display_df['avg_per_account'] = display_df['avg_per_account'].apply(lambda x: f"${x:,.0f}")
-        
+        display_df = display_df.drop(columns=['total_spend', 'avg_per_account'])
+
         display_df.columns = [
-            'Bank', 'Category', 'Accounts', 'Penetration %', 
-            'Total Spend', 'Transactions', 'Avg per Account'
+            'Bank', 'Category', 'Accounts', 'Penetration %',
+            'Transactions'
         ]
         
         print("\nTop 15 Banks by Raw Account Penetration:")
         print("(Simple ranking by number of accounts captured)\n")
         display(display_df.style.hide(axis='index'))
         
-        print("\n💡 Shows which banks have captured the most customer relationships")
+        print("\nShows which banks have captured the most customer relationships")
 
 print("="*120)

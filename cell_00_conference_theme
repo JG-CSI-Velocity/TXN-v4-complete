@@ -1,0 +1,117 @@
+# ===========================================================================
+# CONFERENCE VISUAL THEME - 5,000 PERSON ROOM
+# ===========================================================================
+# Import once, use everywhere. All charts inherit this theme.
+# Design: Large fonts, bold colors, zero clutter, no dollar figures.
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import matplotlib.patheffects as pe
+import seaborn as sns
+import numpy as np
+import pandas as pd
+from matplotlib.patches import FancyBboxPatch
+from matplotlib.gridspec import GridSpec
+
+# ---------------------------------------------------------------------------
+# Color palette  (bold, high-contrast, projector-safe)
+# ---------------------------------------------------------------------------
+CONF_COLORS = {
+    'primary':     '#1B2A4A',   # deep navy
+    'accent':      '#E63946',   # signal red
+    'success':     '#2EC4B6',   # teal
+    'warning':     '#FF9F1C',   # amber
+    'info':        '#457B9D',   # steel blue
+    'light_bg':    '#F8F9FA',   # off-white
+    'dark_text':   '#1B2A4A',
+    'muted':       '#6C757D',
+    'grid':        '#E9ECEF',
+}
+
+# Category-specific colors (consistent across all charts)
+CATEGORY_PALETTE = {
+    'Big Nationals':  '#E63946',
+    'Regionals':      '#457B9D',
+    'Credit Unions':  '#2EC4B6',
+    'Digital Banks':  '#FF9F1C',
+    'Wallets':        '#6C757D',
+    'P2p':            '#A8DADC',
+    'Bnpl':           '#F4A261',
+}
+
+CATEGORY_ORDER = ['Big Nationals', 'Regionals', 'Credit Unions', 'Digital Banks']
+
+# ---------------------------------------------------------------------------
+# Matplotlib global theme
+# ---------------------------------------------------------------------------
+plt.rcParams.update({
+    'figure.facecolor':    '#FFFFFF',
+    'axes.facecolor':      '#FFFFFF',
+    'axes.edgecolor':      CONF_COLORS['grid'],
+    'axes.labelcolor':     CONF_COLORS['dark_text'],
+    'axes.titleweight':    'bold',
+    'axes.labelweight':    'bold',
+    'axes.titlesize':      22,
+    'axes.labelsize':      16,
+    'xtick.labelsize':     14,
+    'ytick.labelsize':     14,
+    'font.family':         'sans-serif',
+    'font.weight':         'bold',
+    'font.size':           14,
+    'legend.fontsize':     13,
+    'legend.frameon':      False,
+    'figure.dpi':          150,
+    'savefig.dpi':         300,
+    'savefig.bbox':        'tight',
+})
+
+sns.set_style("white")
+
+# ---------------------------------------------------------------------------
+# Helper: format label for category
+# ---------------------------------------------------------------------------
+def clean_category(cat_str):
+    """'big_nationals' -> 'Big Nationals'"""
+    if not isinstance(cat_str, str):
+        return str(cat_str)
+    return cat_str.replace('_', ' ').str.title() if hasattr(cat_str, 'str') else cat_str.replace('_', ' ').title()
+
+def get_cat_color(cat_label):
+    """Return the palette color for a cleaned category label."""
+    return CATEGORY_PALETTE.get(cat_label, CONF_COLORS['muted'])
+
+# ---------------------------------------------------------------------------
+# Helper: conference-safe axis formatting (no dollars)
+# ---------------------------------------------------------------------------
+def fmt_pct(x, _):
+    return f"{x:.1f}%"
+
+def fmt_count(x, _):
+    if x >= 1_000_000:
+        return f"{x/1_000_000:.1f}M"
+    if x >= 1_000:
+        return f"{x/1_000:.0f}K"
+    return f"{int(x)}"
+
+def fmt_index(x, _):
+    return f"{x:.0f}"
+
+# ---------------------------------------------------------------------------
+# Helper: remove chart clutter
+# ---------------------------------------------------------------------------
+def clean_axes(ax, keep_left=True, keep_bottom=True):
+    """Remove spines and ticks for a clean conference look."""
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    if not keep_left:
+        ax.spines['left'].set_visible(False)
+        ax.tick_params(left=False)
+    if not keep_bottom:
+        ax.spines['bottom'].set_visible(False)
+        ax.tick_params(bottom=False)
+    ax.grid(False)
+
+print("Conference theme loaded.")
+print(f"  Palette: {len(CATEGORY_PALETTE)} category colors")
+print(f"  Font base: {plt.rcParams['font.size']}pt bold")
+print(f"  DPI: {plt.rcParams['figure.dpi']}")

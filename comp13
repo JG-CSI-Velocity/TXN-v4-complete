@@ -36,20 +36,19 @@ if len(all_competitor_data) > 0:
         
         display_df = spend_df.copy()
         display_df['category'] = display_df['category'].str.replace('_', ' ').str.title()
-        display_df['total_spend'] = display_df['total_spend'].apply(lambda x: f"${x:,.0f}")
         display_df['unique_accounts'] = display_df['unique_accounts'].apply(lambda x: f"{x:,}")
         display_df['transaction_count'] = display_df['transaction_count'].apply(lambda x: f"{x:,}")
-        display_df['avg_transaction'] = display_df['avg_transaction'].apply(lambda x: f"${x:,.2f}")
-        
+        display_df = display_df.drop(columns=['total_spend', 'avg_transaction'])
+
         display_df.columns = [
-            'Bank', 'Category', 'Total Spend', 'Accounts', 
-            'Transactions', 'Avg Transaction'
+            'Bank', 'Category', 'Accounts',
+            'Transactions'
         ]
         
         print("\nTop 15 Banks by Total Spend:")
         print("(Follow the money - where is the most spend going?)\n")
         display(display_df.style.hide(axis='index'))
         
-        print("\n💡 Shows which banks are capturing the most transaction volume in dollars")
+        print("\nShows which banks are capturing the most transaction volume")
 
 print("="*120)

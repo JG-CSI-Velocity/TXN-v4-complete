@@ -30,9 +30,8 @@ if len(all_competitor_data) > 0:
     category_display.index = category_display.index.str.replace('_', ' ').str.title()
     category_display['Total Transactions'] = category_display['Total Transactions'].apply(lambda x: f"{int(x):,}")
     category_display['Total Accounts'] = category_display['Total Accounts'].apply(lambda x: f"{int(x):,}")
-    category_display['Total Spend'] = category_display['Total Spend'].apply(lambda x: f"${x:,.0f}")
+    category_display = category_display.drop(columns=['Total Spend', 'Avg per Competitor'])
     category_display['% of Competitor Spend'] = category_display['% of Competitor Spend'].apply(lambda x: f"{x:.1f}%")
-    category_display['Avg per Competitor'] = category_display['Avg per Competitor'].apply(lambda x: f"${x:,.0f}")
     
     display(category_display)
 

@@ -72,13 +72,13 @@ def plot_penetration_vs_spend_bubbles(
     # ----------------------------------------------------------------------
     ax.set_title(title, fontsize=14, fontweight='bold')
     ax.set_xlabel("Account Penetration (%)", fontsize=12, fontweight='bold')
-    ax.set_ylabel("Total Spend ($)", fontsize=12, fontweight='bold')
+    ax.set_ylabel("Transaction Volume", fontsize=12, fontweight='bold')
 
     ax.xaxis.set_major_formatter(
         plt.FuncFormatter(lambda x, _: f"{x:.1f}%")
     )
     ax.yaxis.set_major_formatter(
-        plt.FuncFormatter(lambda x, _: f"${x:,.0f}")
+        plt.FuncFormatter(lambda x, _: f"{x:,.0f}")
     )
 
     # Label each bubble with bank name

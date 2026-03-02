@@ -7,7 +7,7 @@ print(" " * 40 + "M6B-1: HIGH-LEVEL COMPETITOR METRICS")
 print("="*120)
 
 if len(all_competitor_data) == 0:
-    print("\n⚠ No competitor data to analyze")
+    print("\nNo competitor data to analyze")
 else:
     summary_df = pd.DataFrame(summary_data)
     summary_df = summary_df.sort_values('total_amount', ascending=False)
@@ -26,6 +26,8 @@ else:
     pct_spend = (total_competitor_spend / total_all_spend * 100) if total_all_spend > 0 else 0
     pct_accounts = (total_competitor_accounts / total_all_accounts * 100) if total_all_accounts > 0 else 0
     
+    avg_txn_per_account = (total_competitor_trans / total_competitor_accounts) if total_competitor_accounts > 0 else 0
+
     metrics_summary = pd.DataFrame({
         'Metric': [
             'Competitors Found',
@@ -33,13 +35,9 @@ else:
             'Total Competitor Transactions',
             '% of All Transactions',
             '',
-            'Total Competitor Spend',
-            '% of All Spend',
-            '',
             'Unique Accounts Using Competitors',
             '% of All Accounts',
             '',
-            'Avg Spend per Competitor Account',
             'Avg Transactions per Competitor Account'
         ],
         'Value': [
@@ -48,17 +46,13 @@ else:
             f"{total_competitor_trans:,}",
             f"{pct_trans:.2f}%",
             '',
-            f"${total_competitor_spend:,.2f}",
-            f"{pct_spend:.2f}%",
-            '',
             f"{total_competitor_accounts:,}",
             f"{pct_accounts:.2f}%",
             '',
-            f"${total_competitor_spend / total_competitor_accounts:,.2f}" if total_competitor_accounts > 0 else "$0.00",
-            f"{total_competitor_trans / total_competitor_accounts:.1f}" if total_competitor_accounts > 0 else "0.0"
+            f"{avg_txn_per_account:.1f}"
         ]
     })
-    
+
     display(metrics_summary.style.hide(axis='index'))
 
 print("="*120)

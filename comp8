@@ -27,16 +27,15 @@ if len(all_competitor_data) > 0:
         )
         
         business_display = business_split.copy()
-        business_display.index = business_display.index.map({'Yes': '💼 Business Accounts', 'No': '👤 Personal Accounts'})
-        business_display['Total Spend'] = business_display['Total Spend'].apply(lambda x: f"${x:,.2f}")
+        business_display.index = business_display.index.map({'Yes': 'Business Accounts', 'No': 'Personal Accounts'})
+        business_display = business_display.drop(columns=['Total Spend', 'Avg Transaction'])
         business_display['Transaction Count'] = business_display['Transaction Count'].apply(lambda x: f"{int(x):,}")
-        business_display['Avg Transaction'] = business_display['Avg Transaction'].apply(lambda x: f"${x:,.2f}")
         business_display['Unique Accounts'] = business_display['Unique Accounts'].apply(lambda x: f"{int(x):,}")
         business_display['% of Competitor Spend'] = business_display['% of Competitor Spend'].apply(lambda x: f"{x:.1f}%")
         business_display['% of Competitor Accounts'] = business_display['% of Competitor Accounts'].apply(lambda x: f"{x:.1f}%")
         
         display(business_display)
     else:
-        print("\n⚠ No business_flag column found in competitor data")
+        print("\nNo business_flag column found in competitor data")
 
 print("="*120)

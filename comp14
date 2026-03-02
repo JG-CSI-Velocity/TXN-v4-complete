@@ -58,22 +58,21 @@ if len(all_competitor_data) > 0:
         display_df['category'] = display_df['category'].str.replace('_', ' ').str.title()
         display_df['spend_growth'] = display_df['spend_growth'].apply(lambda x: f"{x:+.1f}%")
         display_df['account_growth'] = display_df['account_growth'].apply(lambda x: f"{x:+.1f}%")
-        display_df['recent_spend'] = display_df['recent_spend'].apply(lambda x: f"${x:,.0f}")
-        display_df['previous_spend'] = display_df['previous_spend'].apply(lambda x: f"${x:,.0f}")
         display_df['recent_accounts'] = display_df['recent_accounts'].apply(lambda x: f"{x:,}")
-        
+        display_df = display_df.drop(columns=['recent_spend', 'previous_spend'])
+
         display_df.columns = [
-            'Bank', 'Category', 'Spend Growth', 'Account Growth', 
-            'Recent Spend (3mo)', 'Accounts (Recent)', 'Previous Spend (3mo)'
+            'Bank', 'Category', 'Txn Growth', 'Account Growth',
+            'Accounts (Recent)'
         ]
         
         print("\nTop 15 Fastest Growing Banks:")
         print("(Last 3 months vs previous 3 months)\n")
         display(display_df.style.hide(axis='index'))
         
-        print("\n💡 Shows which banks are gaining momentum - growing spend and accounts")
-        print("⚠️ Note: Small banks can show high % growth from low base")
+        print("\nShows which banks are gaining momentum - growing transactions and accounts")
+        print("Note: Small banks can show high % growth from low base")
     else:
-        print("\n⚠ Insufficient data to calculate growth rates (need 6+ months)")
+        print("\nInsufficient data to calculate growth rates (need 6+ months)")
 
 print("="*120)

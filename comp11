@@ -72,14 +72,14 @@ if len(all_competitor_data) > 0:
         # Format for display
         display_df = threat_df.copy()
         display_df['category'] = display_df['category'].str.replace('_', ' ').str.title()
-        display_df['total_spend'] = display_df['total_spend'].apply(lambda x: f"${x:,.0f}")
+        display_df = display_df.drop(columns=['total_spend'])
         display_df['unique_accounts'] = display_df['unique_accounts'].apply(lambda x: f"{x:,}")
         display_df['penetration_pct'] = display_df['penetration_pct'].apply(lambda x: f"{x:.2f}%")
         display_df['growth_rate'] = display_df['growth_rate'].apply(lambda x: f"{x:+.1f}%")
         display_df['threat_score'] = display_df['threat_score'].apply(lambda x: f"{x:.1f}")
         
         display_df.columns = [
-            'Bank', 'Category', 'Total Spend', 'Accounts', 
+            'Bank', 'Category', 'Accounts',
             'Penetration', 'Growth (6mo)', 'Threat Score'
         ]
         
@@ -88,8 +88,8 @@ if len(all_competitor_data) > 0:
         print("(Excludes wallets/P2P/BNPL - those are threats to banking itself, not direct competitors)\n")
         display(display_df.style.hide(axis='index'))
         
-        print("\n💡 Highest threat = High account penetration + Large spend + Growing momentum")
+        print("\nHighest threat = High account penetration + High activity + Growing momentum")
     else:
-        print("\n⚠ No bank competitors found in dataset")
+        print("\nNo bank competitors found in dataset")
 
 print("="*120)
