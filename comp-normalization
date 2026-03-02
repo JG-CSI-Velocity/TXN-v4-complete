@@ -1,0 +1,82 @@
+def normalize_competitor_name(bank_name: str) -> str:
+    """
+    Normalize competitor names so variants roll up to a single line.
+
+    Examples:
+    - 'GOLDEN 1 CREDIT UNION', 'GOLDEN 1 CU' -> 'GOLDEN 1 CREDIT UNION'
+    - 'REVOLUT PAYMENTS', 'REVOLUT*CARD'     -> 'REVOLUT'
+    """
+    if not isinstance(bank_name, str):
+        return bank_name
+
+    name_u = bank_name.upper()
+
+    # Roll up all Golden 1 Credit Union variants
+    if "GOLDEN 1" in name_u:
+        return "GOLDEN 1 CREDIT UNION"
+
+    # Roll up all Revolut variants
+    if "REVOLUT" in name_u:
+        return "REVOLUT"
+
+    # Default: keep original
+    return bank_name
+
+
+
+if len(all_competitor_data) > 0:
+    threat_data = []
+    bank_categories = ['big_nationals', 'regionals', 'credit_unions', 'digital_banks']
+    total_accounts = combined_df['primary_account_num'].nunique()
+
+    for competitor, competitor_trans in all_competitor_data.items():
+        category = competitor_trans['competitor_category'].iloc[0]
+
+        if category not in bank_categories:
+            continue
+
+        total_spend = competitor_trans['amount'].sum()
+        unique_accounts = competitor_trans['primary_account_num'].nunique()
+        penetration_pct = (unique_accounts / total_accounts) * 100
+
+        if 'year_month' not in competitor_trans.columns:
+            competitor_trans['year_month'] = pd.to_datetime(
+                competitor_trans['transaction_date']
+            ).dt.to_period('M')
+
+        sorted_months = sorted(competitor_trans['year_month'].unique())
+
+        if len(sorted_months) >= 6:
+            recent_3 = sorted_months[-3:]
+            previous_3 = sorted_months[-6:-3]
+
+            recent_spend = competitor_trans[
+                competitor_trans['year_month'].isin(recent_3)
+            ]['amount'].sum()
+
+            previous_spend = competitor_trans[
+                competitor_trans['year_month'].isin(previous_3)
+            ]['amount'].sum()
+
+            growth_rate = (
+                (recent_spend - previous_spend) / previous_spend * 100
+                if previous_spend > 0 else 0
+            )
+        else:
+            growth_rate = 0
+
+        threat_score = (
+            (penetration_pct * 4) +
+            (total_spend / 100000) * 3 +
+            (max(growth_rate, 0) / 10) * 3
+        )
+
+        threat_data.append({
+            'competitor': competitor,
+            'category': category,
+            'total_spend': total_spend,
+            'unique_accounts': unique_accounts,
+            'penetration_pct': penetration_pct,
+            'growth_rate': growth_rate,
+            'threat_score': threat_score
+        })
