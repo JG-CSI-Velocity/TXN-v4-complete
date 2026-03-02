@@ -1,0 +1,45 @@
+# ===========================================================================
+# COMPETITOR CONFIGURATION
+# ===========================================================================
+
+COMPETITOR_MERCHANTS = {
+
+    # =======================================================================
+    # BIG NATIONALS -- From new client list
+    # =======================================================================
+    'big_nationals': {
+        'starts_with': [
+            'BANK OF AMERICA',
+            'B OF A',
+            'WELLS FARGO',
+            'WELLS FARGO BANK',
+            'CHASE',
+            'JPMORGAN CHASE',
+            'US BANK',
+            'U.S. BANK',
+            'CITIBANK',
+            'CITI CARD',
+            'CAPITAL ONE BANK',
+            'CAPITAL ONE',
+            'USAA'
+        ],
+        # No separate exact-only values specified in the new list
+        'exact': [],
+    },
+
+    # =======================================================================
+    # REGIONALS / COMMUNITY BANKS -- Exact replacement from new list
+    # =======================================================================
+    'regionals': {
+        'starts_with': [
+            'MECHANICS BANK',
+            'PACIFIC PREMIER BANK',
+            'COLUMBIA BANK',
+            'AMERICAN RIVIERA BANK',
+            'COMMUNITY BANK OF SANTA MARIA',
+            'BANK OF THE SIERRA',
+            'WEST COAST COMMUNITY BANK',
+            'Banc of California'
+        ],
+        'exact': [],
+    },
