@@ -5,43 +5,32 @@
 # goes to that competitor? Segments users into Heavy / Moderate / Light.
 # Uses transaction counts only (no dollar figures).
 
-# --- Build per-account competitor share data ---
-engagement_rows = []
+# --- Pre-compute total txn count per account ONCE ---
+total_txn_by_acct = combined_df.groupby('primary_account_num')['amount'].count()
 
+# --- Build competitor share data (vectorized, no per-row loop) ---
+comp_frames = []
 for competitor, competitor_trans in all_competitor_data.items():
     category = competitor_trans['competitor_category'].iloc[0]
-
-    # Normalize name (reuse function from cell 04)
     norm_name = normalize_competitor_name(competitor)
 
-    comp_accounts = competitor_trans['primary_account_num'].unique()
-
-    # Competitor transaction count per account
     comp_txn = competitor_trans.groupby('primary_account_num')['amount'].count()
+    share_df = pd.DataFrame({
+        'competitor': norm_name,
+        'category': clean_category(category),
+        'comp_txns': comp_txn,
+        'total_txns': total_txn_by_acct.reindex(comp_txn.index),
+    })
+    share_df['share_pct'] = (share_df['comp_txns'] / share_df['total_txns'] * 100)
+    share_df = share_df.dropna(subset=['share_pct'])
+    comp_frames.append(share_df)
 
-    # Total transaction count per account across all activity
-    total_txn = combined_df[
-        combined_df['primary_account_num'].isin(comp_accounts)
-    ].groupby('primary_account_num')['amount'].count()
-
-    # Transaction share %
-    share = (comp_txn / total_txn * 100).dropna()
-
-    for acct, pct in share.items():
-        engagement_rows.append({
-            'competitor': norm_name,
-            'category': clean_category(category),
-            'account': acct,
-            'comp_txns': comp_txn.get(acct, 0),
-            'total_txns': total_txn.get(acct, 0),
-            'share_pct': pct,
-        })
-
-eng_acct_df = pd.DataFrame(engagement_rows)
+eng_acct_df = pd.concat(comp_frames, ignore_index=False)
+eng_acct_df.index.name = 'account'
 
 # Roll up normalized names
 eng_summary = eng_acct_df.groupby(['competitor', 'category']).agg(
-    accounts=('account', 'nunique'),
+    accounts=('comp_txns', 'count'),
     avg_share=('share_pct', 'mean'),
     heavy=('share_pct', lambda x: (x >= 50).sum()),
     moderate=('share_pct', lambda x: ((x >= 20) & (x < 50)).sum()),
