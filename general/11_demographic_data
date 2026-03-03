@@ -1,0 +1,74 @@
+# ===========================================================================
+# DEMOGRAPHIC DATA: Age Bands + Time Patterns from ODDD
+# ===========================================================================
+# Merge Account Holder Age from rewards_df. Create age bands.
+# Extract hour and day_of_week from timestamps. Data only.
+
+# ---------------------------------------------------------------------------
+# Merge age data from ODDD
+# ---------------------------------------------------------------------------
+age_subset = rewards_df[['Acct Number', 'Account Holder Age']].copy()
+age_subset.columns = ['account_number', 'holder_age']
+age_subset['holder_age'] = pd.to_numeric(age_subset['holder_age'], errors='coerce')
+
+demo_df = combined_df.merge(
+    age_subset,
+    left_on='primary_account_num',
+    right_on='account_number',
+    how='left'
+).drop(columns='account_number')
+
+# ---------------------------------------------------------------------------
+# Age bands
+# ---------------------------------------------------------------------------
+AGE_BINS = [18, 26, 36, 46, 56, 66, 200]
+AGE_BAND_LABELS = ['18-25', '26-35', '36-45', '46-55', '56-65', '65+']
+
+demo_df['age_band'] = pd.cut(
+    demo_df['holder_age'], bins=AGE_BINS, labels=AGE_BAND_LABELS, right=False
+)
+
+# ---------------------------------------------------------------------------
+# Time features from transaction_date
+# ---------------------------------------------------------------------------
+demo_df['txn_hour'] = demo_df['transaction_date'].dt.hour
+demo_df['txn_dow'] = demo_df['transaction_date'].dt.dayofweek  # 0=Mon, 6=Sun
+demo_df['txn_dow_name'] = demo_df['transaction_date'].dt.day_name()
+
+# ---------------------------------------------------------------------------
+# Summary per age band
+# ---------------------------------------------------------------------------
+age_matched = demo_df[demo_df['age_band'].notna()]
+age_unmatched = demo_df[demo_df['age_band'].isna()]
+
+demo_summary = age_matched.groupby('age_band', observed=True).agg(
+    txn_count=('transaction_date', 'count'),
+    account_count=('primary_account_num', 'nunique'),
+    merchant_count=('merchant_consolidated', 'nunique'),
+).reset_index()
+
+demo_summary['txn_per_account'] = (
+    demo_summary['txn_count'] / demo_summary['account_count']
+)
+demo_summary['txn_pct'] = (
+    demo_summary['txn_count'] / demo_summary['txn_count'].sum() * 100
+)
+
+# Top MCC per age band
+top_mcc_by_age = {}
+for band in AGE_BAND_LABELS:
+    band_data = age_matched[age_matched['age_band'] == band]
+    if len(band_data) > 0:
+        top_mcc_by_age[band] = (
+            band_data.groupby('mcc_code').size()
+            .sort_values(ascending=False).head(10)
+        )
+
+print("Demographic data built.")
+print(f"  Age-matched transactions: {len(age_matched):,} ({len(age_matched)/len(demo_df)*100:.1f}%)")
+print(f"  Unmatched (no age data): {len(age_unmatched):,}")
+print(f"\n  Age band distribution:")
+for _, row in demo_summary.iterrows():
+    print(f"    {row['age_band']:>5s}: {row['account_count']:>5,} accounts, "
+          f"{row['txn_count']:>8,} txns ({row['txn_pct']:.1f}%), "
+          f"{row['txn_per_account']:.1f} txns/acct")
