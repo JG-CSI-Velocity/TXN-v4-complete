@@ -1,0 +1,106 @@
+# ===========================================================================
+# LIFECYCLE SUMMARY: Full Account Age Breakdown (Conference Edition)
+# ===========================================================================
+# Styled table + findings + callouts.
+
+lc_full = lifecycle_summary.copy()
+lc_full['acct_age_band'] = pd.Categorical(
+    lc_full['acct_age_band'], categories=ACCT_AGE_ORDER, ordered=True
+)
+lc_full = lc_full.sort_values('acct_age_band')
+
+# Build display table
+lc_table = lc_full[['acct_age_band', 'account_count', 'avg_txns',
+                     'median_days_to_first', 'avg_oddd_spend',
+                     'avg_txn_spend', 'pct_very_high']].copy()
+lc_table.columns = ['Account Age', 'Accounts', 'Avg Txns', 'Med Days to 1st Txn',
+                     'Avg ODDD Spend', 'Avg Txn Spend', '% Very High']
+
+styled = (
+    lc_table.style
+    .hide(axis='index')
+    .format({
+        'Accounts': '{:,.0f}',
+        'Avg Txns': '{:.1f}',
+        'Med Days to 1st Txn': '{:.0f}',
+        'Avg ODDD Spend': '${:,.0f}',
+        'Avg Txn Spend': '${:,.0f}',
+        '% Very High': '{:.1f}%',
+    })
+    .set_properties(**{
+        'font-size': '14px',
+        'font-weight': 'bold',
+        'text-align': 'center',
+        'border': '1px solid #E9ECEF',
+        'padding': '8px 12px',
+    })
+    .set_table_styles([
+        {'selector': 'th', 'props': [
+            ('background-color', GEN_COLORS['primary']),
+            ('color', 'white'),
+            ('font-size', '15px'),
+            ('font-weight', 'bold'),
+            ('text-align', 'center'),
+            ('padding', '10px 12px'),
+        ]},
+        {'selector': 'caption', 'props': [
+            ('font-size', '22px'),
+            ('font-weight', 'bold'),
+            ('color', GEN_COLORS['dark_text']),
+            ('text-align', 'left'),
+            ('padding-bottom', '12px'),
+        ]},
+    ])
+    .set_caption("Account Lifecycle Scorecard")
+    .bar(subset=['Accounts'], color=GEN_COLORS['info'], vmin=0)
+    .bar(subset=['% Very High'], color=GEN_COLORS['accent'], vmin=0, vmax=100)
+)
+
+display(styled)
+
+# ---------------------------------------------------------------------------
+# Findings
+# ---------------------------------------------------------------------------
+print("\n" + "=" * 80)
+print("  LIFECYCLE FINDINGS")
+print("=" * 80)
+
+# Newest cohort activation
+newest = lc_full[lc_full['acct_age_band'] == '1-90d']
+if len(newest) > 0:
+    n = newest.iloc[0]
+    print(f"  1. Newest accounts (1-90d): {n['account_count']:,.0f} accounts, "
+          f"median {n['median_days_to_first']:.0f} days to first transaction")
+
+# Most active band
+most_active = lc_full.loc[lc_full['avg_txns'].idxmax()]
+print(f"  2. Most active band: {most_active['acct_age_band']} "
+      f"({most_active['avg_txns']:.1f} avg txns/account)")
+
+# Highest spend band
+highest_spend = lc_full.loc[lc_full['avg_oddd_spend'].idxmax()]
+print(f"  3. Highest spend band: {highest_spend['acct_age_band']} "
+      f"(${highest_spend['avg_oddd_spend']:,.0f} avg ODDD spend)")
+
+# New account risk
+new_bands = lc_full[lc_full['acct_age_band'].isin(['1-90d', '91-180d', '181-365d'])]
+if len(new_bands) > 0:
+    new_low_pct = lifecycle_matched[
+        lifecycle_matched['acct_age_band'].isin(['1-90d', '91-180d', '181-365d']) &
+        (lifecycle_matched['spend_tier'] == 'Low')
+    ].shape[0]
+    new_total = lifecycle_matched[
+        lifecycle_matched['acct_age_band'].isin(['1-90d', '91-180d', '181-365d'])
+    ].shape[0]
+    if new_total > 0:
+        pct_low = new_low_pct / new_total * 100
+        print(f"  4. New accounts (< 1yr) in Low spend tier: {pct_low:.0f}% "
+              f"-- onboarding engagement opportunity")
+
+# Overall median activation
+overall_median = lifecycle_matched['days_to_first_txn'].median()
+pct_30d = (lifecycle_matched['days_to_first_txn'] <= 30).sum() / len(lifecycle_matched) * 100
+print(f"  5. Overall activation: median {overall_median:.0f} days, "
+      f"{pct_30d:.0f}% within 30 days")
+
+print("=" * 80)

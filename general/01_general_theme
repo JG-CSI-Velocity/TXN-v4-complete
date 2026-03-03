@@ -63,6 +63,30 @@ ENGAGE_PALETTE = {
 }
 ENGAGE_ORDER = ['Power', 'Heavy', 'Moderate', 'Light', 'Dormant']
 
+# Account age palette (9 bands)
+ACCT_AGE_PALETTE = {
+    '1-90d':    '#E63946',
+    '91-180d':  '#FF9F1C',
+    '181-365d': '#F4A261',
+    '1-2yr':    '#2EC4B6',
+    '2-3yr':    '#457B9D',
+    '3-5yr':    '#264653',
+    '5-10yr':   '#1B2A4A',
+    '10-20yr':  '#6C757D',
+    '20yr+':    '#A8DADC',
+}
+ACCT_AGE_ORDER = ['1-90d', '91-180d', '181-365d', '1-2yr', '2-3yr',
+                   '3-5yr', '5-10yr', '10-20yr', '20yr+']
+
+# Spend tier palette
+SPEND_TIER_PALETTE = {
+    'Very High': '#E63946',
+    'High':      '#FF9F1C',
+    'Medium':    '#457B9D',
+    'Low':       '#6C757D',
+}
+SPEND_TIER_ORDER = ['Very High', 'High', 'Medium', 'Low']
+
 # ---------------------------------------------------------------------------
 # Matplotlib global theme
 # ---------------------------------------------------------------------------
@@ -121,6 +145,6 @@ def gen_clean_axes(ax, keep_left=True, keep_bottom=True):
     ax.grid(False)
 
 print("General portfolio theme loaded.")
-print(f"  Palettes: {len(BRACKET_PALETTE)} bracket, {len(AGE_PALETTE)} age, {len(ENGAGE_PALETTE)} engagement")
+print(f"  Palettes: {len(BRACKET_PALETTE)} bracket, {len(AGE_PALETTE)} age, {len(ENGAGE_PALETTE)} engagement, {len(ACCT_AGE_PALETTE)} account age, {len(SPEND_TIER_PALETTE)} spend tier")
 print(f"  Font base: {plt.rcParams['font.size']}pt bold")
 print(f"  DPI: {plt.rcParams['figure.dpi']}")

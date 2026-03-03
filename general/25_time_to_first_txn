@@ -1,0 +1,65 @@
+# ===========================================================================
+# TIME TO FIRST TRANSACTION: Activation Speed (Conference Edition)
+# ===========================================================================
+# Box plot of days-to-first-txn by account age band. (14,7).
+# Title: "How Quickly Do New Accounts Activate?"
+
+# Filter valid data
+ttf_data = lifecycle_matched[lifecycle_matched['days_to_first_txn'].notna()].copy()
+ttf_data['acct_age_band'] = pd.Categorical(
+    ttf_data['acct_age_band'], categories=ACCT_AGE_ORDER, ordered=True
+)
+
+fig, ax = plt.subplots(figsize=(14, 7))
+
+# Box plot by account age band
+bands_present = [b for b in ACCT_AGE_ORDER if b in ttf_data['acct_age_band'].values]
+box_data = [ttf_data[ttf_data['acct_age_band'] == b]['days_to_first_txn'].dropna().values
+            for b in bands_present]
+box_colors = [ACCT_AGE_PALETTE.get(b, GEN_COLORS['muted']) for b in bands_present]
+
+bp = ax.boxplot(
+    box_data, vert=True, patch_artist=True, widths=0.6,
+    medianprops=dict(color='white', linewidth=2.5),
+    whiskerprops=dict(color=GEN_COLORS['muted'], linewidth=1.5),
+    capprops=dict(color=GEN_COLORS['muted'], linewidth=1.5),
+    flierprops=dict(marker='o', markerfacecolor=GEN_COLORS['muted'],
+                    markersize=3, alpha=0.3),
+)
+
+for patch, color in zip(bp['boxes'], box_colors):
+    patch.set_facecolor(color)
+    patch.set_edgecolor('white')
+    patch.set_linewidth(1.5)
+    patch.set_alpha(0.85)
+
+ax.set_xticklabels(bands_present, fontsize=12, fontweight='bold')
+ax.set_ylabel("Days to First Transaction", fontsize=16, fontweight='bold', labelpad=10)
+
+gen_clean_axes(ax, keep_left=True, keep_bottom=True)
+ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+ax.set_axisbelow(True)
+
+ax.set_title("How Quickly Do New Accounts Activate?",
+             fontsize=26, fontweight='bold',
+             color=GEN_COLORS['dark_text'], pad=20, loc='left')
+ax.text(0.0, 0.97, "Distribution of days from account open to first card transaction",
+        transform=ax.transAxes, fontsize=15,
+        color=GEN_COLORS['muted'], style='italic')
+
+# Callout: overall median + % within 30 days
+overall_median = ttf_data['days_to_first_txn'].median()
+pct_within_30 = (ttf_data['days_to_first_txn'] <= 30).sum() / len(ttf_data) * 100
+
+ax.text(
+    0.99, 0.95,
+    f"Median: {overall_median:.0f} days | {pct_within_30:.0f}% within 30 days",
+    transform=ax.transAxes,
+    fontsize=15, fontweight='bold', color=GEN_COLORS['info'],
+    ha='right', va='top',
+    bbox=dict(boxstyle='round,pad=0.4', facecolor='white',
+              edgecolor=GEN_COLORS['info'], alpha=0.9)
+)
+
+plt.tight_layout()
+plt.show()
