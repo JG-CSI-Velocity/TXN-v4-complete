@@ -1,0 +1,48 @@
+# ===========================================================================
+# TABLE: COMPETITOR SEGMENTATION SUMMARY
+# ===========================================================================
+"""
+## Competitor Analysis - Segmentation Summary Table
+"""
+
+# Aggregate segmentation data
+segment_summary = []
+
+for competitor, comparison in competitor_spend_analysis.items():
+    segment_counts = comparison['Segment'].value_counts()
+    total = len(comparison)
+    
+    segment_summary.append({
+        'Competitor': competitor,
+        'Total Accounts': total,
+        'Competitor-Heavy': segment_counts.get('Competitor-Heavy', 0),
+        'Balanced': segment_counts.get('Balanced', 0),
+        'CU-Focused': segment_counts.get('CU-Focused', 0),
+        '% Heavy': f"{segment_counts.get('Competitor-Heavy', 0) / total * 100:.1f}%",
+        '% Balanced': f"{segment_counts.get('Balanced', 0) / total * 100:.1f}%",
+        '% CU-Focused': f"{segment_counts.get('CU-Focused', 0) / total * 100:.1f}%"
+    })
+
+summary_df = pd.DataFrame(segment_summary)
+summary_df = summary_df.sort_values('Total Accounts', ascending=False)
+
+print("\n" + "="*120)
+print(" " * 40 + "COMPETITOR SEGMENTATION SUMMARY")
+print("="*120)
+
+# Format for display
+display_df = summary_df.copy()
+display_df['Total Accounts'] = display_df['Total Accounts'].apply(lambda x: f"{x:,}")
+display_df['Competitor-Heavy'] = display_df['Competitor-Heavy'].apply(lambda x: f"{x:,}")
+display_df['Balanced'] = display_df['Balanced'].apply(lambda x: f"{x:,}")
+display_df['CU-Focused'] = display_df['CU-Focused'].apply(lambda x: f"{x:,}")
+
+display(display_df.style.hide(axis='index'))
+
+print("\n📊 Segment Definitions:")
+print("  • Competitor-Heavy: >50% of their spend goes to this competitor")
+print("  • Balanced: 25-50% of their spend goes to this competitor")
+print("  • CU-Focused: <25% of their spend goes to this competitor (mostly using your CU)")
+
+print("\n💡 High 'Competitor-Heavy' % = More accounts at risk of leaving")
+print("="*120)
