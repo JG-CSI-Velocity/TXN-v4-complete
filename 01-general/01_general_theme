@@ -129,6 +129,13 @@ def gen_fmt_count(x, _):
 def gen_fmt_index(x, _):
     return f"{x:.0f}"
 
+def gen_fmt_dollar(x, _):
+    if abs(x) >= 1_000_000:
+        return f"${x/1_000_000:.1f}M"
+    if abs(x) >= 1_000:
+        return f"${x/1_000:.0f}K"
+    return f"${x:,.0f}"
+
 # ---------------------------------------------------------------------------
 # Helper: remove chart clutter
 # ---------------------------------------------------------------------------
