@@ -2,8 +2,12 @@
 # ICS ACQUISITION DATA: Master Aggregation Pipeline (Conference Edition)
 # ===========================================================================
 # Merges ICS Account from rewards_df onto combined_df.
-# ICS = Account acquisition product (REF = referral, DM = direct mail).
+# ICS = Account acquisition channel (REF = referral, DM = direct mail).
 # Builds: ics_agg, ics_acct_map, ics_df, non_ics_df.
+
+# Known ICS channel codes -- WHITELIST approach.
+# Only these values count as ICS accounts. Everything else = Non-ICS.
+ICS_CHANNELS = ['REF', 'DM']
 
 try:
     # Merge ICS Account onto combined_df
@@ -11,9 +15,16 @@ try:
     ics_subset.columns = ['account_number', 'ics_account']
     ics_subset['account_number'] = ics_subset['account_number'].astype(str).str.strip()
 
-    # Clean ICS values
+    # Diagnostic: show raw values BEFORE any transformation
+    _raw_vals = ics_subset['ics_account'].astype(str).str.strip().str.upper().value_counts()
+    print("    Raw ICS Account values (before classification):")
+    for val, cnt in _raw_vals.items():
+        marker = " <-- ICS" if val in ICS_CHANNELS else ""
+        print(f"      {val!r:12s} {cnt:>8,} accounts{marker}")
+
+    # Clean and classify using WHITELIST: only known codes are ICS
     ics_subset['ics_account'] = ics_subset['ics_account'].astype(str).str.strip().str.upper()
-    ics_subset.loc[ics_subset['ics_account'].isin(['NAN', 'NONE', '']), 'ics_account'] = 'Non-ICS'
+    ics_subset.loc[~ics_subset['ics_account'].isin(ICS_CHANNELS), 'ics_account'] = 'Non-ICS'
 
     # Drop stale merge columns if re-running
     if 'ics_account' in combined_df.columns:
@@ -23,7 +34,7 @@ try:
         ics_subset,
         left_on='primary_account_num',
         right_on='account_number',
-        how='left'
+        how='left',
     ).drop(columns='account_number')
 
     ics_merged['ics_account'] = ics_merged['ics_account'].fillna('Non-ICS')
@@ -35,7 +46,7 @@ try:
     ics_acct_map = ics_subset.rename(columns={'account_number': 'primary_account_num'})
 
     # Split
-    ics_df = ics_merged[ics_merged['ics_account'] != 'Non-ICS'].copy()
+    ics_df = ics_merged[ics_merged['ics_account'].isin(ICS_CHANNELS)].copy()
     ics_ref_df = ics_merged[ics_merged['ics_account'] == 'REF'].copy()
     ics_dm_df = ics_merged[ics_merged['ics_account'] == 'DM'].copy()
     non_ics_df = ics_merged[ics_merged['ics_account'] == 'Non-ICS'].copy()
