@@ -34,8 +34,8 @@ ax.set_axisbelow(True)
 ax.set_xlabel("Transaction Count", fontsize=16, fontweight='bold', labelpad=10)
 ax.set_title("Member Engagement Tiers",
              fontsize=22, fontweight='bold',
-             color=GEN_COLORS['dark_text'], pad=20, loc='left')
-ax.text(0.0, 0.97, "Who drives portfolio volume?",
+             color=GEN_COLORS['dark_text'], pad=35, loc='left')
+ax.text(0.0, 1.02, "Who drives portfolio volume?",
         transform=ax.transAxes, fontsize=14,
         color=GEN_COLORS['muted'], style='italic')
 

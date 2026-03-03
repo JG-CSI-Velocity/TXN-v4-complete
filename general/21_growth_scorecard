@@ -58,8 +58,8 @@ if len(monthly_summary) >= 2:
     period_label = f"{monthly_summary.index[0]} to {monthly_summary.index[-1]}"
     ax.set_title("Growth Scorecard",
                  fontsize=22, fontweight='bold',
-                 color=GEN_COLORS['dark_text'], pad=20, loc='left')
-    ax.text(0.0, 0.97, f"First vs last month: {period_label}",
+                 color=GEN_COLORS['dark_text'], pad=35, loc='left')
+    ax.text(0.0, 1.02, f"First vs last month: {period_label}",
             transform=ax.transAxes, fontsize=14,
             color=GEN_COLORS['muted'], style='italic')
 

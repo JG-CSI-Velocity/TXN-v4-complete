@@ -50,8 +50,8 @@ ax.set_yticklabels(ax.get_yticklabels(), fontsize=13, fontweight='bold', rotatio
 
 ax.set_title("MCC Usage: New vs Mature Accounts",
              fontsize=26, fontweight='bold',
-             color=GEN_COLORS['dark_text'], pad=20, loc='left')
-ax.text(0.0, 0.97, "Do new accounts use different merchant categories than established ones?",
+             color=GEN_COLORS['dark_text'], pad=35, loc='left')
+ax.text(0.0, 1.02, "Do new accounts use different merchant categories than established ones?",
         transform=ax.transAxes, fontsize=15,
         color=GEN_COLORS['muted'], style='italic')
 

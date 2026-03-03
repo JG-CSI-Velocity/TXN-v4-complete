@@ -55,8 +55,8 @@ ax1.set_axisbelow(True)
 
 ax1.set_title("Spend Ramp-Up by Account Age",
               fontsize=26, fontweight='bold',
-              color=GEN_COLORS['dark_text'], pad=20, loc='left')
-ax1.text(0.0, 0.97, "Do accounts spend more as they mature? (ODDD trailing 12-month spend)",
+              color=GEN_COLORS['dark_text'], pad=35, loc='left')
+ax1.text(0.0, 1.02, "Do accounts spend more as they mature? (ODDD trailing 12-month spend)",
          transform=ax1.transAxes, fontsize=15,
          color=GEN_COLORS['muted'], style='italic')
 

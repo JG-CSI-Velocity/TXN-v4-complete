@@ -55,8 +55,8 @@ gen_clean_axes(ax, keep_left=True, keep_bottom=True)
 
 ax.set_title("Spending Bracket Mix by Age Group",
              fontsize=26, fontweight='bold',
-             color=GEN_COLORS['dark_text'], pad=20, loc='left')
-ax.text(0.0, 0.97, "Do younger members skew smaller? Do older members skew larger?",
+             color=GEN_COLORS['dark_text'], pad=35, loc='left')
+ax.text(0.0, 1.02, "Do younger members skew smaller? Do older members skew larger?",
         transform=ax.transAxes, fontsize=15,
         color=GEN_COLORS['muted'], style='italic')
 

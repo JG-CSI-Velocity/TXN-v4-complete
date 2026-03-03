@@ -59,8 +59,8 @@ if len(new_accts) > 0:
 
     ax.set_title("New Account Spend Profile",
                  fontsize=22, fontweight='bold',
-                 color=GEN_COLORS['dark_text'], pad=20, loc='left')
-    ax.text(0.0, 0.97, "How many new accounts reach healthy spend levels?",
+                 color=GEN_COLORS['dark_text'], pad=35, loc='left')
+    ax.text(0.0, 1.02, "How many new accounts reach healthy spend levels?",
             transform=ax.transAxes, fontsize=14,
             color=GEN_COLORS['muted'], style='italic')
 

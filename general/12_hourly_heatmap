@@ -38,8 +38,8 @@ ax.set_yticklabels(ax.get_yticklabels(), fontsize=14, fontweight='bold', rotatio
 
 ax.set_title("When Do Members Transact?",
              fontsize=26, fontweight='bold',
-             color=GEN_COLORS['dark_text'], pad=20, loc='left')
-ax.text(0.0, 0.97, "Hot zones = peak transaction windows across the week",
+             color=GEN_COLORS['dark_text'], pad=35, loc='left')
+ax.text(0.0, 1.02, "Hot zones = peak transaction windows across the week",
         transform=ax.transAxes, fontsize=15,
         color=GEN_COLORS['muted'], style='italic')
 

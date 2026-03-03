@@ -55,8 +55,8 @@ ax.set_axisbelow(True)
 
 ax.set_title("MCC Preferences by Engagement Tier",
              fontsize=26, fontweight='bold',
-             color=GEN_COLORS['dark_text'], pad=20, loc='left')
-ax.text(0.0, 0.97, "Do Power users spend at different merchants than Dormant accounts?",
+             color=GEN_COLORS['dark_text'], pad=35, loc='left')
+ax.text(0.0, 1.02, "Do Power users spend at different merchants than Dormant accounts?",
         transform=ax.transAxes, fontsize=15,
         color=GEN_COLORS['muted'], style='italic')
 

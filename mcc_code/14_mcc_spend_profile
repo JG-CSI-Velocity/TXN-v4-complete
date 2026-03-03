@@ -55,8 +55,8 @@ for i, code in enumerate(ordered_codes):
 
 ax.set_title("Transaction Size by MCC Category",
              fontsize=26, fontweight='bold',
-             color=GEN_COLORS['dark_text'], pad=20, loc='left')
-ax.text(0.0, 0.97, "Which categories have large vs micro-transactions?",
+             color=GEN_COLORS['dark_text'], pad=35, loc='left')
+ax.text(0.0, 1.02, "Which categories have large vs micro-transactions?",
         transform=ax.transAxes, fontsize=15,
         color=GEN_COLORS['muted'], style='italic')
 

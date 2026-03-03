@@ -39,8 +39,8 @@ ax.tick_params(axis='x', rotation=45)
 
 ax.set_title("Top 10 MCC Category Trends",
              fontsize=26, fontweight='bold',
-             color=GEN_COLORS['dark_text'], pad=20, loc='left')
-ax.text(0.0, 0.97, "Are spending patterns shifting across merchant categories?",
+             color=GEN_COLORS['dark_text'], pad=35, loc='left')
+ax.text(0.0, 1.02, "Are spending patterns shifting across merchant categories?",
         transform=ax.transAxes, fontsize=15,
         color=GEN_COLORS['muted'], style='italic')
 

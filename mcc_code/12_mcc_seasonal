@@ -50,8 +50,8 @@ ax.set_yticklabels(ax.get_yticklabels(), fontsize=13, fontweight='bold', rotatio
 
 ax.set_title("MCC Seasonal Patterns",
              fontsize=26, fontweight='bold',
-             color=GEN_COLORS['dark_text'], pad=20, loc='left')
-ax.text(0.0, 0.97, "Which categories spike in which months? (100 = category average)",
+             color=GEN_COLORS['dark_text'], pad=35, loc='left')
+ax.text(0.0, 1.02, "Which categories spike in which months? (100 = category average)",
         transform=ax.transAxes, fontsize=15,
         color=GEN_COLORS['muted'], style='italic')
 

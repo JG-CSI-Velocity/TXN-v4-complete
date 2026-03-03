@@ -44,8 +44,8 @@ ax.tick_params(axis='x', rotation=45)
 ax.set_ylabel("Share of Transactions (%)", fontsize=16, fontweight='bold', labelpad=10)
 ax.set_title("Top 5 Bracket Shares Over Time",
              fontsize=26, fontweight='bold',
-             color=GEN_COLORS['dark_text'], pad=20, loc='left')
-ax.text(0.0, 0.97, "Are spending patterns shifting month to month?",
+             color=GEN_COLORS['dark_text'], pad=35, loc='left')
+ax.text(0.0, 1.02, "Are spending patterns shifting month to month?",
         transform=ax.transAxes, fontsize=15,
         color=GEN_COLORS['muted'], style='italic')
 

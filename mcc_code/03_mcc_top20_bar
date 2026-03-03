@@ -35,7 +35,7 @@ ax1.set_axisbelow(True)
 
 ax1.set_title("Top 20 MCC Categories by Transaction Volume",
               fontsize=26, fontweight='bold',
-              color=GEN_COLORS['dark_text'], pad=20, loc='left')
+              color=GEN_COLORS['dark_text'], pad=35, loc='left')
 ax1.text(0.0, 0.97, "Which merchant categories dominate card activity?",
          transform=ax1.transAxes, fontsize=15,
          color=GEN_COLORS['muted'], style='italic')

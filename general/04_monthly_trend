@@ -59,8 +59,8 @@ ax1.tick_params(axis='x', rotation=45)
 # Title + subtitle
 ax1.set_title("Monthly Transaction Activity",
               fontsize=26, fontweight='bold',
-              color=GEN_COLORS['dark_text'], pad=20, loc='left')
-ax1.text(0.0, 0.97, "How is portfolio activity trending month over month?",
+              color=GEN_COLORS['dark_text'], pad=35, loc='left')
+ax1.text(0.0, 1.02, "How is portfolio activity trending month over month?",
          transform=ax1.transAxes, fontsize=15,
          color=GEN_COLORS['muted'], style='italic')
 

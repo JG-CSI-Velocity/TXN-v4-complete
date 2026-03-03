@@ -34,8 +34,8 @@ ax.set_axisbelow(True)
 
 ax.set_title("Transaction Timing by Age Group",
              fontsize=26, fontweight='bold',
-             color=GEN_COLORS['dark_text'], pad=20, loc='left')
-ax.text(0.0, 0.97, "Younger members transact later; older members transact earlier",
+             color=GEN_COLORS['dark_text'], pad=35, loc='left')
+ax.text(0.0, 1.02, "Younger members transact later; older members transact earlier",
         transform=ax.transAxes, fontsize=15,
         color=GEN_COLORS['muted'], style='italic')
 
