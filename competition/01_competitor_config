@@ -473,40 +473,68 @@ ALL_CATEGORIES = list(COMPETITOR_MERCHANTS.keys())
 def tag_competitors(df, merchant_col='merchant_consolidated'):
     """Tag transactions with competitor_category and competitor_match columns.
 
-    Works in-place to avoid copying the entire DataFrame (MemoryError on
-    large datasets). Builds a single regex per category for starts_with
-    patterns to reduce the number of full-Series scans.
+    Memory-optimized for large DataFrames (13M+ rows):
+      - Drops old columns + gc.collect() before allocating new ones
+      - pd.Categorical for category (~13 MiB vs ~102 MiB object array)
+      - numpy arrays in the loop to reduce pandas overhead
+      - Deletes merchant_upper before creating result columns
     """
-    import re
+    import re, gc
+    import numpy as np
 
-    # Reset columns (safe for re-runs)
-    df['competitor_category'] = None
-    df['competitor_match'] = None
+    # Free memory from any previous run
+    for col in ('competitor_category', 'competitor_match'):
+        if col in df.columns:
+            df.drop(columns=col, inplace=True)
+    gc.collect()
 
+    n = len(df)
     merchant_upper = df[merchant_col].astype(str).str.upper().str.strip()
-    tagged = pd.Series(False, index=df.index)
 
-    for category, patterns in COMPETITOR_MERCHANTS.items():
-        sw_patterns = [p.upper().strip() for p in patterns.get('starts_with', []) if p.strip()]
-        ex_patterns = [p.upper().strip() for p in patterns.get('exact', []) if p.strip()]
+    tagged = np.zeros(n, dtype=bool)
+    cat_names = list(COMPETITOR_MERCHANTS.keys())
+    cat_codes = np.full(n, -1, dtype=np.int8)  # -1 → NaN in Categorical
 
-        cat_mask = pd.Series(False, index=df.index)
+    for cat_idx, (category, patterns) in enumerate(COMPETITOR_MERCHANTS.items()):
+        sw = [p.upper().strip() for p in patterns.get('starts_with', []) if p.strip()]
+        ex = [p.upper().strip() for p in patterns.get('exact', []) if p.strip()]
 
-        # Single regex for all starts_with patterns in this category
-        if sw_patterns:
-            regex = '^(?:' + '|'.join(re.escape(p) for p in sw_patterns) + ')'
-            cat_mask = cat_mask | merchant_upper.str.match(regex, na=False)
+        cat_mask = np.zeros(n, dtype=bool)
 
-        # Exact matches
-        if ex_patterns:
-            cat_mask = cat_mask | merchant_upper.isin(ex_patterns)
+        if sw:
+            regex = '^(?:' + '|'.join(re.escape(p) for p in sw) + ')'
+            cat_mask |= merchant_upper.str.match(regex, na=False).values
 
-        # Only tag rows not already claimed by a prior category
+        if ex:
+            cat_mask |= merchant_upper.isin(ex).values
+
         new_hits = cat_mask & ~tagged
         if new_hits.any():
-            df.loc[new_hits, 'competitor_category'] = category
-            df.loc[new_hits, 'competitor_match'] = df.loc[new_hits, merchant_col]
-            tagged = tagged | new_hits
+            cat_codes[new_hits] = cat_idx
+            tagged |= new_hits
+
+    # Free the large uppercase Series (~250 MiB) before allocating results
+    del merchant_upper
+    gc.collect()
+
+    # Categorical column: ~13 MiB (int8 codes) vs ~102 MiB (object array)
+    # from_codes treats -1 as NaN automatically
+    df['competitor_category'] = pd.Categorical.from_codes(
+        cat_codes, categories=cat_names
+    )
+    del cat_codes
+    gc.collect()
+
+    # competitor_match: merchant name where tagged, None elsewhere
+    _merch_vals = df[merchant_col].values
+    _match = np.empty(n, dtype=object)
+    _match[:] = None
+    if tagged.any():
+        _match[tagged] = _merch_vals[tagged]
+    df['competitor_match'] = _match
+
+    del _match, tagged
+    gc.collect()
 
     return df
 
