@@ -1,30 +1,53 @@
 # ===========================================================================
 # ICS ACQUISITION DATA: Master Aggregation Pipeline (Conference Edition)
 # ===========================================================================
-# Merges ICS Account from rewards_df onto combined_df.
-# ICS = Account acquisition channel (REF = referral, DM = direct mail).
+# Merges ICS Account + Source from rewards_df onto combined_df.
+# ICS Account field = Yes/No (or Y/N) -- flags whether account is ICS.
+# Source field = REF (referral) or DM (direct mail) -- the acquisition channel.
 # Builds: ics_agg, ics_acct_map, ics_df, non_ics_df.
 
-# Known ICS channel codes -- WHITELIST approach.
-# Only these values count as ICS accounts. Everything else = Non-ICS.
+# Values in 'ICS Account' that mean YES (case-insensitive)
+_ICS_YES = {'YES', 'Y'}
+
+# Expected Source channel codes (case-insensitive)
 ICS_CHANNELS = ['REF', 'DM']
 
 try:
-    # Merge ICS Account onto combined_df
-    ics_subset = rewards_df[['Acct Number', 'ICS Account']].copy()
-    ics_subset.columns = ['account_number', 'ics_account']
+    # Pull both ICS Account (Y/N flag) and Source (channel code)
+    ics_subset = rewards_df[['Acct Number', 'ICS Account', 'Source']].copy()
+    ics_subset.columns = ['account_number', 'ics_flag', 'source_channel']
     ics_subset['account_number'] = ics_subset['account_number'].astype(str).str.strip()
 
-    # Diagnostic: show raw values BEFORE any transformation
-    _raw_vals = ics_subset['ics_account'].astype(str).str.strip().str.upper().value_counts()
-    print("    Raw ICS Account values (before classification):")
-    for val, cnt in _raw_vals.items():
-        marker = " <-- ICS" if val in ICS_CHANNELS else ""
+    # Clean both fields
+    ics_subset['ics_flag'] = ics_subset['ics_flag'].astype(str).str.strip().str.upper()
+    ics_subset['source_channel'] = ics_subset['source_channel'].astype(str).str.strip().str.upper()
+
+    # Diagnostic: show raw values BEFORE classification
+    _flag_vals = ics_subset['ics_flag'].value_counts()
+    _src_vals = ics_subset['source_channel'].value_counts()
+    print("    Raw ICS Account flag values:")
+    for val, cnt in _flag_vals.items():
+        marker = " <-- ICS" if val in _ICS_YES else ""
+        print(f"      {val!r:12s} {cnt:>8,} accounts{marker}")
+    print("    Raw Source channel values:")
+    for val, cnt in _src_vals.items():
+        marker = " <-- channel" if val in ICS_CHANNELS else ""
         print(f"      {val!r:12s} {cnt:>8,} accounts{marker}")
 
-    # Clean and classify using WHITELIST: only known codes are ICS
-    ics_subset['ics_account'] = ics_subset['ics_account'].astype(str).str.strip().str.upper()
-    ics_subset.loc[~ics_subset['ics_account'].isin(ICS_CHANNELS), 'ics_account'] = 'Non-ICS'
+    # Build ics_account: use Source channel for ICS accounts, 'Non-ICS' for rest
+    is_ics = ics_subset['ics_flag'].isin(_ICS_YES)
+    ics_subset['ics_account'] = 'Non-ICS'
+    ics_subset.loc[is_ics, 'ics_account'] = ics_subset.loc[is_ics, 'source_channel']
+
+    # If Source is missing/invalid for an ICS-flagged account, label as 'ICS-Unknown'
+    valid_channels = set(ICS_CHANNELS)
+    bad_source = is_ics & ~ics_subset['source_channel'].isin(valid_channels)
+    if bad_source.sum() > 0:
+        ics_subset.loc[bad_source, 'ics_account'] = 'ICS-Unknown'
+        print(f"    Note: {bad_source.sum():,} ICS accounts have no valid Source channel")
+
+    # Keep only the columns needed for merge
+    ics_subset = ics_subset[['account_number', 'ics_account']]
 
     # Drop stale merge columns if re-running
     if 'ics_account' in combined_df.columns:
