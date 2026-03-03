@@ -471,27 +471,42 @@ ALL_CATEGORIES = list(COMPETITOR_MERCHANTS.keys())
 # ===========================================================================
 
 def tag_competitors(df, merchant_col='merchant_consolidated'):
-    """Tag transactions with competitor_category and competitor_match columns."""
-    df = df.copy()
+    """Tag transactions with competitor_category and competitor_match columns.
+
+    Works in-place to avoid copying the entire DataFrame (MemoryError on
+    large datasets). Builds a single regex per category for starts_with
+    patterns to reduce the number of full-Series scans.
+    """
+    import re
+
+    # Reset columns (safe for re-runs)
     df['competitor_category'] = None
     df['competitor_match'] = None
 
     merchant_upper = df[merchant_col].astype(str).str.upper().str.strip()
+    tagged = pd.Series(False, index=df.index)
 
     for category, patterns in COMPETITOR_MERCHANTS.items():
-        already_tagged = df['competitor_category'].notna()
+        sw_patterns = [p.upper().strip() for p in patterns.get('starts_with', []) if p.strip()]
+        ex_patterns = [p.upper().strip() for p in patterns.get('exact', []) if p.strip()]
 
-        for pattern in patterns.get('starts_with', []):
-            pattern_upper = pattern.upper().strip()
-            mask = (~already_tagged) & merchant_upper.str.startswith(pattern_upper, na=False)
-            df.loc[mask, 'competitor_category'] = category
-            df.loc[mask, 'competitor_match'] = df.loc[mask, merchant_col]
+        cat_mask = pd.Series(False, index=df.index)
 
-        for pattern in patterns.get('exact', []):
-            pattern_upper = pattern.upper().strip()
-            mask = (~already_tagged) & (merchant_upper == pattern_upper)
-            df.loc[mask, 'competitor_category'] = category
-            df.loc[mask, 'competitor_match'] = df.loc[mask, merchant_col]
+        # Single regex for all starts_with patterns in this category
+        if sw_patterns:
+            regex = '^(?:' + '|'.join(re.escape(p) for p in sw_patterns) + ')'
+            cat_mask = cat_mask | merchant_upper.str.match(regex, na=False)
+
+        # Exact matches
+        if ex_patterns:
+            cat_mask = cat_mask | merchant_upper.isin(ex_patterns)
+
+        # Only tag rows not already claimed by a prior category
+        new_hits = cat_mask & ~tagged
+        if new_hits.any():
+            df.loc[new_hits, 'competitor_category'] = category
+            df.loc[new_hits, 'competitor_match'] = df.loc[new_hits, merchant_col]
+            tagged = tagged | new_hits
 
     return df
 
@@ -504,7 +519,7 @@ _FINANCIAL_KEYWORDS = [
 
 def discover_unmatched_financial(df, merchant_col='merchant_consolidated', top_n=20):
     """Find potential competitors not yet in config."""
-    untagged = df[df['competitor_category'].isna()].copy() if 'competitor_category' in df.columns else df.copy()
+    untagged = df[df['competitor_category'].isna()] if 'competitor_category' in df.columns else df
 
     if len(untagged) == 0:
         return pd.DataFrame()
