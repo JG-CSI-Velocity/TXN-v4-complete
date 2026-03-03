@@ -1,0 +1,65 @@
+# ===========================================================================
+# TXN TYPE TREND: Monthly PIN vs SIG Share (Conference Edition)
+# ===========================================================================
+# Stacked area: monthly transaction type share over time. (14,7).
+
+fig, ax = plt.subplots(figsize=(14, 7))
+
+# Pivot monthly data for stacking
+tt_trend_pivot = tt_monthly.pivot(
+    index='year_month', columns='transaction_type', values='share_pct'
+).fillna(0).sort_index()
+
+dates = tt_trend_pivot.index.to_timestamp()
+
+# Plot main types (PIN and SIG) as filled areas, others as lines
+type_colors = {
+    'PIN': GEN_COLORS['success'],
+    'SIG': GEN_COLORS['warning'],
+}
+
+# Stacked area for PIN and SIG
+stack_cols = [c for c in ['PIN', 'SIG'] if c in tt_trend_pivot.columns]
+other_cols = [c for c in tt_trend_pivot.columns if c not in stack_cols]
+
+if len(stack_cols) > 0:
+    stack_data = tt_trend_pivot[stack_cols]
+    ax.stackplot(dates, *[stack_data[c] for c in stack_cols],
+                 labels=stack_cols,
+                 colors=[type_colors.get(c, GEN_COLORS['muted']) for c in stack_cols],
+                 alpha=0.7, edgecolor='white', linewidth=0.5)
+
+# Other types as lines on top
+for i, col in enumerate(other_cols):
+    ax.plot(dates, tt_trend_pivot[col],
+            color=BRACKET_PALETTE[i % len(BRACKET_PALETTE)],
+            linewidth=2, label=col, marker='o', markersize=3, zorder=5)
+
+ax.set_ylabel("% of Monthly Transactions", fontsize=16, fontweight='bold', labelpad=10)
+ax.yaxis.set_major_formatter(plt.FuncFormatter(gen_fmt_pct))
+ax.set_ylim(0, 100)
+
+gen_clean_axes(ax, keep_left=True, keep_bottom=True)
+ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+ax.set_axisbelow(True)
+
+ax.set_xlabel("")
+ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
+ax.tick_params(axis='x', rotation=45)
+
+ax.set_title("Transaction Type Mix Over Time",
+             fontsize=26, fontweight='bold',
+             color=GEN_COLORS['dark_text'], pad=35, loc='left')
+ax.text(0.0, 1.02, "Is the PIN vs signature split shifting?",
+        transform=ax.transAxes, fontsize=15,
+        color=GEN_COLORS['muted'], style='italic')
+
+ax.legend(
+    loc='upper center', bbox_to_anchor=(0.5, -0.15),
+    ncol=5, fontsize=12, frameon=False, title='Transaction Type',
+    title_fontproperties={'weight': 'bold', 'size': 13}
+)
+
+plt.tight_layout()
+plt.subplots_adjust(bottom=0.18)
+plt.show()

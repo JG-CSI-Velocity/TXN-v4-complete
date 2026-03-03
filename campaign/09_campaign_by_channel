@@ -1,0 +1,69 @@
+# ===========================================================================
+# CAMPAIGN BY CHANNEL: Response Rate by ICS Channel (Conference Edition)
+# ===========================================================================
+# Bar chart: response rate by ICS channel (REF/DM/Non-ICS). (14,7).
+# Depends on ics_acct_map from ics_acquisition/01_ics_data.
+
+if 'camp_acct' not in dir() or len(camp_acct) == 0:
+    print("    No campaign data available. Skipping channel chart.")
+else:
+    try:
+        camp_ics = camp_acct.merge(
+            ics_acct_map[['primary_account_num', 'ics_account']],
+            on='primary_account_num', how='left'
+        )
+        camp_ics['ics_account'] = camp_ics['ics_account'].fillna('Non-ICS')
+
+        # Response rate by ICS channel (only mailed accounts)
+        camp_ics_mailed = camp_ics[camp_ics['camp_status'] != 'Never Mailed']
+
+        ics_resp = camp_ics_mailed.groupby('ics_account').agg(
+            total_mailed=('primary_account_num', 'count'),
+            responders=('total_responses', lambda x: (x > 0).sum()),
+        ).reset_index()
+        ics_resp['response_rate'] = ics_resp['responders'] / ics_resp['total_mailed'] * 100
+
+        channel_order = [c for c in ['REF', 'DM', 'Non-ICS'] if c in ics_resp['ics_account'].values]
+        ics_resp = ics_resp.set_index('ics_account').loc[channel_order].reset_index()
+
+        channel_colors = {
+            'REF': GEN_COLORS['info'],
+            'DM': GEN_COLORS['primary'],
+            'Non-ICS': GEN_COLORS['muted'],
+        }
+
+        fig, ax = plt.subplots(figsize=(14, 7))
+
+        x = range(len(ics_resp))
+        colors = [channel_colors.get(c, GEN_COLORS['muted']) for c in ics_resp['ics_account']]
+
+        bars = ax.bar(x, ics_resp['response_rate'], color=colors,
+                      edgecolor='white', linewidth=0.5, width=0.45)
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(ics_resp['ics_account'], fontsize=14, fontweight='bold')
+        ax.set_ylabel("Response Rate %", fontsize=16, fontweight='bold', labelpad=10)
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(gen_fmt_pct))
+
+        gen_clean_axes(ax, keep_left=True, keep_bottom=True)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+
+        for bar, (_, row) in zip(bars, ics_resp.iterrows()):
+            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.3,
+                    f"{row['response_rate']:.1f}%\n({int(row['responders'])} of {int(row['total_mailed'])})",
+                    ha='center', va='bottom', fontsize=11, fontweight='bold',
+                    color=channel_colors.get(row['ics_account'], GEN_COLORS['muted']))
+
+        ax.set_title("Campaign Response Rate by ICS Channel",
+                     fontsize=26, fontweight='bold',
+                     color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02, "Do ICS-sourced accounts respond differently to campaigns?",
+                transform=ax.transAxes, fontsize=15,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()
+
+    except NameError:
+        print("    ics_acct_map not available. Run ics_acquisition/01_ics_data first.")

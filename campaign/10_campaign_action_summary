@@ -1,0 +1,142 @@
+# ===========================================================================
+# CAMPAIGN ACTION SUMMARY: Findings & Recommendations (Conference Edition)
+# ===========================================================================
+# Conference-styled findings table + strategic action items.
+
+if 'camp_acct' not in dir() or len(camp_acct) == 0:
+    print("    No campaign data available. Skipping action summary.")
+else:
+    findings_camp = []
+
+    n_mailed = (camp_acct['camp_status'] != 'Never Mailed').sum()
+    n_responders = (camp_acct['camp_status'] == 'Responder').sum()
+    overall_rate = n_responders / n_mailed * 100 if n_mailed > 0 else 0
+
+    # 1. Response rate
+    findings_camp.append({
+        'Category': 'Response Rate',
+        'Finding': f"Overall response rate: {overall_rate:.1f}% ({n_responders:,} of {n_mailed:,} mailed)",
+        'Implication': 'Campaign effectiveness is ' + ('strong' if overall_rate > 10 else 'moderate' if overall_rate > 5 else 'below industry average'),
+        'Priority': 'High'
+    })
+
+    # 2. Responder value
+    resp_agg = camp_status_agg[camp_status_agg['camp_status'] == 'Responder']
+    nonresp_agg = camp_status_agg[camp_status_agg['camp_status'] == 'Non-Responder']
+    if len(resp_agg) > 0 and len(nonresp_agg) > 0:
+        resp_tpa = resp_agg['txn_per_account'].values[0]
+        nonresp_tpa = nonresp_agg['txn_per_account'].values[0]
+        ratio = resp_tpa / nonresp_tpa if nonresp_tpa > 0 else 0
+        findings_camp.append({
+            'Category': 'Responder Value',
+            'Finding': f"Responders: {resp_tpa:.1f} txns/acct vs Non-Responders: {nonresp_tpa:.1f} ({ratio:.1f}x)",
+            'Implication': 'Campaign responders are ' + ('significantly' if ratio > 1.5 else 'somewhat') + ' more active card users',
+            'Priority': 'High' if ratio > 1.3 else 'Medium'
+        })
+
+    # 3. Campaign reach
+    never_mailed_pct = (camp_acct['camp_status'] == 'Never Mailed').sum() / len(camp_acct) * 100
+    findings_camp.append({
+        'Category': 'Reach',
+        'Finding': f"{never_mailed_pct:.1f}% of accounts have never been mailed",
+        'Implication': 'Untapped audience for future campaigns' if never_mailed_pct > 20 else 'Good campaign coverage',
+        'Priority': 'Medium' if never_mailed_pct > 30 else 'Low'
+    })
+
+    # 4. Trend direction
+    if len(camp_summary) >= 2:
+        first_rate = camp_summary['response_rate'].iloc[0]
+        last_rate = camp_summary['response_rate'].iloc[-1]
+        trend = 'improving' if last_rate > first_rate else 'declining'
+        findings_camp.append({
+            'Category': 'Trend',
+            'Finding': f"Response rate {trend}: {first_rate:.1f}% -> {last_rate:.1f}% ({camp_summary['period'].iloc[0]} to {camp_summary['period'].iloc[-1]})",
+            'Implication': 'Campaign ' + ('strategy is working' if trend == 'improving' else 'fatigue or targeting needs refresh'),
+            'Priority': 'High' if trend == 'declining' else 'Medium'
+        })
+
+    # ---------------------------------------------------------------------------
+    # Styled findings table
+    # ---------------------------------------------------------------------------
+    findings_df_camp = pd.DataFrame(findings_camp)
+
+    priority_colors = {
+        'High': 'background-color: #FDECEA; color: #E63946; font-weight: bold',
+        'Medium': 'background-color: #FFF8E1; color: #FF9F1C; font-weight: bold',
+        'Low': 'background-color: #E8F5E9; color: #2EC4B6; font-weight: bold',
+    }
+
+    styled_findings_camp = (
+        findings_df_camp.style
+        .hide(axis='index')
+        .applymap(lambda v: priority_colors.get(v, ''), subset=['Priority'])
+        .set_properties(**{
+            'font-size': '13px', 'text-align': 'left',
+            'border': '1px solid #E9ECEF', 'padding': '8px 12px',
+        })
+        .set_properties(subset=['Category'], **{
+            'font-weight': 'bold', 'color': GEN_COLORS['warning'],
+        })
+        .set_table_styles([
+            {'selector': 'th', 'props': [
+                ('background-color', GEN_COLORS['warning']),
+                ('color', 'white'), ('font-size', '14px'),
+                ('font-weight', 'bold'), ('text-align', 'center'),
+                ('padding', '8px 12px'),
+            ]},
+            {'selector': 'caption', 'props': [
+                ('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                ('padding-bottom', '12px'),
+            ]},
+        ])
+        .set_caption("ARS Campaign Analysis: Key Findings")
+    )
+
+    display(styled_findings_camp)
+
+    # ---------------------------------------------------------------------------
+    # Action items
+    # ---------------------------------------------------------------------------
+    actions_camp = [
+        f"Optimize targeting: {never_mailed_pct:.0f}% of accounts are untouched by campaigns",
+        "A/B test campaign content for non-responder segments to improve conversion",
+        "Build responder lifetime value model: response -> card activation -> spend increase",
+        "Create responder-specific merchant reward partnerships based on shopping preferences",
+        "Monitor response rate trend by period for campaign fatigue early warning",
+        "Segment future mailings by engagement tier for higher ROI targeting",
+    ]
+
+    actions_df_camp = pd.DataFrame({
+        'Action Item': actions_camp,
+        'Status': ['Recommended'] * len(actions_camp),
+    })
+
+    styled_actions_camp = (
+        actions_df_camp.style
+        .hide(axis='index')
+        .set_properties(**{
+            'font-size': '13px', 'text-align': 'left',
+            'border': '1px solid #E9ECEF', 'padding': '8px 12px',
+        })
+        .set_properties(subset=['Status'], **{
+            'font-weight': 'bold', 'color': GEN_COLORS['warning'],
+            'text-align': 'center',
+        })
+        .set_table_styles([
+            {'selector': 'th', 'props': [
+                ('background-color', GEN_COLORS['warning']),
+                ('color', 'white'), ('font-size', '14px'),
+                ('font-weight', 'bold'), ('text-align', 'center'),
+                ('padding', '8px 12px'),
+            ]},
+            {'selector': 'caption', 'props': [
+                ('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                ('padding-bottom', '12px'),
+            ]},
+        ])
+        .set_caption("ARS Campaign Strategic Action Items")
+    )
+
+    display(styled_actions_camp)

@@ -1,0 +1,133 @@
+# ===========================================================================
+# ICS ACQUISITION DATA: Master Aggregation Pipeline (Conference Edition)
+# ===========================================================================
+# Merges ICS Account from rewards_df onto combined_df.
+# ICS = Account acquisition product (REF = referral, DM = direct mail).
+# Builds: ics_agg, ics_acct_map, ics_df, non_ics_df.
+
+try:
+    # Merge ICS Account onto combined_df
+    ics_subset = rewards_df[['Acct Number', 'ICS Account']].copy()
+    ics_subset.columns = ['account_number', 'ics_account']
+    ics_subset['account_number'] = ics_subset['account_number'].astype(str).str.strip()
+
+    # Clean ICS values
+    ics_subset['ics_account'] = ics_subset['ics_account'].astype(str).str.strip().str.upper()
+    ics_subset.loc[ics_subset['ics_account'].isin(['NAN', 'NONE', '']), 'ics_account'] = 'Non-ICS'
+
+    # Drop stale merge columns if re-running
+    if 'ics_account' in combined_df.columns:
+        combined_df.drop(columns='ics_account', inplace=True)
+
+    ics_merged = combined_df.merge(
+        ics_subset,
+        left_on='primary_account_num',
+        right_on='account_number',
+        how='left'
+    ).drop(columns='account_number')
+
+    ics_merged['ics_account'] = ics_merged['ics_account'].fillna('Non-ICS')
+
+    # Store on combined_df
+    combined_df['ics_account'] = ics_merged['ics_account']
+
+    # Account-level map for other folders
+    ics_acct_map = ics_subset.rename(columns={'account_number': 'primary_account_num'})
+
+    # Split
+    ics_df = ics_merged[ics_merged['ics_account'] != 'Non-ICS'].copy()
+    ics_ref_df = ics_merged[ics_merged['ics_account'] == 'REF'].copy()
+    ics_dm_df = ics_merged[ics_merged['ics_account'] == 'DM'].copy()
+    non_ics_df = ics_merged[ics_merged['ics_account'] == 'Non-ICS'].copy()
+
+    # Check if we have meaningful ICS data
+    ics_values = ics_merged['ics_account'].value_counts()
+
+    if len(ics_df) == 0:
+        print("    No ICS accounts found in dataset. Skipping ICS analysis.")
+        ics_agg = pd.DataFrame()
+    else:
+        # -----------------------------------------------------------------------
+        # Core ICS aggregation by channel
+        # -----------------------------------------------------------------------
+        ics_agg = ics_merged.groupby('ics_account').agg(
+            txn_count=('transaction_date', 'count'),
+            unique_accounts=('primary_account_num', 'nunique'),
+            total_spend=('amount', 'sum'),
+            avg_spend=('amount', 'mean'),
+            median_spend=('amount', 'median'),
+        ).reset_index()
+
+        total_txns_ics = len(ics_merged)
+        total_accts_ics = ics_merged['primary_account_num'].nunique()
+
+        ics_agg['txn_pct'] = ics_agg['txn_count'] / total_txns_ics * 100
+        ics_agg['acct_pct'] = ics_agg['unique_accounts'] / total_accts_ics * 100
+        ics_agg['txn_per_account'] = ics_agg['txn_count'] / ics_agg['unique_accounts']
+        ics_agg = ics_agg.sort_values('txn_count', ascending=False).reset_index(drop=True)
+
+        # -----------------------------------------------------------------------
+        # Monthly trend by ICS channel
+        # -----------------------------------------------------------------------
+        ics_monthly = ics_merged.groupby(
+            ['year_month', 'ics_account']
+        ).agg(txn_count=('transaction_date', 'count')).reset_index()
+
+        ics_month_totals = ics_merged.groupby('year_month').size().reset_index(name='month_total')
+        ics_monthly = ics_monthly.merge(ics_month_totals, on='year_month')
+        ics_monthly['share_pct'] = ics_monthly['txn_count'] / ics_monthly['month_total'] * 100
+
+        # -----------------------------------------------------------------------
+        # Conference-styled summary table
+        # -----------------------------------------------------------------------
+        ics_display = ics_agg[['ics_account', 'txn_count', 'txn_pct', 'unique_accounts',
+                                'acct_pct', 'total_spend', 'avg_spend', 'txn_per_account']].copy()
+        ics_display.columns = ['Channel', 'Transactions', 'Txn %', 'Accounts',
+                                'Acct %', 'Total Spend', 'Avg Ticket', 'Txns/Acct']
+
+        styled = (
+            ics_display.style
+            .hide(axis='index')
+            .format({
+                'Transactions': '{:,.0f}',
+                'Txn %': '{:.1f}%',
+                'Accounts': '{:,.0f}',
+                'Acct %': '{:.1f}%',
+                'Total Spend': '${:,.0f}',
+                'Avg Ticket': '${:.2f}',
+                'Txns/Acct': '{:.1f}',
+            })
+            .set_properties(**{
+                'font-size': '13px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF',
+                'padding': '7px 10px',
+            })
+            .set_table_styles([
+                {'selector': 'th', 'props': [
+                    ('background-color', GEN_COLORS['info']),
+                    ('color', 'white'), ('font-size', '14px'),
+                    ('font-weight', 'bold'), ('text-align', 'center'),
+                    ('padding', '8px 10px'),
+                ]},
+                {'selector': 'caption', 'props': [
+                    ('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                    ('padding-bottom', '12px'),
+                ]},
+            ])
+            .set_caption("ICS Acquisition Channel Summary")
+            .bar(subset=['Transactions'], color=GEN_COLORS['info'], vmin=0)
+        )
+
+        display(styled)
+
+        ics_total_accts = ics_agg[ics_agg['ics_account'] != 'Non-ICS']['unique_accounts'].sum()
+        ics_total_pct = ics_agg[ics_agg['ics_account'] != 'Non-ICS']['acct_pct'].sum()
+        print(f"\n    ICS accounts: {ics_total_accts:,} ({ics_total_pct:.1f}% of all accounts)")
+        print(f"    Channel breakdown: {dict(ics_values)}")
+        print(f"    ICS avg ticket: ${ics_df['amount'].mean():.2f} vs Non-ICS: ${non_ics_df['amount'].mean():.2f}")
+
+except (NameError, KeyError) as e:
+    print(f"    ICS Account data not available: {e}")
+    print("    Skipping ICS acquisition analysis.")
+    ics_agg = pd.DataFrame()

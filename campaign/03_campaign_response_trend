@@ -1,0 +1,61 @@
+# ===========================================================================
+# CAMPAIGN RESPONSE TREND: Mailed vs Responded by Period (Conference Edition)
+# ===========================================================================
+# Grouped bar with response rate line overlay. (14,7).
+
+if 'camp_acct' not in dir() or len(camp_acct) == 0:
+    print("    No campaign data available. Skipping response trend.")
+else:
+    fig, ax1 = plt.subplots(figsize=(14, 7))
+
+    x = np.arange(len(camp_summary))
+    bar_width = 0.35
+
+    # Mailed bars
+    ax1.bar(x - bar_width / 2, camp_summary['mailed'], width=bar_width,
+            label='Mailed', color=GEN_COLORS['warning'], edgecolor='white', linewidth=0.5)
+    # Responded bars
+    ax1.bar(x + bar_width / 2, camp_summary['responded'], width=bar_width,
+            label='Responded', color=GEN_COLORS['success'], edgecolor='white', linewidth=0.5)
+
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(camp_summary['period'], fontsize=12, fontweight='bold', rotation=45, ha='right')
+    ax1.set_ylabel("Account Count", fontsize=16, fontweight='bold', labelpad=10)
+    ax1.yaxis.set_major_formatter(plt.FuncFormatter(gen_fmt_count))
+
+    gen_clean_axes(ax1, keep_left=True, keep_bottom=True)
+    ax1.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax1.set_axisbelow(True)
+
+    # Response rate line on secondary axis
+    ax2 = ax1.twinx()
+    ax2.plot(x, camp_summary['response_rate'], color=GEN_COLORS['accent'],
+             linewidth=3, marker='D', markersize=8, zorder=5, label='Response Rate')
+    ax2.set_ylabel("Response Rate %", fontsize=16, fontweight='bold',
+                    color=GEN_COLORS['accent'], labelpad=10)
+    ax2.yaxis.set_major_formatter(plt.FuncFormatter(gen_fmt_pct))
+    ax2.spines['top'].set_visible(False)
+    ax2.spines['left'].set_visible(False)
+
+    # Value labels on rate line
+    for i, rate in enumerate(camp_summary['response_rate']):
+        ax2.text(i, rate + 0.5, f"{rate:.1f}%", ha='center', fontsize=10,
+                 fontweight='bold', color=GEN_COLORS['accent'])
+
+    ax1.set_title("Campaign Response Trends by Period",
+                  fontsize=26, fontweight='bold',
+                  color=GEN_COLORS['dark_text'], pad=35, loc='left')
+    ax1.text(0.0, 1.02, "Are response rates improving or declining over time?",
+             transform=ax1.transAxes, fontsize=15,
+             color=GEN_COLORS['muted'], style='italic')
+
+    # Combined legend
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2,
+               loc='upper center', bbox_to_anchor=(0.5, -0.18),
+               ncol=3, fontsize=12, frameon=False)
+
+    plt.tight_layout()
+    plt.subplots_adjust(bottom=0.22)
+    plt.show()

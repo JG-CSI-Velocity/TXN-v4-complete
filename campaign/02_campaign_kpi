@@ -1,0 +1,76 @@
+# ===========================================================================
+# CAMPAIGN KPI DASHBOARD: Key Metrics at a Glance (Conference Edition)
+# ===========================================================================
+# 4 FancyBboxPatch cards. (18,5).
+
+if 'camp_acct' not in dir() or len(camp_acct) == 0:
+    print("    No campaign data available. Skipping KPI dashboard.")
+else:
+    n_mailed = (camp_acct['camp_status'] != 'Never Mailed').sum()
+    n_responders = (camp_acct['camp_status'] == 'Responder').sum()
+    overall_rate = n_responders / n_mailed * 100 if n_mailed > 0 else 0
+    avg_offers = camp_acct['total_offers'].mean()
+
+    resp_txn_pct = camp_status_agg.loc[
+        camp_status_agg['camp_status'] == 'Responder', 'txn_pct'
+    ].values
+    resp_share = resp_txn_pct[0] if len(resp_txn_pct) > 0 else 0
+
+    fig, axes = plt.subplots(1, 4, figsize=(18, 5))
+
+    kpi_data = [
+        {
+            'label': 'Total Mailed',
+            'value': f"{n_mailed:,}",
+            'sub': 'accounts received at least 1 mailing',
+            'color': GEN_COLORS['warning'],
+        },
+        {
+            'label': 'Response Rate',
+            'value': f"{overall_rate:.1f}%",
+            'sub': f"{n_responders:,} responders",
+            'color': GEN_COLORS['success'],
+        },
+        {
+            'label': 'Avg Offers / Acct',
+            'value': f"{avg_offers:.1f}",
+            'sub': 'mailings per account',
+            'color': GEN_COLORS['info'],
+        },
+        {
+            'label': 'Responder Txn Share',
+            'value': f"{resp_share:.1f}%",
+            'sub': 'of all card transactions',
+            'color': GEN_COLORS['accent'],
+        },
+    ]
+
+    for ax, kpi in zip(axes, kpi_data):
+        ax.set_xlim(0, 10)
+        ax.set_ylim(0, 10)
+        ax.axis('off')
+
+        card = FancyBboxPatch(
+            (0.3, 0.3), 9.4, 9.4,
+            boxstyle="round,pad=0.3",
+            facecolor=kpi['color'], edgecolor='white', linewidth=3
+        )
+        ax.add_patch(card)
+
+        ax.text(5, 6.8, kpi['label'],
+                ha='center', va='center', fontsize=14, fontweight='bold',
+                color='white', alpha=0.85)
+        ax.text(5, 4.5, kpi['value'],
+                ha='center', va='center', fontsize=42, fontweight='bold',
+                color='white',
+                path_effects=[pe.withStroke(linewidth=2, foreground=kpi['color'])])
+        ax.text(5, 2.3, kpi['sub'],
+                ha='center', va='center', fontsize=11,
+                color='white', alpha=0.8, style='italic')
+
+    fig.suptitle("ARS Campaign Overview",
+                 fontsize=28, fontweight='bold',
+                 color=GEN_COLORS['dark_text'], y=1.04)
+
+    plt.tight_layout()
+    plt.show()

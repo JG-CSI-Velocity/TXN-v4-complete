@@ -1,0 +1,64 @@
+# ===========================================================================
+# CAMPAIGN RESPONSE GROUPING: Distribution (Conference Edition)
+# ===========================================================================
+# Horizontal bar: distribution of Response Grouping values. (14,7).
+
+if 'camp_acct' not in dir() or len(camp_acct) == 0:
+    print("    No campaign data available. Skipping response grouping.")
+elif 'response_grouping' not in camp_acct.columns:
+    print("    Response Grouping column not available. Skipping.")
+else:
+    rg_counts = camp_acct['response_grouping'].value_counts().head(15)
+
+    if len(rg_counts) == 0 or rg_counts.isna().all():
+        print("    No Response Grouping data. Skipping.")
+    else:
+        rg_pct = rg_counts / len(camp_acct) * 100
+        rg_sorted = rg_pct.sort_values()
+
+        # Get txn stats per grouping
+        rg_merge = camp_acct[['primary_account_num', 'response_grouping']].copy()
+        rg_txn = combined_df.merge(rg_merge, on='primary_account_num', how='inner')
+        rg_stats = rg_txn.groupby('response_grouping').agg(
+            avg_spend=('amount', 'mean'),
+            txn_per_acct=('transaction_date', 'count'),
+        ).reset_index()
+        rg_stats['txn_per_acct'] = rg_stats['txn_per_acct'] / rg_txn.groupby('response_grouping')['primary_account_num'].nunique().values
+
+        fig, ax = plt.subplots(figsize=(14, 7))
+
+        names = [str(n)[:30] for n in rg_sorted.index]
+        y_pos = range(len(rg_sorted))
+
+        n = len(rg_sorted)
+        bar_colors = [plt.cm.ScalarMappable(
+            cmap=LinearSegmentedColormap.from_list('rg', [GEN_COLORS['warning'], GEN_COLORS['accent']]),
+            norm=plt.Normalize(0, max(n - 1, 1))
+        ).to_rgba(i) for i in range(n)]
+
+        ax.barh(y_pos, rg_sorted.values, color=bar_colors,
+                edgecolor='white', linewidth=0.5, height=0.7)
+
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels(names, fontsize=10, fontweight='bold')
+        ax.set_xlabel("% of All Accounts", fontsize=13, fontweight='bold', labelpad=8)
+        ax.xaxis.set_major_formatter(plt.FuncFormatter(gen_fmt_pct))
+
+        gen_clean_axes(ax, keep_left=True, keep_bottom=True)
+        ax.xaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+
+        for j, val in enumerate(rg_sorted.values):
+            ax.text(val + 0.1, j, f"{val:.1f}%",
+                    va='center', fontsize=9, fontweight='bold',
+                    color=GEN_COLORS['warning'])
+
+        ax.set_title("Response Grouping Distribution",
+                     fontsize=26, fontweight='bold',
+                     color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02, "How are accounts segmented by campaign response behavior?",
+                transform=ax.transAxes, fontsize=15,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()
