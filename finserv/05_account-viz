@@ -1,0 +1,23 @@
+# ===========================================================================
+# CELL 5: VISUALIZATION - Accounts by Category
+# ===========================================================================
+"""
+## Financial Services Opportunity - Accounts by Category
+"""
+
+fig, ax = plt.subplots(figsize=(12, 8))
+
+category_counts = {cat: len(accounts) for cat, accounts in all_financial_accounts.items()}
+category_counts = dict(sorted(category_counts.items(), key=lambda x: x[1], reverse=True))
+
+bars = ax.barh(list(category_counts.keys()), list(category_counts.values()), color='#4ECDC4', edgecolor='black')
+ax.set_xlabel('Number of Accounts', fontsize=12)
+ax.set_title('Accounts by Financial Service Category', fontsize=14, fontweight='bold')
+ax.grid(axis='x', alpha=0.3)
+
+# Add value labels
+for i, (cat, val) in enumerate(category_counts.items()):
+    ax.text(val, i, f' {val:,}', va='center', fontsize=11, fontweight='bold')
+
+plt.tight_layout()
+plt.show()
