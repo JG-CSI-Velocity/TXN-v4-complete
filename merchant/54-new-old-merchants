@@ -1,0 +1,207 @@
+# M5D-1: NEW VS DECLINING MERCHANTS - ANALYSIS (OPTIMIZED)
+# Tracks merchant lifecycle - new entrants, established, and declining merchants
+print("\n" + "="*120)
+print(" " * 40 + "M5D-1: NEW VS DECLINING MERCHANTS - ANALYSIS")
+print("="*120)
+
+sorted_months = sorted(combined_df['year_month'].unique())
+
+# OPTIMIZED: Build merchant activity dictionary with vectorized operations
+print("Building merchant activity tracker...")
+
+# Get first and last appearance for each merchant (vectorized)
+merchant_first_last = combined_df.groupby('merchant_consolidated')['year_month'].agg(['min', 'max', 'nunique'])
+merchant_first_last.columns = ['first_month', 'last_month', 'months_active_count']
+
+# Build merchant activity dictionary (much faster)
+merchant_activity = {}
+for merchant, row in merchant_first_last.iterrows():
+    merchant_activity[merchant] = {
+        'first_month': row['first_month'],
+        'last_month': row['last_month'],
+        'months_active': []  # We'll populate this only if needed
+    }
+
+print(f"Tracked {len(merchant_activity):,} unique merchants")
+
+# OPTIMIZED: Pre-compute merchant sets per month
+print("Computing monthly merchant sets...")
+monthly_merchant_sets = {}
+monthly_spend_data = {}
+
+for month in sorted_months:
+    month_data = combined_df[combined_df['year_month'] == month]
+    monthly_merchant_sets[month] = set(month_data['merchant_consolidated'].unique())
+    monthly_spend_data[month] = month_data
+
+print(f"Processed {len(sorted_months)} months")
+
+# Analyze each month's cohorts (using pre-computed sets)
+print("Analyzing cohorts...")
+cohort_analysis = []
+
+for i, month in enumerate(sorted_months):
+    month_data = monthly_spend_data[month]
+    current_merchants = monthly_merchant_sets[month]
+    
+    # New merchants (first appearance this month)
+    new_merchants = {m for m in current_merchants if merchant_activity[m]['first_month'] == month}
+    
+    # Returning merchants (active before, not in previous month, but back now)
+    if i > 0:
+        prev_month = sorted_months[i-1]
+        prev_merchants = monthly_merchant_sets[prev_month]
+        
+        returning = {m for m in current_merchants 
+                    if m not in prev_merchants and merchant_activity[m]['first_month'] != month}
+        
+        # Lost merchants (in previous month, not in current)
+        lost = prev_merchants - current_merchants
+    else:
+        returning = set()
+        lost = set()
+    
+    # Calculate spending (vectorized)
+    new_spend = month_data[month_data['merchant_consolidated'].isin(new_merchants)]['amount'].sum()
+    returning_spend = month_data[month_data['merchant_consolidated'].isin(returning)]['amount'].sum()
+    total_spend = month_data['amount'].sum()
+    
+    cohort_analysis.append({
+        'month': month,
+        'total_merchants': len(current_merchants),
+        'new_merchants': len(new_merchants),
+        'returning_merchants': len(returning),
+        'lost_merchants': len(lost),
+        'new_spend': new_spend,
+        'returning_spend': returning_spend,
+        'total_spend': total_spend
+    })
+
+cohort_df = pd.DataFrame(cohort_analysis)
+
+print("\n📊 MONTHLY COHORT ANALYSIS")
+print("="*120)
+
+display_cohort = cohort_df.copy()
+display_cohort['month'] = display_cohort['month'].astype(str)
+display_cohort['new_pct'] = (display_cohort['new_merchants'] / display_cohort['total_merchants'] * 100)
+display_cohort['returning_pct'] = (display_cohort['returning_merchants'] / display_cohort['total_merchants'] * 100)
+display_cohort['new_spend_pct'] = (display_cohort['new_spend'] / display_cohort['total_spend'] * 100)
+
+display_cols = display_cohort[[
+    'month', 'total_merchants', 'new_merchants', 'new_pct', 
+    'returning_merchants', 'returning_pct', 'lost_merchants',
+    'new_spend', 'new_spend_pct'
+]].copy()
+
+display_cols.columns = [
+    'Month', 'Total Merchants', 'New', 'New %', 
+    'Returning', 'Return %', 'Lost',
+    'New Merchant $', 'New $ %'
+]
+
+# Format
+display_cols['New %'] = display_cols['New %'].apply(lambda x: f"{x:.1f}%")
+display_cols['Return %'] = display_cols['Return %'].apply(lambda x: f"{x:.1f}%")
+display_cols['New Merchant $'] = display_cols['New Merchant $'].apply(lambda x: f"${x:,.0f}")
+display_cols['New $ %'] = display_cols['New $ %'].apply(lambda x: f"{x:.1f}%")
+
+display(display_cols.style.hide(axis='index'))
+
+print("\n" + "="*120)
+
+# OPTIMIZED: Top New Merchants by First Month (vectorized aggregation)
+print("\n🆕 TOP NEW MERCHANTS BY COHORT (First Appearance)")
+print("="*120)
+
+# Build comprehensive summary with a single groupby
+new_merchant_summary = combined_df.groupby('merchant_consolidated').agg({
+    'amount': ['sum', 'mean'],
+    'year_month': ['min', 'nunique'],
+    'primary_account_num': 'nunique',
+    'transaction_date': 'count'
+}).round(2)
+
+new_merchant_summary.columns = ['total_spend', 'avg_transaction', 'first_month', 'months_active', 'unique_accounts', 'transaction_count']
+new_merchant_summary['avg_monthly_spend'] = new_merchant_summary['total_spend'] / new_merchant_summary['months_active']
+new_merchant_summary = new_merchant_summary.reset_index()
+
+# Show top 5 new merchants from each of the last 3 months - BY TOTAL SPEND
+recent_months = sorted_months[-3:]
+
+print("\n" + "="*120)
+print("📊 TOP 5 BY TOTAL SPEND")
+print("="*120)
+
+for month in recent_months:
+    month_new = new_merchant_summary[new_merchant_summary['first_month'] == month].nlargest(5, 'total_spend')
+    
+    if len(month_new) > 0:
+        print(f"\n{str(month)} Cohort:")
+        print("-"*120)
+        
+        display_new = month_new[['merchant_consolidated', 'total_spend', 'unique_accounts', 'transaction_count', 'avg_monthly_spend']].copy()
+        display_new['merchant_consolidated'] = display_new['merchant_consolidated'].str[:40]
+        display_new.columns = ['Merchant', 'Total Spend', 'Unique Accounts', 'Transactions', 'Avg Monthly Spend']
+        
+        display_new['Total Spend'] = display_new['Total Spend'].apply(lambda x: f"${x:,.0f}")
+        display_new['Unique Accounts'] = display_new['Unique Accounts'].apply(lambda x: f"{int(x):,}")
+        display_new['Transactions'] = display_new['Transactions'].apply(lambda x: f"{int(x):,}")
+        display_new['Avg Monthly Spend'] = display_new['Avg Monthly Spend'].apply(lambda x: f"${x:,.0f}")
+        
+        display(display_new.style.hide(axis='index'))
+
+# TOP 5 BY UNIQUE ACCOUNTS
+print("\n" + "="*120)
+print("👥 TOP 5 BY UNIQUE ACCOUNTS")
+print("="*120)
+
+for month in recent_months:
+    month_new = new_merchant_summary[new_merchant_summary['first_month'] == month].nlargest(5, 'unique_accounts')
+    
+    if len(month_new) > 0:
+        print(f"\n{str(month)} Cohort:")
+        print("-"*120)
+        
+        display_new = month_new[['merchant_consolidated', 'unique_accounts', 'total_spend', 'transaction_count', 'avg_transaction']].copy()
+        display_new['merchant_consolidated'] = display_new['merchant_consolidated'].str[:40]
+        display_new.columns = ['Merchant', 'Unique Accounts', 'Total Spend', 'Transactions', 'Avg Transaction']
+        
+        display_new['Unique Accounts'] = display_new['Unique Accounts'].apply(lambda x: f"{int(x):,}")
+        display_new['Total Spend'] = display_new['Total Spend'].apply(lambda x: f"${x:,.0f}")
+        display_new['Transactions'] = display_new['Transactions'].apply(lambda x: f"{int(x):,}")
+        display_new['Avg Transaction'] = display_new['Avg Transaction'].apply(lambda x: f"${x:,.2f}")
+        
+        display(display_new.style.hide(axis='index'))
+
+# TOP 5 BY TRANSACTION COUNT
+print("\n" + "="*120)
+print("🔄 TOP 5 BY TRANSACTION COUNT")
+print("="*120)
+
+for month in recent_months:
+    month_new = new_merchant_summary[new_merchant_summary['first_month'] == month].nlargest(5, 'transaction_count')
+    
+    if len(month_new) > 0:
+        print(f"\n{str(month)} Cohort:")
+        print("-"*120)
+        
+        display_new = month_new[['merchant_consolidated', 'transaction_count', 'unique_accounts', 'total_spend', 'avg_transaction']].copy()
+        display_new['merchant_consolidated'] = display_new['merchant_consolidated'].str[:40]
+        display_new.columns = ['Merchant', 'Transactions', 'Unique Accounts', 'Total Spend', 'Avg Transaction']
+        
+        display_new['Transactions'] = display_new['Transactions'].apply(lambda x: f"{int(x):,}")
+        display_new['Unique Accounts'] = display_new['Unique Accounts'].apply(lambda x: f"{int(x):,}")
+        display_new['Total Spend'] = display_new['Total Spend'].apply(lambda x: f"${x:,.0f}")
+        display_new['Avg Transaction'] = display_new['Avg Transaction'].apply(lambda x: f"${x:,.2f}")
+        
+        display(display_new.style.hide(axis='index'))
+
+print("\n💡 SUMMARY STATISTICS:")
+print("-"*120)
+print(f"   • Total unique merchants across all months: {len(merchant_activity):,}")
+print(f"   • Average new merchants per month: {cohort_df['new_merchants'].mean():.0f}")
+print(f"   • Average returning merchants per month: {cohort_df['returning_merchants'].mean():.0f}")
+print(f"   • Average lost merchants per month: {cohort_df['lost_merchants'].mean():.0f}")
+print(f"   • Average new merchant contribution: {(cohort_df['new_spend'] / cohort_df['total_spend'] * 100).mean():.1f}% of monthly spend")
+print("="*120)
