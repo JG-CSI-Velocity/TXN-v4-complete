@@ -1,0 +1,26 @@
+# ===========================================================================
+# CELL 8: VISUALIZATION - Average Spend by Category
+# ===========================================================================
+"""
+## Financial Services Opportunity - Average Spend per Account
+"""
+
+fig, ax = plt.subplots(figsize=(12, 8))
+
+avg_spend = {}
+for cat, accounts in all_financial_accounts.items():
+    avg_spend[cat] = accounts['Total Spend'].mean()
+
+avg_spend = dict(sorted(avg_spend.items(), key=lambda x: x[1], reverse=True))
+
+bars = ax.barh(list(avg_spend.keys()), list(avg_spend.values()), color='#9B59B6', edgecolor='black')
+ax.set_xlabel('Average Spend per Account ($)', fontsize=12)
+ax.set_title('Average Spend per Account by Category', fontsize=14, fontweight='bold')
+ax.grid(axis='x', alpha=0.3)
+
+# Add value labels
+for i, (cat, val) in enumerate(avg_spend.items()):
+    ax.text(val, i, f' ${val:,.0f}', va='center', fontsize=10, fontweight='bold')
+
+plt.tight_layout()
+plt.show()
