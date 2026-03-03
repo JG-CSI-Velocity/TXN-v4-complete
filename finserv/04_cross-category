@@ -1,0 +1,64 @@
+# ===========================================================================
+# CELL 4: CROSS-CATEGORY ANALYSIS
+# ===========================================================================
+"""
+## Financial Services Opportunity - Multi-Product Accounts
+"""
+
+print("Analyzing accounts using multiple external financial services...\n")
+
+# Get all unique accounts across all categories
+all_accounts = set()
+for category, accounts in all_financial_accounts.items():
+    all_accounts.update(accounts.index)
+
+# For each account, count how many categories they use
+account_category_count = {}
+account_categories = {}
+
+for account in all_accounts:
+    categories_used = []
+    for category, account_summary in all_financial_accounts.items():
+        if account in account_summary.index:
+            categories_used.append(category)
+    
+    account_category_count[account] = len(categories_used)
+    account_categories[account] = ', '.join(categories_used)
+
+# Create summary DataFrame
+multi_product = pd.DataFrame({
+    'Account': list(account_category_count.keys()),
+    'Category_Count': list(account_category_count.values()),
+    'Categories': [account_categories[acc] for acc in account_category_count.keys()]
+})
+
+# Add total spend across all financial services
+multi_product['Total_Financial_Spend'] = multi_product['Account'].apply(
+    lambda acc: sum([
+        all_financial_accounts[cat].loc[acc, 'Total Spend'] 
+        for cat in all_financial_accounts.keys() 
+        if acc in all_financial_accounts[cat].index
+    ])
+)
+
+multi_product = multi_product.sort_values('Category_Count', ascending=False)
+
+# Display multi-product users
+multi_users = multi_product[multi_product['Category_Count'] >= 2].copy()
+multi_users['Total_Financial_Spend'] = multi_users['Total_Financial_Spend'].apply(lambda x: f"${x:,.2f}")
+
+print(f"Accounts Using Multiple External Financial Services: {len(multi_users):,}")
+print(f"\nTop 25 Multi-Product Accounts:")
+display(multi_users.head(25))
+
+# Category combination analysis
+print(f"\nDistribution by Number of Categories:")
+category_dist = multi_product['Category_Count'].value_counts().sort_index(ascending=False)
+dist_df = pd.DataFrame({
+    'Number of Categories': category_dist.index,
+    'Account Count': category_dist.values
+})
+display(dist_df)
+
+# Store for export
+multi_product_accounts = multi_product
