@@ -7,13 +7,13 @@ if 'camp_acct' not in dir() or len(camp_acct) == 0:
     print("    No campaign data available. Skipping spend impact.")
 else:
     # Compute avg monthly spend per account by campaign status
-    n_months = combined_df['year_month'].nunique()
+    _n_months = DATASET_MONTHS
 
     spend_by_status = camp_txn.groupby('camp_status').agg(
         total_spend=('amount', 'sum'),
         unique_accounts=('primary_account_num', 'nunique'),
     ).reset_index()
-    spend_by_status['monthly_spend_per_acct'] = spend_by_status['total_spend'] / spend_by_status['unique_accounts'] / max(n_months, 1)
+    spend_by_status['monthly_spend_per_acct'] = spend_by_status['total_spend'] / spend_by_status['unique_accounts'] / _n_months
 
     status_order = ['Responder', 'Non-Responder', 'Never Mailed']
     spend_by_status = spend_by_status.set_index('camp_status')
@@ -50,7 +50,8 @@ else:
     ax.set_title("Campaign Impact: Monthly Spend per Account",
                  fontsize=26, fontweight='bold',
                  color=GEN_COLORS['dark_text'], pad=35, loc='left')
-    ax.text(0.0, 1.02, "Do campaign responders generate more card spend?",
+    ax.text(0.0, 1.02,
+            f"Do campaign responders generate more card spend?  ({DATASET_LABEL}, {_n_months} mo)",
             transform=ax.transAxes, fontsize=15,
             color=GEN_COLORS['muted'], style='italic')
 

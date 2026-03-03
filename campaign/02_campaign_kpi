@@ -1,46 +1,50 @@
 # ===========================================================================
 # CAMPAIGN KPI DASHBOARD: Key Metrics at a Glance (Conference Edition)
 # ===========================================================================
-# 4 FancyBboxPatch cards. (18,5).
+# 4 FancyBboxPatch cards. (18,5). Time-normalized where applicable.
 
 if 'camp_acct' not in dir() or len(camp_acct) == 0:
     print("    No campaign data available. Skipping KPI dashboard.")
 else:
+    _n_months = DATASET_MONTHS
+
     n_mailed = (camp_acct['camp_status'] != 'Never Mailed').sum()
     n_responders = (camp_acct['camp_status'] == 'Responder').sum()
     overall_rate = n_responders / n_mailed * 100 if n_mailed > 0 else 0
-    avg_offers = camp_acct['total_offers'].mean()
 
-    resp_txn_pct = camp_status_agg.loc[
-        camp_status_agg['camp_status'] == 'Responder', 'txn_pct'
-    ].values
-    resp_share = resp_txn_pct[0] if len(resp_txn_pct) > 0 else 0
+    # Responder monthly spend per account
+    resp_agg = camp_status_agg[camp_status_agg['camp_status'] == 'Responder']
+    resp_spend_mo = resp_agg['spend_per_acct_mo'].values[0] if len(resp_agg) > 0 else 0
+
+    # Non-responder monthly spend per account for comparison
+    nonresp_agg = camp_status_agg[camp_status_agg['camp_status'] == 'Non-Responder']
+    nonresp_spend_mo = nonresp_agg['spend_per_acct_mo'].values[0] if len(nonresp_agg) > 0 else 0
 
     fig, axes = plt.subplots(1, 4, figsize=(18, 5))
 
     kpi_data = [
         {
-            'label': 'Total Mailed',
+            'label': 'Accounts Mailed',
             'value': f"{n_mailed:,}",
-            'sub': 'accounts received at least 1 mailing',
+            'sub': f"across {len(camp_summary)} mailing periods",
             'color': GEN_COLORS['warning'],
         },
         {
             'label': 'Response Rate',
             'value': f"{overall_rate:.1f}%",
-            'sub': f"{n_responders:,} responders",
+            'sub': f"{n_responders:,} unique accounts responded 1+ times",
             'color': GEN_COLORS['success'],
         },
         {
-            'label': 'Avg Offers / Acct',
-            'value': f"{avg_offers:.1f}",
-            'sub': 'mailings per account',
+            'label': 'Responder Spend/Mo',
+            'value': f"${resp_spend_mo:,.0f}",
+            'sub': f"per account per month ({_n_months} mo period)",
             'color': GEN_COLORS['info'],
         },
         {
-            'label': 'Responder Txn Share',
-            'value': f"{resp_share:.1f}%",
-            'sub': 'of all card transactions',
+            'label': 'Non-Resp Spend/Mo',
+            'value': f"${nonresp_spend_mo:,.0f}",
+            'sub': f"per account per month ({_n_months} mo period)",
             'color': GEN_COLORS['accent'],
         },
     ]
@@ -71,6 +75,8 @@ else:
     fig.suptitle("ARS Campaign Overview",
                  fontsize=28, fontweight='bold',
                  color=GEN_COLORS['dark_text'], y=1.04)
+    fig.text(0.5, 0.97, f"{DATASET_LABEL}  ({_n_months} months)",
+             ha='center', fontsize=13, color=GEN_COLORS['muted'], style='italic')
 
     plt.tight_layout()
     plt.show()

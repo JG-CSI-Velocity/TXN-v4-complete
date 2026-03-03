@@ -59,7 +59,8 @@ else:
     fig.suptitle("Merchant Preferences: Responder vs Non-Responder",
                  fontsize=26, fontweight='bold',
                  color=GEN_COLORS['dark_text'], y=1.04)
-    fig.text(0.5, 0.96, "Do campaign responders shop at different merchants?",
+    fig.text(0.5, 0.96,
+             f"Do campaign responders shop at different merchants?  ({DATASET_LABEL})",
              ha='center', fontsize=13, color=GEN_COLORS['muted'], style='italic')
 
     plt.tight_layout()

@@ -2,6 +2,7 @@
 # CAMPAIGN RESPONDER VS NON: Behavior Comparison (Conference Edition)
 # ===========================================================================
 # Grouped bar: Responder vs Non-Responder vs Never-Mailed on key metrics. (14,7).
+# All rate metrics normalized per-month for time context.
 
 if 'camp_acct' not in dir() or len(camp_acct) == 0:
     print("    No campaign data available. Skipping responder comparison.")
@@ -22,8 +23,8 @@ else:
 
     metrics = [
         ('avg_spend', 'Avg Ticket ($)', '${:.2f}'),
-        ('txn_per_account', 'Txns per Account', '{:.1f}'),
-        ('txn_pct', '% of All Transactions', '{:.1f}%'),
+        ('txns_per_acct_mo', 'Txns/Acct/Month', '{:.1f}'),
+        ('spend_per_acct_mo', 'Spend/Acct/Month ($)', '${:,.0f}'),
     ]
 
     for ax, (col, label, fmt) in zip(axes, metrics):
@@ -50,7 +51,8 @@ else:
     fig.suptitle("Responder vs Non-Responder Behavior",
                  fontsize=26, fontweight='bold',
                  color=GEN_COLORS['dark_text'], y=1.04)
-    fig.text(0.5, 0.96, "Do campaign responders use their cards more than non-responders?",
+    fig.text(0.5, 0.96,
+             f"Do campaign responders use their cards more?  ({DATASET_LABEL}, {DATASET_MONTHS} mo)",
              ha='center', fontsize=13, color=GEN_COLORS['muted'], style='italic')
 
     plt.tight_layout()

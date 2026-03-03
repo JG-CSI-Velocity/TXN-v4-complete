@@ -45,7 +45,8 @@ else:
     ax1.set_title("Campaign Response Trends by Period",
                   fontsize=26, fontweight='bold',
                   color=GEN_COLORS['dark_text'], pad=35, loc='left')
-    ax1.text(0.0, 1.02, "Are response rates improving or declining over time?",
+    ax1.text(0.0, 1.02,
+             f"Are response rates improving or declining over time?  ({DATASET_LABEL})",
              transform=ax1.transAxes, fontsize=15,
              color=GEN_COLORS['muted'], style='italic')
 

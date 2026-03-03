@@ -2,28 +2,35 @@
 # CAMPAIGN RESPONSE GROUPING: Distribution (Conference Edition)
 # ===========================================================================
 # Horizontal bar: distribution of Response Grouping values. (14,7).
+# % base = mailed accounts (not all accounts) to align with cell 02 KPIs.
 
 if 'camp_acct' not in dir() or len(camp_acct) == 0:
     print("    No campaign data available. Skipping response grouping.")
 elif 'response_grouping' not in camp_acct.columns:
     print("    Response Grouping column not available. Skipping.")
 else:
-    rg_counts = camp_acct['response_grouping'].value_counts().head(15)
+    # Only count mailed accounts (consistent denominator with cell 02)
+    mailed_accts = camp_acct[camp_acct['camp_status'] != 'Never Mailed']
+    n_mailed = len(mailed_accts)
+
+    rg_counts = mailed_accts['response_grouping'].value_counts().head(15)
 
     if len(rg_counts) == 0 or rg_counts.isna().all():
         print("    No Response Grouping data. Skipping.")
     else:
-        rg_pct = rg_counts / len(camp_acct) * 100
+        rg_pct = rg_counts / n_mailed * 100
         rg_sorted = rg_pct.sort_values()
 
-        # Get txn stats per grouping
-        rg_merge = camp_acct[['primary_account_num', 'response_grouping']].copy()
+        # Get txn stats per grouping (monthly-normalized)
+        _n_months = DATASET_MONTHS
+        rg_merge = mailed_accts[['primary_account_num', 'response_grouping']].copy()
         rg_txn = combined_df.merge(rg_merge, on='primary_account_num', how='inner')
         rg_stats = rg_txn.groupby('response_grouping').agg(
-            avg_spend=('amount', 'mean'),
-            txn_per_acct=('transaction_date', 'count'),
+            total_spend=('amount', 'sum'),
+            txn_count=('transaction_date', 'count'),
+            unique_accts=('primary_account_num', 'nunique'),
         ).reset_index()
-        rg_stats['txn_per_acct'] = rg_stats['txn_per_acct'] / rg_txn.groupby('response_grouping')['primary_account_num'].nunique().values
+        rg_stats['spend_per_acct_mo'] = rg_stats['total_spend'] / rg_stats['unique_accts'] / _n_months
 
         fig, ax = plt.subplots(figsize=(14, 7))
 
@@ -41,24 +48,33 @@ else:
 
         ax.set_yticks(y_pos)
         ax.set_yticklabels(names, fontsize=10, fontweight='bold')
-        ax.set_xlabel("% of All Accounts", fontsize=13, fontweight='bold', labelpad=8)
+        ax.set_xlabel("% of Mailed Accounts", fontsize=13, fontweight='bold', labelpad=8)
         ax.xaxis.set_major_formatter(plt.FuncFormatter(gen_fmt_pct))
 
         gen_clean_axes(ax, keep_left=True, keep_bottom=True)
         ax.xaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
         ax.set_axisbelow(True)
 
-        for j, val in enumerate(rg_sorted.values):
-            ax.text(val + 0.1, j, f"{val:.1f}%",
+        # Value labels with spend/acct/mo context
+        rg_stats_lookup = rg_stats.set_index('response_grouping')
+        for j, (grp_name, pct_val) in enumerate(rg_sorted.items()):
+            spend_label = ""
+            if grp_name in rg_stats_lookup.index:
+                spm = rg_stats_lookup.loc[grp_name, 'spend_per_acct_mo']
+                spend_label = f"  (${spm:,.0f}/acct/mo)"
+            ax.text(pct_val + 0.1, j, f"{pct_val:.1f}%{spend_label}",
                     va='center', fontsize=9, fontweight='bold',
                     color=GEN_COLORS['warning'])
 
         ax.set_title("Response Grouping Distribution",
                      fontsize=26, fontweight='bold',
                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
-        ax.text(0.0, 1.02, "How are accounts segmented by campaign response behavior?",
+        ax.text(0.0, 1.02,
+                f"How are mailed accounts segmented by response behavior?  ({DATASET_LABEL})",
                 transform=ax.transAxes, fontsize=15,
                 color=GEN_COLORS['muted'], style='italic')
 
         plt.tight_layout()
         plt.show()
+
+        print(f"    Base: {n_mailed:,} mailed accounts (excludes {len(camp_acct) - n_mailed:,} never-mailed)")
