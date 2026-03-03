@@ -1,0 +1,51 @@
+# ===========================================================================
+# BRACKET DATA: Spending Bins + Monthly Crosstab
+# ===========================================================================
+# Pure data. No display. 8 bins, counts/pcts/accounts per bracket.
+
+# Define spending brackets
+BRACKET_BINS = [0, 1, 5, 10, 25, 50, 100, 500, float('inf')]
+BRACKET_LABELS = ['< $1', '$1-5', '$5-10', '$10-25', '$25-50', '$50-100', '$100-500', '$500+']
+
+# Create bracket column
+combined_df['amount_bracket'] = pd.cut(
+    combined_df['amount'], bins=BRACKET_BINS, labels=BRACKET_LABELS, right=False
+)
+
+# ---------------------------------------------------------------------------
+# Bracket summary: counts, percentages, accounts
+# ---------------------------------------------------------------------------
+bracket_summary = []
+total_txns_all = len(combined_df)
+
+for bracket in BRACKET_LABELS:
+    mask = combined_df['amount_bracket'] == bracket
+    count = mask.sum()
+    accounts = combined_df.loc[mask, 'primary_account_num'].nunique()
+    bracket_summary.append({
+        'bracket': bracket,
+        'txn_count': count,
+        'txn_pct': (count / total_txns_all * 100) if total_txns_all > 0 else 0,
+        'account_count': accounts,
+        'acct_pct': (accounts / portfolio_kpis['total_accounts'] * 100)
+                    if portfolio_kpis['total_accounts'] > 0 else 0,
+    })
+
+bracket_df = pd.DataFrame(bracket_summary)
+
+# ---------------------------------------------------------------------------
+# Monthly crosstab: bracket shares over time (raw percentages)
+# ---------------------------------------------------------------------------
+monthly_bracket_counts = pd.crosstab(
+    combined_df['year_month'], combined_df['amount_bracket']
+)
+monthly_bracket_pct = pd.crosstab(
+    combined_df['year_month'], combined_df['amount_bracket'], normalize='index'
+) * 100
+
+print("Bracket data built.")
+print(f"  Bins: {len(BRACKET_LABELS)}")
+print(f"  Total transactions bucketed: {bracket_df['txn_count'].sum():,}")
+for _, row in bracket_df.iterrows():
+    print(f"    {row['bracket']:>10s}: {row['txn_count']:>8,} txns ({row['txn_pct']:.1f}%), "
+          f"{row['account_count']:>6,} accounts ({row['acct_pct']:.1f}%)")

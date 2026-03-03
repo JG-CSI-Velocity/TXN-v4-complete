@@ -11,12 +11,17 @@ print(rewards_df['Business?'].value_counts())
 
 # Create a clean subset for merging
 odd_subset = rewards_df[['Acct Number', 'Business?']].copy()
-odd_subset.columns = ['account_number', 'business_flag']  # Rename to avoid issues
+odd_subset.columns = ['account_number', 'business_flag']
+
+# Drop stale merge columns so cell is safe to re-run
+for col in ['business_flag', 'account_number', 'business_flag_x', 'business_flag_y']:
+    if col in combined_df.columns:
+        combined_df.drop(columns=col, inplace=True)
 
 # Merge with transaction data
 combined_df = combined_df.merge(
-    odd_subset, 
-    left_on='primary_account_num', 
+    odd_subset,
+    left_on='primary_account_num',
     right_on='account_number',
     how='left'
 )
