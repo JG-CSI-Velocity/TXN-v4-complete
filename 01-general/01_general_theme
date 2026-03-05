@@ -87,6 +87,16 @@ SPEND_TIER_PALETTE = {
 }
 SPEND_TIER_ORDER = ['Very High', 'High', 'Medium', 'Low']
 
+# Swipe category palette (default labels -- data cell auto-discovers actual values)
+SWIPE_PALETTE = {
+    'Very High': '#E63946',
+    'High':      '#FF9F1C',
+    'Medium':    '#2EC4B6',
+    'Low':       '#457B9D',
+    'Inactive':  '#6C757D',
+}
+SWIPE_ORDER = ['Very High', 'High', 'Medium', 'Low', 'Inactive']
+
 # ---------------------------------------------------------------------------
 # Matplotlib global theme
 # ---------------------------------------------------------------------------
@@ -152,6 +162,6 @@ def gen_clean_axes(ax, keep_left=True, keep_bottom=True):
     ax.grid(False)
 
 print("General portfolio theme loaded.")
-print(f"  Palettes: {len(BRACKET_PALETTE)} bracket, {len(AGE_PALETTE)} age, {len(ENGAGE_PALETTE)} engagement, {len(ACCT_AGE_PALETTE)} account age, {len(SPEND_TIER_PALETTE)} spend tier")
+print(f"  Palettes: {len(BRACKET_PALETTE)} bracket, {len(AGE_PALETTE)} age, {len(ENGAGE_PALETTE)} engagement, {len(ACCT_AGE_PALETTE)} account age, {len(SPEND_TIER_PALETTE)} spend tier, {len(SWIPE_PALETTE)} swipe")
 print(f"  Font base: {plt.rcParams['font.size']}pt bold")
 print(f"  DPI: {plt.rcParams['figure.dpi']}")

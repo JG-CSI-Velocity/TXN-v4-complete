@@ -1,0 +1,88 @@
+# ===========================================================================
+# COHORT PENETRATION GROWTH: Cumulative Activated % (Conference Edition)
+# ===========================================================================
+# Line chart: cumulative % of mailed population that responded at least once,
+# plotted over waves. Shows 1-2% growth per wave. (14,7).
+
+if 'cohort_summary' not in dir() or len(cohort_summary) == 0:
+    print("    No cohort data available. Skipping penetration chart.")
+else:
+    # Track cumulative unique responders wave by wave
+    waves_ordered = cohort_summary.sort_values('wave_date')['wave'].tolist()
+    cum_resp_set = set()
+    all_mailed_set = set()
+    penetration_data = []
+
+    for wave in waves_ordered:
+        wdf = cohort_acct[cohort_acct['wave'] == wave]
+        resp_accts = set(wdf[wdf['status'] == 'Responder']['acct_number'])
+        mailed_accts = set(wdf['acct_number'])
+
+        # New responders this wave (not previously responded)
+        new_resp = resp_accts - cum_resp_set
+        cum_resp_set |= resp_accts
+        all_mailed_set |= mailed_accts
+
+        cum_pct = len(cum_resp_set) / len(all_mailed_set) * 100 if len(all_mailed_set) > 0 else 0
+        new_pct = len(new_resp) / len(mailed_accts) * 100 if len(mailed_accts) > 0 else 0
+
+        penetration_data.append({
+            'wave': wave,
+            'cum_responders': len(cum_resp_set),
+            'total_mailed': len(all_mailed_set),
+            'cum_penetration': cum_pct,
+            'new_responders': len(new_resp),
+            'new_pct': new_pct,
+        })
+
+    pen_df = pd.DataFrame(penetration_data)
+
+    fig, ax1 = plt.subplots(figsize=(14, 7))
+
+    # Primary: cumulative penetration line
+    line1 = ax1.plot(range(len(pen_df)), pen_df['cum_penetration'],
+                     color=GEN_COLORS['success'], linewidth=3.5, marker='o',
+                     markersize=10, markeredgecolor='white', markeredgewidth=2,
+                     label='Cumulative Penetration %', zorder=5)
+
+    ax1.set_ylabel("Cumulative Penetration (%)", fontsize=16,
+                   fontweight='bold', color=GEN_COLORS['success'], labelpad=10)
+
+    # Secondary axis: cumulative responder count
+    ax2 = ax1.twinx()
+    bars = ax2.bar(range(len(pen_df)), pen_df['new_responders'],
+                   color=GEN_COLORS['info'], alpha=0.4, width=0.5,
+                   label='New Responders This Wave')
+    ax2.set_ylabel("New Responders per Wave", fontsize=16,
+                   fontweight='bold', color=GEN_COLORS['info'], labelpad=10)
+
+    ax1.set_xticks(range(len(pen_df)))
+    ax1.set_xticklabels(pen_df['wave'], fontsize=13, fontweight='bold')
+
+    gen_clean_axes(ax1)
+    gen_clean_axes(ax2, keep_left=False)
+    ax1.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax1.set_axisbelow(True)
+
+    # Annotate each point with cumulative % and count
+    for i, (_, row) in enumerate(pen_df.iterrows()):
+        ax1.text(i, row['cum_penetration'] + 0.3,
+                 f"{row['cum_penetration']:.1f}%\n({row['cum_responders']:,})",
+                 ha='center', va='bottom', fontsize=10, fontweight='bold',
+                 color=GEN_COLORS['success'])
+
+    # Combined legend
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left', fontsize=12)
+
+    ax1.set_title("Penetration Growth: Each Wave Activates New Spenders",
+                  fontsize=26, fontweight='bold',
+                  color=GEN_COLORS['dark_text'], pad=35, loc='left')
+    ax1.text(0.0, 1.02,
+             f"Cumulative unique responders as % of mailed population  ({DATASET_LABEL})",
+             transform=ax1.transAxes, fontsize=15,
+             color=GEN_COLORS['muted'], style='italic')
+
+    plt.tight_layout()
+    plt.show()
