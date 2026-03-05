@@ -33,7 +33,7 @@ try:
 
     # Build lookup: month_label -> column name
     spend_lookup = {c.replace(' Spend', ''): c for c in spend_month_cols}
-    swipe_lookup = {c.replace(' Swipes', ''): c for c in swipe_month_cols}
+    swipe_month_map = {c.replace(' Swipes', ''): c for c in swipe_month_cols}
 
     # All available month labels in chronological order
     all_months = list(spend_lookup.keys())
@@ -119,12 +119,12 @@ try:
 
         # Pre-period avg spend/swipes
         pre_spend_cols = [spend_lookup[m] for m in wc['pre_months'] if m in spend_lookup]
-        pre_swipe_cols = [swipe_lookup[m] for m in wc['pre_months'] if m in swipe_lookup]
+        pre_swipe_cols = [swipe_month_map[m] for m in wc['pre_months'] if m in swipe_month_map]
 
         # Post-period avg spend/swipes (use 3mo window as default)
         post_months = wc['post_3mo']
         post_spend_cols = [spend_lookup[m] for m in post_months if m in spend_lookup]
-        post_swipe_cols = [swipe_lookup[m] for m in post_months if m in swipe_lookup]
+        post_swipe_cols = [swipe_month_map[m] for m in post_months if m in swipe_month_map]
 
         if len(pre_spend_cols) == 0 or len(post_spend_cols) == 0:
             continue
