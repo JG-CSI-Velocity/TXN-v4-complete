@@ -9,6 +9,16 @@ if 'business_df' not in dir() or business_df is None or len(business_df) == 0:
     print("    No business account data in this dataset. Skipping.")
 else:
     try:
+        # Filter out rows with NaN merchant names or missing year_month
+        _biz_before = len(business_df)
+        business_df = business_df[
+            business_df['merchant_consolidated'].notna() &
+            business_df['year_month'].notna()
+        ].copy()
+        _biz_dropped = _biz_before - len(business_df)
+        if _biz_dropped > 0:
+            print(f"    Filtered {_biz_dropped:,} rows with NaN merchant/month")
+
         # -------------------------------------------------------------------
         # Core merchant aggregation (business accounts only)
         # -------------------------------------------------------------------
@@ -163,4 +173,6 @@ else:
         print(f"    Consistency metrics: {len(biz_consistency_df)} merchants with $10K+ business spend")
 
     except Exception as e:
+        import traceback
         print(f"    Business data pipeline error: {e}")
+        traceback.print_exc()
