@@ -335,6 +335,112 @@ else:
     print("    Segmentation data not available -- skipping segmentation KPIs")
 
 # ---------------------------------------------------------------------------
+# 8. RETENTION KPIs
+# ---------------------------------------------------------------------------
+if 'retention_df' in dir() and isinstance(retention_df, pd.DataFrame) and len(retention_df) > 0:
+    _total_ret = len(retention_df)
+
+    # KPI: At-risk rate (declining + cooling + dormant + closed)
+    _at_risk_ct = retention_df['health_status'].isin(
+        ['Declining', 'Cooling', 'Dormant', 'Closed']
+    ).sum()
+    _at_risk_pct = _at_risk_ct / _total_ret * 100 if _total_ret > 0 else 0
+    _rag_risk = 'Red' if _at_risk_pct > 25 else ('Amber' if _at_risk_pct > 15 else 'Green')
+    _scorecard_rows.append({
+        'category': 'Retention',
+        'metric_name': '% Accounts At Risk',
+        'value': _at_risk_pct,
+        'display': f"{_at_risk_pct:.1f}%",
+        'trend': 'flat',
+        'rag': _rag_risk,
+    })
+
+    # KPI: Closed account rate
+    _closed_ct = (retention_df['health_status'] == 'Closed').sum()
+    _closed_pct = _closed_ct / _total_ret * 100 if _total_ret > 0 else 0
+    _rag_closed = 'Red' if _closed_pct > 10 else ('Amber' if _closed_pct > 5 else 'Green')
+    _scorecard_rows.append({
+        'category': 'Retention',
+        'metric_name': 'Closed Account Rate',
+        'value': _closed_pct,
+        'display': f"{_closed_pct:.1f}%",
+        'trend': 'flat',
+        'rag': _rag_closed,
+    })
+
+    # KPI: Attrition spend at risk
+    _atr_spend = retention_df.loc[
+        retention_df['health_status'].isin(['Declining', 'Cooling', 'Dormant']),
+        'last_3mo_avg_spend'
+    ].sum() * 12
+    _rag_atr_spend = 'Red' if _atr_spend > 5_000_000 else ('Amber' if _atr_spend > 1_000_000 else 'Green')
+    _scorecard_rows.append({
+        'category': 'Retention',
+        'metric_name': 'Annual Spend at Risk',
+        'value': _atr_spend,
+        'display': gen_fmt_dollar(_atr_spend, None),
+        'trend': 'flat',
+        'rag': _rag_atr_spend,
+    })
+
+    print(f"    Retention KPIs loaded: {_at_risk_pct:.1f}% at risk, "
+          f"{_closed_pct:.1f}% closed, {gen_fmt_dollar(_atr_spend, None)} spend at risk")
+else:
+    print("    Retention data not available -- skipping retention KPIs")
+
+# ---------------------------------------------------------------------------
+# 9. ENGAGEMENT MIGRATION KPIs
+# ---------------------------------------------------------------------------
+if 'migration_summary' in dir() and isinstance(migration_summary, pd.DataFrame) and len(migration_summary) > 0:
+    # KPI: Net migration direction
+    if 'monthly_transitions' in dir() and len(monthly_transitions) > 0:
+        _avg_net = monthly_transitions['net_migration'].mean()
+        _net_direction = 'up' if _avg_net > 0 else ('down' if _avg_net < 0 else 'flat')
+        _rag_mig = 'Green' if _avg_net > 0 else ('Red' if _avg_net < -50 else 'Amber')
+        _scorecard_rows.append({
+            'category': 'Engagement',
+            'metric_name': 'Net Migration/Month',
+            'value': _avg_net,
+            'display': f"{_avg_net:+,.0f}",
+            'trend': _net_direction,
+            'rag': _rag_mig,
+        })
+
+    # KPI: Power tier growth
+    _power = migration_summary[migration_summary['tier'] == 'Power']
+    if len(_power) > 0:
+        _pn = _power.iloc[0]
+        _power_pct = _pn['net_pct']
+        _rag_power = 'Green' if _power_pct > 0 else ('Amber' if _power_pct > -5 else 'Red')
+        _scorecard_rows.append({
+            'category': 'Engagement',
+            'metric_name': 'Power Tier Growth',
+            'value': _power_pct,
+            'display': f"{_power_pct:+.1f}%",
+            'trend': 'up' if _power_pct > 0 else 'down',
+            'rag': _rag_power,
+        })
+
+    # KPI: Dormant growth
+    _dormant = migration_summary[migration_summary['tier'] == 'Dormant']
+    if len(_dormant) > 0:
+        _dn = _dormant.iloc[0]
+        _dorm_pct = _dn['net_pct']
+        _rag_dorm = 'Red' if _dorm_pct > 5 else ('Amber' if _dorm_pct > 0 else 'Green')
+        _scorecard_rows.append({
+            'category': 'Engagement',
+            'metric_name': 'Dormant Tier Growth',
+            'value': _dorm_pct,
+            'display': f"{_dorm_pct:+.1f}%",
+            'trend': 'up' if _dorm_pct > 0 else 'down',
+            'rag': _rag_dorm,
+        })
+
+    print(f"    Engagement Migration KPIs loaded")
+else:
+    print("    Engagement migration data not available -- skipping migration KPIs")
+
+# ---------------------------------------------------------------------------
 # Build scorecard_df
 # ---------------------------------------------------------------------------
 scorecard_df = pd.DataFrame(_scorecard_rows)

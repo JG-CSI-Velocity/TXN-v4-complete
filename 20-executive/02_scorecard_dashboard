@@ -92,6 +92,8 @@ else:
         'Payroll': GEN_COLORS['primary'],
         'Relationship': '#457B9D',
         'Segmentation': '#264653',
+        'Retention': '#E76F51',
+        'Engagement': '#2A9D8F',
     }
 
     # -------------------------------------------------------------------
