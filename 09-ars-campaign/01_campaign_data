@@ -191,6 +191,22 @@ try:
         print(f"    Near-use rate: {n_near_use / n_mailed * 100:.1f}% "
               f"({n_near_use:,} changed behavior but missed goal)" if n_mailed > 0 else "")
 
+        # Per-period value breakdown for validation
+        print(f"\n    {'Period':<10} {'Mailed':>8} {'TH':>6} {'NU':>6} {'Other':>6} {'Null':>8}  Response Values")
+        print(f"    {'-'*70}")
+        for mc, rc in zip(mail_cols, resp_cols):
+            period_label = mc.replace(' Mail', '')
+            _mailed = camp_raw[mc].notna().sum()
+            _all_resp = camp_raw[rc]
+            _null = _all_resp.isna().sum()
+            _vals = _all_resp.dropna().astype(str).str.strip().str.upper()
+            _th = _vals.str.startswith('TH').sum()
+            _nu = _vals.str.startswith('NU').sum()
+            _other = len(_vals) - _th - _nu
+            _val_counts = _vals.value_counts().head(6).to_dict()
+            _val_str = ', '.join(f"{v}={c}" for v, c in _val_counts.items())
+            print(f"    {period_label:<10} {_mailed:>8,} {_th:>6,} {_nu:>6,} {_other:>6,} {_null:>8,}  {_val_str}")
+
 except (NameError, KeyError) as e:
     print(f"    Campaign data not available: {e}")
     print("    Skipping campaign analysis.")
