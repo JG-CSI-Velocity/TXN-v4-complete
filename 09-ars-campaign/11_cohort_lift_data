@@ -108,7 +108,14 @@ try:
             continue
 
         was_mailed = rewards_df[mail_col].notna()
-        was_responded = rewards_df[resp_col].notna() if resp_available else pd.Series(False, index=rewards_df.index)
+        # Only TH-* values count as true responders; NU* = near-use
+        if resp_available:
+            _resp_val = rewards_df[resp_col].astype(str).str.strip().str.upper()
+            was_responded = _resp_val.str.startswith('TH') & rewards_df[resp_col].notna()
+            was_near_use = _resp_val.str.startswith('NU') & rewards_df[resp_col].notna()
+        else:
+            was_responded = pd.Series(False, index=rewards_df.index)
+            was_near_use = pd.Series(False, index=rewards_df.index)
 
         # Pre-period avg spend/swipes
         pre_spend_cols = [spend_lookup[m] for m in wc['pre_months'] if m in spend_lookup]
@@ -141,11 +148,17 @@ try:
         # Build rows for mailed accounts only
         mask = was_mailed
         for idx in rewards_df.index[mask]:
+            if was_responded.loc[idx]:
+                _status = 'Responder'
+            elif was_near_use.loc[idx]:
+                _status = 'Near-Use'
+            else:
+                _status = 'Non-Responder'
             cohort_rows.append({
                 'acct_number': acct_nums.loc[idx],
                 'wave': wave_label,
                 'wave_date': wc['mail_date'],
-                'status': 'Responder' if was_responded.loc[idx] else 'Non-Responder',
+                'status': _status,
                 'pre_spend': pre_spend_vals.loc[idx],
                 'post_spend': post_spend_vals.loc[idx],
                 'spend_delta': post_spend_vals.loc[idx] - pre_spend_vals.loc[idx],
@@ -157,7 +170,8 @@ try:
 
     cohort_acct = pd.DataFrame(cohort_rows)
     print(f"\n    cohort_acct: {len(cohort_acct):,} account-wave rows")
-    print(f"    Responders: {(cohort_acct['status'] == 'Responder').sum():,}")
+    print(f"    Responders (TH): {(cohort_acct['status'] == 'Responder').sum():,}")
+    print(f"    Near-Use (NU): {(cohort_acct['status'] == 'Near-Use').sum():,}")
     print(f"    Non-Responders: {(cohort_acct['status'] == 'Non-Responder').sum():,}")
 
     # -----------------------------------------------------------------
@@ -230,13 +244,20 @@ try:
             mail_col = wc['mail_col'].strip()
             resp_col = wc['resp_col'].strip()
             was_mailed = rewards_df[mail_col].notna()
-            was_responded = rewards_df[resp_col].notna() if resp_col in rewards_cols else pd.Series(False, index=rewards_df.index)
+            if resp_col in rewards_cols:
+                _rv = rewards_df[resp_col].astype(str).str.strip().str.upper()
+                was_responded = _rv.str.startswith('TH') & rewards_df[resp_col].notna()
+                was_near_use = _rv.str.startswith('NU') & rewards_df[resp_col].notna()
+            else:
+                was_responded = pd.Series(False, index=rewards_df.index)
+                was_near_use = pd.Series(False, index=rewards_df.index)
 
             pre_vals = rewards_df[pre_s_cols].apply(pd.to_numeric, errors='coerce').mean(axis=1).fillna(0)
             post_vals = rewards_df[post_s_cols].apply(pd.to_numeric, errors='coerce').mean(axis=1).fillna(0)
 
             for label, mask in [('Responder', was_mailed & was_responded),
-                                ('Non-Responder', was_mailed & ~was_responded)]:
+                                ('Near-Use', was_mailed & was_near_use),
+                                ('Non-Responder', was_mailed & ~was_responded & ~was_near_use)]:
                 if mask.sum() == 0:
                     continue
                 avg_pre = pre_vals[mask].mean()
