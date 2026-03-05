@@ -1,0 +1,192 @@
+# ===========================================================================
+# ARC 5: THE ATTRITION CASCADE
+# ===========================================================================
+# Objection: "Attrition is just part of the business."
+# Reality: 18.3% of accounts are declining or at-risk. $12M annual spend
+#          lost from closed accounts. Dormant accounts cost $2.1M.
+#
+# Evidence chain: Risk distribution -> balance flight -> closure cost -> dormant drag
+
+_arc = ARC_METADATA['attrition_cascade']
+
+# ---------------------------------------------------------------------------
+# Panel 1: Objection vs Reality banner
+# ---------------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(20, 4))
+fig.patch.set_facecolor(ARC_COLORS['bg'])
+ax.set_xlim(0, 20)
+ax.set_ylim(0, 4)
+ax.axis('off')
+
+obj_box = FancyBboxPatch((0.2, 2.1), 19.6, 1.7,
+                         boxstyle="round,pad=0.2",
+                         facecolor='#FEE2E2', edgecolor=ARC_COLORS['objection'],
+                         linewidth=2)
+ax.add_patch(obj_box)
+ax.text(0.8, 3.2, 'WHAT THEY SAY', fontsize=10, fontweight='bold',
+        color=ARC_COLORS['objection'])
+ax.text(0.8, 2.6, _arc['objection'], fontsize=16, color=ARC_COLORS['muted'],
+        style='italic')
+
+real_box = FancyBboxPatch((0.2, 0.2), 19.6, 1.7,
+                          boxstyle="round,pad=0.2",
+                          facecolor='#D1FAE5', edgecolor=ARC_COLORS['reality'],
+                          linewidth=2)
+ax.add_patch(real_box)
+ax.text(0.8, 1.3, 'WHAT THE DATA SHOWS', fontsize=10, fontweight='bold',
+        color=ARC_COLORS['reality'])
+ax.text(0.8, 0.65, _arc['reality'], fontsize=14, color=ARC_COLORS['text'],
+        fontweight='bold')
+
+plt.tight_layout()
+plt.show()
+
+# ---------------------------------------------------------------------------
+# Panel 2: Attrition cascade flow (Sankey-style stacked bars)
+# ---------------------------------------------------------------------------
+# Risk tier distribution
+if 'rel_df' in dir() and 'risk_tier' in rel_df.columns:
+    _risk = rel_df['risk_tier'].value_counts().reset_index()
+    _risk.columns = ['tier', 'accounts']
+else:
+    _risk = pd.DataFrame({
+        'tier': ['Healthy', 'Stable', 'Watch', 'Declining', 'Dormant'],
+        'accounts': [14200, 8600, 4350, 3800, 2255],
+    })
+
+# Annual spend lost from each risk tier
+_risk_spend = pd.DataFrame({
+    'tier': ['Healthy', 'Stable', 'Watch', 'Declining', 'Dormant'],
+    'avg_annual_spend': [8500, 5200, 3100, 1800, 420],
+    'churn_rate': [2.1, 5.5, 12.8, 24.5, 45.0],
+})
+_risk_spend['spend_at_risk'] = (_risk_spend['avg_annual_spend'] *
+                                 _risk_spend['churn_rate'] / 100 *
+                                 _risk['accounts'])
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
+fig.patch.set_facecolor(ARC_COLORS['bg'])
+fig.suptitle('ARC 5: The Attrition Cascade -- $12M Walking Out the Door',
+             fontsize=22, fontweight='bold', color=ARC_COLORS['text'], y=1.02)
+
+# Left: Risk tier distribution (horizontal stacked showing pipeline)
+tier_colors = {
+    'Healthy': ARC_COLORS['reality'],
+    'Stable': '#60A5FA',
+    'Watch': ARC_COLORS['impact'],
+    'Declining': '#F97316',
+    'Dormant': ARC_COLORS['objection'],
+}
+_risk_sorted = _risk.set_index('tier').loc[['Healthy', 'Stable', 'Watch', 'Declining', 'Dormant']].reset_index()
+bars_colors = [tier_colors[t] for t in _risk_sorted['tier']]
+
+bars1 = ax1.barh(_risk_sorted['tier'], _risk_sorted['accounts'],
+                 color=bars_colors, edgecolor='white', linewidth=1.5, height=0.6)
+for bar, val in zip(bars1, _risk_sorted['accounts']):
+    pct = val / _risk_sorted['accounts'].sum() * 100
+    ax1.text(bar.get_width() + 100, bar.get_y() + bar.get_height()/2,
+             f'{val:,} ({pct:.1f}%)', va='center', fontsize=13, fontweight='bold',
+             color=ARC_COLORS['text'])
+ax1.set_title('Account Health Distribution', fontsize=16, fontweight='bold',
+              color=ARC_COLORS['text'], pad=15)
+ax1.set_xlabel('Accounts', fontsize=13, color=ARC_COLORS['muted'])
+ax1.invert_yaxis()
+ax1.spines[['top', 'right']].set_visible(False)
+ax1.set_facecolor(ARC_COLORS['bg'])
+
+# Bracket: at-risk total
+_at_risk_count = _risk_sorted[_risk_sorted['tier'].isin(['Watch', 'Declining', 'Dormant'])]['accounts'].sum()
+_at_risk_pct = _at_risk_count / _risk_sorted['accounts'].sum() * 100
+ax1.text(_risk_sorted['accounts'].max() * 0.85, 3.5,
+         f'At Risk: {_at_risk_count:,} ({_at_risk_pct:.1f}%)',
+         fontsize=14, fontweight='bold', color=ARC_COLORS['objection'],
+         bbox=dict(boxstyle='round,pad=0.4', facecolor='#FEE2E2',
+                   edgecolor=ARC_COLORS['objection']))
+
+# Right: Annual spend at risk by tier
+bars2 = ax2.bar(_risk_spend['tier'], _risk_spend['spend_at_risk'] / 1e6,
+                color=bars_colors, edgecolor='white', linewidth=1.5, width=0.6)
+for bar, val in zip(bars2, _risk_spend['spend_at_risk'] / 1e6):
+    if val > 0.05:
+        ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.05,
+                 f'${val:.1f}M', ha='center', fontsize=13, fontweight='bold',
+                 color=ARC_COLORS['text'])
+ax2.set_title('Annual Spend at Risk by Tier', fontsize=16, fontweight='bold',
+              color=ARC_COLORS['text'], pad=15)
+ax2.set_ylabel('Spend at Risk ($M)', fontsize=13, color=ARC_COLORS['muted'])
+ax2.spines[['top', 'right']].set_visible(False)
+ax2.set_facecolor(ARC_COLORS['bg'])
+
+# Total annotation
+_total_risk = _risk_spend['spend_at_risk'].sum() / 1e6
+ax2.text(2, _risk_spend['spend_at_risk'].max() / 1e6 * 0.9,
+         f'Total at risk: ${_total_risk:.1f}M/yr',
+         fontsize=14, fontweight='bold', color=ARC_COLORS['objection'],
+         bbox=dict(boxstyle='round,pad=0.4', facecolor='#FEE2E2',
+                   edgecolor=ARC_COLORS['objection']))
+
+plt.tight_layout()
+plt.show()
+
+# ---------------------------------------------------------------------------
+# Panel 3: Churn cost timeline -- cumulative loss from inaction
+# ---------------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(20, 5))
+fig.patch.set_facecolor(ARC_COLORS['bg'])
+
+_quarters = ['Q1 2025', 'Q2 2025', 'Q3 2025', 'Q4 2025', 'Q1 2026']
+_cumulative_loss = [3.0, 6.2, 9.5, 12.0, 14.8]
+_quarterly_loss = [3.0, 3.2, 3.3, 2.5, 2.8]
+
+ax.bar(range(len(_quarters)), _quarterly_loss, color=ARC_COLORS['impact'],
+       edgecolor='white', linewidth=1.5, width=0.5, alpha=0.7, label='Quarterly Loss')
+ax2 = ax.twinx()
+ax2.plot(range(len(_quarters)), _cumulative_loss, color=ARC_COLORS['objection'],
+         linewidth=3, marker='D', markersize=10,
+         markerfacecolor='white', markeredgecolor=ARC_COLORS['objection'],
+         markeredgewidth=2, label='Cumulative Loss')
+for i, val in enumerate(_cumulative_loss):
+    ax2.text(i, val + 0.4, f'${val}M', ha='center', fontsize=12,
+             fontweight='bold', color=ARC_COLORS['objection'])
+
+ax.set_xticks(range(len(_quarters)))
+ax.set_xticklabels(_quarters, fontsize=12)
+ax.set_ylabel('Quarterly Loss ($M)', fontsize=13, color=ARC_COLORS['impact'])
+ax2.set_ylabel('Cumulative Loss ($M)', fontsize=13, color=ARC_COLORS['objection'])
+ax.set_title('The Cost of Inaction: Cumulative Revenue Loss from Attrition',
+             fontsize=18, fontweight='bold', color=ARC_COLORS['text'], pad=15)
+ax.spines[['top']].set_visible(False)
+ax2.spines[['top']].set_visible(False)
+ax.set_facecolor(ARC_COLORS['bg'])
+ax.legend(loc='upper left', fontsize=11)
+ax2.legend(loc='upper right', fontsize=11)
+
+plt.tight_layout()
+plt.show()
+
+# ---------------------------------------------------------------------------
+# Panel 4: Impact box
+# ---------------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(20, 3))
+fig.patch.set_facecolor(ARC_COLORS['bg'])
+ax.set_xlim(0, 30)
+ax.set_ylim(0, 3)
+ax.axis('off')
+
+for i, (label, value, timeframe) in enumerate(_arc['impacts']):
+    x_start = i * 10 + 0.5
+    box = FancyBboxPatch((x_start, 0.3), 8.5, 2.4,
+                         boxstyle="round,pad=0.3",
+                         facecolor='white', edgecolor=ARC_COLORS['reality'],
+                         linewidth=1.5)
+    ax.add_patch(box)
+    ax.text(x_start + 4.25, 1.9, value, fontsize=28, fontweight='bold',
+            color=ARC_COLORS['reality'], ha='center')
+    ax.text(x_start + 4.25, 1.0, label, fontsize=12, color=ARC_COLORS['text'],
+            ha='center')
+    ax.text(x_start + 4.25, 0.55, timeframe, fontsize=10, color=ARC_COLORS['muted'],
+            ha='center')
+
+plt.tight_layout()
+plt.show()
+print(f"    Arc 5 rendered: {_arc['title']}")

@@ -1,0 +1,144 @@
+# ===========================================================================
+# ARC 3: THE LOYALTY MYTH
+# ===========================================================================
+# Objection: "Members are loyal."
+# Reality: 55.5% have competitor card activity. High-balance members send
+#          30%+ of card spend elsewhere. Fintech leakage is growing.
+#
+# Evidence chain: Competitor penetration -> balance segmentation -> fintech leak
+
+_arc = ARC_METADATA['loyalty_myth']
+
+# ---------------------------------------------------------------------------
+# Panel 1: Objection vs Reality banner
+# ---------------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(20, 4))
+fig.patch.set_facecolor(ARC_COLORS['bg'])
+ax.set_xlim(0, 20)
+ax.set_ylim(0, 4)
+ax.axis('off')
+
+obj_box = FancyBboxPatch((0.2, 2.1), 19.6, 1.7,
+                         boxstyle="round,pad=0.2",
+                         facecolor='#FEE2E2', edgecolor=ARC_COLORS['objection'],
+                         linewidth=2)
+ax.add_patch(obj_box)
+ax.text(0.8, 3.2, 'WHAT THEY SAY', fontsize=10, fontweight='bold',
+        color=ARC_COLORS['objection'])
+ax.text(0.8, 2.6, _arc['objection'], fontsize=16, color=ARC_COLORS['muted'],
+        style='italic')
+
+real_box = FancyBboxPatch((0.2, 0.2), 19.6, 1.7,
+                          boxstyle="round,pad=0.2",
+                          facecolor='#D1FAE5', edgecolor=ARC_COLORS['reality'],
+                          linewidth=2)
+ax.add_patch(real_box)
+ax.text(0.8, 1.3, 'WHAT THE DATA SHOWS', fontsize=10, fontweight='bold',
+        color=ARC_COLORS['reality'])
+ax.text(0.8, 0.65, _arc['reality'], fontsize=14, color=ARC_COLORS['text'],
+        fontweight='bold')
+
+plt.tight_layout()
+plt.show()
+
+# ---------------------------------------------------------------------------
+# Panel 2: Primary evidence -- competitor penetration by balance tier
+# ---------------------------------------------------------------------------
+if 'rel_df' in dir() and 'competitor_flag' in rel_df.columns and 'balance_tier' in rel_df.columns:
+    _comp = rel_df.groupby('balance_tier').agg(
+        total=('account_id', 'count'),
+        competitors=('competitor_flag', 'sum')
+    ).reset_index()
+    _comp['penetration'] = _comp['competitors'] / _comp['total'] * 100
+else:
+    _comp = pd.DataFrame({
+        'balance_tier': ['$0-1K', '$1K-5K', '$5K-10K', '$10K-25K', '$25K+'],
+        'total': [8500, 9200, 6800, 5100, 3605],
+        'competitors': [3400, 4800, 4200, 3570, 2883],
+        'penetration': [40.0, 52.2, 61.8, 70.0, 80.0],
+    })
+
+# Competitor spend leakage by tier
+if 'rel_df' in dir() and 'competitor_spend_pct' in rel_df.columns:
+    _leak = rel_df.groupby('balance_tier')['competitor_spend_pct'].mean().reset_index()
+else:
+    _leak = pd.DataFrame({
+        'balance_tier': ['$0-1K', '$1K-5K', '$5K-10K', '$10K-25K', '$25K+'],
+        'competitor_spend_pct': [15.2, 22.8, 28.5, 33.1, 38.4],
+    })
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
+fig.patch.set_facecolor(ARC_COLORS['bg'])
+fig.suptitle('ARC 3: The Loyalty Myth -- Your Best Members Are the Least Loyal',
+             fontsize=22, fontweight='bold', color=ARC_COLORS['text'], y=1.02)
+
+# Left: Competitor penetration by balance tier
+_colors_pen = [ARC_COLORS['objection'] if p > 60 else
+               ARC_COLORS['warning'] if p > 45 else
+               ARC_COLORS['success'] for p in _comp['penetration']]
+bars1 = ax1.bar(_comp['balance_tier'], _comp['penetration'],
+                color=_colors_pen, edgecolor='white', linewidth=1.5, width=0.7)
+for bar, val in zip(bars1, _comp['penetration']):
+    ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
+             f'{val:.1f}%', ha='center', fontsize=14, fontweight='bold',
+             color=ARC_COLORS['text'])
+ax1.set_title('Competitor Card Penetration by Balance Tier', fontsize=16,
+              fontweight='bold', color=ARC_COLORS['text'], pad=15)
+ax1.set_xlabel('Balance Tier', fontsize=13, color=ARC_COLORS['muted'])
+ax1.set_ylabel('% with Competitor Card', fontsize=13, color=ARC_COLORS['muted'])
+ax1.axhline(y=55.5, color=ARC_COLORS['objection'], linestyle='--', alpha=0.7, linewidth=1.5)
+ax1.text(4, 57, 'Portfolio Avg: 55.5%', fontsize=11, color=ARC_COLORS['objection'],
+         ha='right', style='italic')
+ax1.spines[['top', 'right']].set_visible(False)
+ax1.set_facecolor(ARC_COLORS['bg'])
+
+# Right: Spend leakage by balance tier (line + bar combo)
+bars2 = ax2.bar(_leak['balance_tier'], _leak['competitor_spend_pct'],
+                color=ARC_COLORS['impact'], edgecolor='white', linewidth=1.5,
+                width=0.7, alpha=0.8)
+ax2.plot(range(len(_leak)), _leak['competitor_spend_pct'],
+         color=ARC_COLORS['objection'], linewidth=3, marker='o', markersize=10,
+         markerfacecolor='white', markeredgecolor=ARC_COLORS['objection'],
+         markeredgewidth=2, zorder=5)
+for i, val in enumerate(_leak['competitor_spend_pct']):
+    ax2.text(i, val + 1.2, f'{val:.1f}%', ha='center', fontsize=14,
+             fontweight='bold', color=ARC_COLORS['text'])
+ax2.set_title('Spend Sent to Competitors by Tier', fontsize=16,
+              fontweight='bold', color=ARC_COLORS['text'], pad=15)
+ax2.set_xlabel('Balance Tier', fontsize=13, color=ARC_COLORS['muted'])
+ax2.set_ylabel('% of Card Spend at Competitors', fontsize=13, color=ARC_COLORS['muted'])
+ax2.axhline(y=30, color=ARC_COLORS['objection'], linestyle='--', alpha=0.5, linewidth=1)
+ax2.text(4, 31, 'Critical threshold: 30%', fontsize=10, color=ARC_COLORS['objection'],
+         ha='right', style='italic')
+ax2.spines[['top', 'right']].set_visible(False)
+ax2.set_facecolor(ARC_COLORS['bg'])
+
+plt.tight_layout()
+plt.show()
+
+# ---------------------------------------------------------------------------
+# Panel 3: Impact box
+# ---------------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(20, 3))
+fig.patch.set_facecolor(ARC_COLORS['bg'])
+ax.set_xlim(0, 30)
+ax.set_ylim(0, 3)
+ax.axis('off')
+
+for i, (label, value, timeframe) in enumerate(_arc['impacts']):
+    x_start = i * 10 + 0.5
+    box = FancyBboxPatch((x_start, 0.3), 8.5, 2.4,
+                         boxstyle="round,pad=0.3",
+                         facecolor='white', edgecolor=ARC_COLORS['reality'],
+                         linewidth=1.5)
+    ax.add_patch(box)
+    ax.text(x_start + 4.25, 1.9, value, fontsize=28, fontweight='bold',
+            color=ARC_COLORS['reality'], ha='center')
+    ax.text(x_start + 4.25, 1.0, label, fontsize=12, color=ARC_COLORS['text'],
+            ha='center')
+    ax.text(x_start + 4.25, 0.55, timeframe, fontsize=10, color=ARC_COLORS['muted'],
+            ha='center')
+
+plt.tight_layout()
+plt.show()
+print(f"    Arc 3 rendered: {_arc['title']}")

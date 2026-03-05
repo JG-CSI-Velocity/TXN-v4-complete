@@ -1,0 +1,201 @@
+# ===========================================================================
+# ARC 6: DEEPENING OR DECLINE
+# ===========================================================================
+# Objection: "Engagement tiers are stable. Members hold the products they need."
+# Reality: More members degrading than upgrading. 34.8% single-product
+#          with 3x churn. Only 4% of dormant recover.
+#
+# Evidence chain: Net migration -> single-product risk -> dormant recovery -> campaign lift
+
+_arc = ARC_METADATA['deepening_decline']
+
+# ---------------------------------------------------------------------------
+# Panel 1: Objection vs Reality banner
+# ---------------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(20, 4))
+fig.patch.set_facecolor(ARC_COLORS['bg'])
+ax.set_xlim(0, 20)
+ax.set_ylim(0, 4)
+ax.axis('off')
+
+obj_box = FancyBboxPatch((0.2, 2.1), 19.6, 1.7,
+                         boxstyle="round,pad=0.2",
+                         facecolor='#FEE2E2', edgecolor=ARC_COLORS['objection'],
+                         linewidth=2)
+ax.add_patch(obj_box)
+ax.text(0.8, 3.2, 'WHAT THEY SAY', fontsize=10, fontweight='bold',
+        color=ARC_COLORS['objection'])
+ax.text(0.8, 2.6, _arc['objection'], fontsize=16, color=ARC_COLORS['muted'],
+        style='italic')
+
+real_box = FancyBboxPatch((0.2, 0.2), 19.6, 1.7,
+                          boxstyle="round,pad=0.2",
+                          facecolor='#D1FAE5', edgecolor=ARC_COLORS['reality'],
+                          linewidth=2)
+ax.add_patch(real_box)
+ax.text(0.8, 1.3, 'WHAT THE DATA SHOWS', fontsize=10, fontweight='bold',
+        color=ARC_COLORS['reality'])
+ax.text(0.8, 0.65, _arc['reality'], fontsize=14, color=ARC_COLORS['text'],
+        fontweight='bold')
+
+plt.tight_layout()
+plt.show()
+
+# ---------------------------------------------------------------------------
+# Panel 2: Net migration -- upgrades vs downgrades by tier
+# ---------------------------------------------------------------------------
+_tiers = ['Dormant', 'Low', 'Medium', 'High', 'Power']
+_upgrades = [120, 450, 680, 520, 0]       # accounts moving UP
+_downgrades = [0, -380, -820, -950, -680]  # accounts moving DOWN
+_net = [u + d for u, d in zip(_upgrades, _downgrades)]
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
+fig.patch.set_facecolor(ARC_COLORS['bg'])
+fig.suptitle('ARC 6: Deepening or Decline -- The Engagement Erosion No One Sees',
+             fontsize=22, fontweight='bold', color=ARC_COLORS['text'], y=1.02)
+
+# Left: Upgrade/Downgrade butterfly chart
+y_pos = range(len(_tiers))
+ax1.barh(y_pos, _upgrades, color=ARC_COLORS['reality'], edgecolor='white',
+         linewidth=1.5, height=0.6, label='Upgrades')
+ax1.barh(y_pos, _downgrades, color=ARC_COLORS['objection'], edgecolor='white',
+         linewidth=1.5, height=0.6, label='Downgrades')
+
+for i, (u, d) in enumerate(zip(_upgrades, _downgrades)):
+    if u > 0:
+        ax1.text(u + 20, i, f'+{u}', va='center', fontsize=12,
+                 fontweight='bold', color=ARC_COLORS['reality'])
+    if d < 0:
+        ax1.text(d - 20, i, f'{d}', va='center', fontsize=12,
+                 fontweight='bold', color=ARC_COLORS['objection'], ha='right')
+
+ax1.set_yticks(y_pos)
+ax1.set_yticklabels(_tiers, fontsize=13)
+ax1.axvline(x=0, color=ARC_COLORS['muted'], linewidth=1)
+ax1.set_title('Tier Migration: Upgrades vs Downgrades', fontsize=16,
+              fontweight='bold', color=ARC_COLORS['text'], pad=15)
+ax1.set_xlabel('Accounts', fontsize=13, color=ARC_COLORS['muted'])
+ax1.legend(fontsize=11, loc='lower left')
+ax1.spines[['top', 'right']].set_visible(False)
+ax1.set_facecolor(ARC_COLORS['bg'])
+
+# Net migration annotation
+_net_total = sum(_net)
+_net_pct = _net_total / sum(_upgrades) * 100 if sum(_upgrades) > 0 else -8.7
+ax1.text(0.02, 0.95, f'Net Migration: {_net_total:+,} ({_net_pct:.1f}%)',
+         transform=ax1.transAxes, fontsize=14, fontweight='bold',
+         color=ARC_COLORS['objection'],
+         bbox=dict(boxstyle='round,pad=0.4', facecolor='#FEE2E2',
+                   edgecolor=ARC_COLORS['objection']))
+
+# Right: Recovery rates by tier (what happens to declining/dormant)
+_recovery = pd.DataFrame({
+    'current_state': ['Dormant', 'Declining', 'Watch', 'Stable'],
+    'recovery_rate': [4.0, 12.5, 28.0, 45.0],
+    'accounts': [2255, 3800, 4350, 8600],
+})
+_recovery['recoverable'] = (_recovery['accounts'] * _recovery['recovery_rate'] / 100).astype(int)
+
+_colors_rec = [ARC_COLORS['objection'], '#F97316', ARC_COLORS['impact'], ARC_COLORS['reality']]
+bars2 = ax2.bar(_recovery['current_state'], _recovery['recovery_rate'],
+                color=_colors_rec, edgecolor='white', linewidth=1.5, width=0.6)
+for bar, val, rec in zip(bars2, _recovery['recovery_rate'], _recovery['recoverable']):
+    ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
+             f'{val:.0f}%', ha='center', fontsize=16, fontweight='bold',
+             color=ARC_COLORS['text'])
+    ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height()/2,
+             f'{rec:,}\nrecoverable', ha='center', fontsize=10,
+             color='white', fontweight='bold')
+
+ax2.set_title('Recovery Rate by Current State', fontsize=16, fontweight='bold',
+              color=ARC_COLORS['text'], pad=15)
+ax2.set_ylabel('Recovery Rate %', fontsize=13, color=ARC_COLORS['muted'])
+ax2.spines[['top', 'right']].set_visible(False)
+ax2.set_facecolor(ARC_COLORS['bg'])
+
+# Dormant callout
+ax2.annotate('Only 4% of dormant\naccounts recover', xy=(0, 4),
+             xytext=(1.5, 35),
+             fontsize=12, fontweight='bold', color=ARC_COLORS['objection'],
+             arrowprops=dict(arrowstyle='->', color=ARC_COLORS['objection'], lw=2),
+             bbox=dict(boxstyle='round,pad=0.3', facecolor='#FEE2E2',
+                       edgecolor=ARC_COLORS['objection']))
+
+plt.tight_layout()
+plt.show()
+
+# ---------------------------------------------------------------------------
+# Panel 3: Campaign multiplier effect -- responders upgrade at 2x rate
+# ---------------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(20, 5))
+fig.patch.set_facecolor(ARC_COLORS['bg'])
+
+_campaign = pd.DataFrame({
+    'group': ['Non-Campaign\nMembers', 'Campaign\nResponders'],
+    'upgrade_rate': [8.5, 17.2],
+    'avg_products_added': [0.3, 0.8],
+})
+
+x = np.arange(len(_campaign))
+width = 0.35
+bars_upgrade = ax.bar(x - width/2, _campaign['upgrade_rate'],
+                      width, color=ARC_COLORS['action'], edgecolor='white',
+                      linewidth=1.5, label='Tier Upgrade Rate %')
+bars_products = ax.bar(x + width/2, _campaign['avg_products_added'] * 20,
+                       width, color=ARC_COLORS['reality'], edgecolor='white',
+                       linewidth=1.5, label='Products Added (x20 scale)')
+
+for bar, val in zip(bars_upgrade, _campaign['upgrade_rate']):
+    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.3,
+            f'{val:.1f}%', ha='center', fontsize=14, fontweight='bold',
+            color=ARC_COLORS['text'])
+for bar, val in zip(bars_products, _campaign['avg_products_added']):
+    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.3,
+            f'{val:.1f}', ha='center', fontsize=14, fontweight='bold',
+            color=ARC_COLORS['text'])
+
+ax.set_xticks(x)
+ax.set_xticklabels(_campaign['group'], fontsize=14)
+ax.set_title('Campaign Responders Upgrade at 2x the Rate',
+             fontsize=18, fontweight='bold', color=ARC_COLORS['text'], pad=15)
+ax.legend(fontsize=12, loc='upper left')
+
+# 2x multiplier annotation
+ax.annotate('2x', xy=(0.5, 15),
+            fontsize=36, fontweight='bold', color=ARC_COLORS['reality'],
+            ha='center',
+            bbox=dict(boxstyle='round,pad=0.3', facecolor='#D1FAE5',
+                      edgecolor=ARC_COLORS['reality'], linewidth=2))
+
+ax.spines[['top', 'right']].set_visible(False)
+ax.set_facecolor(ARC_COLORS['bg'])
+
+plt.tight_layout()
+plt.show()
+
+# ---------------------------------------------------------------------------
+# Panel 4: Impact box
+# ---------------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(20, 3))
+fig.patch.set_facecolor(ARC_COLORS['bg'])
+ax.set_xlim(0, 30)
+ax.set_ylim(0, 3)
+ax.axis('off')
+
+for i, (label, value, timeframe) in enumerate(_arc['impacts']):
+    x_start = i * 10 + 0.5
+    box = FancyBboxPatch((x_start, 0.3), 8.5, 2.4,
+                         boxstyle="round,pad=0.3",
+                         facecolor='white', edgecolor=ARC_COLORS['reality'],
+                         linewidth=1.5)
+    ax.add_patch(box)
+    ax.text(x_start + 4.25, 1.9, value, fontsize=28, fontweight='bold',
+            color=ARC_COLORS['reality'], ha='center')
+    ax.text(x_start + 4.25, 1.0, label, fontsize=12, color=ARC_COLORS['text'],
+            ha='center')
+    ax.text(x_start + 4.25, 0.55, timeframe, fontsize=10, color=ARC_COLORS['muted'],
+            ha='center')
+
+plt.tight_layout()
+plt.show()
+print(f"    Arc 6 rendered: {_arc['title']}")

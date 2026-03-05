@@ -1,0 +1,60 @@
+# ===========================================================================
+# ARC OVERVIEW: 6-Arc Summary Dashboard
+# ===========================================================================
+# Visual summary of all 6 story arcs with headline metrics and severity.
+# Designed as the opening slide for the story arc presentation.
+
+fig, axes = plt.subplots(2, 3, figsize=(24, 14))
+fig.patch.set_facecolor(ARC_COLORS['bg'])
+fig.suptitle('6 Objections. 6 Truths. The Data Speaks.',
+             fontsize=32, fontweight='bold', color=ARC_COLORS['text'],
+             y=0.97, fontfamily='sans-serif')
+
+for idx, (key, arc) in enumerate(ARC_METADATA.items()):
+    row, col = divmod(idx, 3)
+    ax = axes[row][col]
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
+    ax.axis('off')
+
+    # Card background
+    card = FancyBboxPatch((0.3, 0.3), 9.4, 9.4,
+                          boxstyle="round,pad=0.3",
+                          facecolor='white', edgecolor=ARC_COLORS['muted'],
+                          linewidth=1.5)
+    ax.add_patch(card)
+
+    # Arc number badge
+    ax.text(1.2, 8.8, f"ARC {arc['arc_number']}", fontsize=11,
+            fontweight='bold', color='white',
+            bbox=dict(boxstyle='round,pad=0.3',
+                      facecolor=ARC_COLORS['objection'], alpha=0.9),
+            ha='left', va='top')
+
+    # Title
+    ax.text(5, 8.0, arc['title'], fontsize=18, fontweight='bold',
+            color=ARC_COLORS['text'], ha='center', va='top')
+
+    # Headline metric (large)
+    ax.text(5, 5.8, arc['headline_metric'], fontsize=42, fontweight='bold',
+            color=ARC_COLORS['objection'], ha='center', va='center',
+            fontfamily='sans-serif')
+
+    # Headline label
+    ax.text(5, 4.2, arc['headline_label'], fontsize=14,
+            color=ARC_COLORS['text'], ha='center', va='center')
+
+    # Objection (italicized)
+    ax.text(5, 2.5, arc['objection'], fontsize=10,
+            color=ARC_COLORS['muted'], ha='center', va='center',
+            style='italic', wrap=True)
+
+    # Impact strip at bottom
+    impacts_text = ' | '.join([f"{imp[0]}: {imp[1]}" for imp in arc['impacts'][:2]])
+    ax.text(5, 1.0, impacts_text, fontsize=9,
+            color=ARC_COLORS['reality'], ha='center', va='center',
+            fontweight='bold')
+
+plt.tight_layout(rect=[0, 0, 1, 0.94])
+plt.show()
+print("    Arc overview dashboard rendered: 6 story arc cards")

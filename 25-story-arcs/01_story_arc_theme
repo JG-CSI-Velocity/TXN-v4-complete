@@ -1,0 +1,135 @@
+# ===========================================================================
+# SECTION 25: STORY ARC NARRATIVES
+# ===========================================================================
+# Builds the 6 objection-fighting story arcs from upstream analysis data.
+# Each arc: Objection (what the client says) -> Evidence (data that breaks it)
+# -> Impact (dollar opportunity) -> Action (what to do).
+#
+# This section synthesizes all prior analysis into persuasive narratives
+# designed to counter specific credit union executive objections.
+#
+# Prerequisites: Run all sections 01-22 first (uses upstream dataframes).
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import numpy as np
+import pandas as pd
+from matplotlib.patches import FancyBboxPatch
+
+# ---------------------------------------------------------------------------
+# Story Arc color scheme (builds on GEN_COLORS from section 01)
+# ---------------------------------------------------------------------------
+ARC_COLORS = {
+    'objection':  '#E63946',   # red -- what they say
+    'reality':    '#2EC4B6',   # teal -- what data shows
+    'impact':     '#FF9F1C',   # amber -- dollar opportunity
+    'action':     '#457B9D',   # steel blue -- what to do
+    'bg':         '#F8F9FA',
+    'text':       '#1B2A4A',
+    'muted':      '#6C757D',
+}
+
+# ---------------------------------------------------------------------------
+# Arc metadata -- 6 story arcs with objection/reality pairs
+# ---------------------------------------------------------------------------
+ARC_METADATA = {
+    'portfolio_illusions': {
+        'arc_number': 1,
+        'title': 'Portfolio Illusions',
+        'subtitle': 'Portfolio health, business vs personal, product mix concentration',
+        'objection': '"We\'re doing fine -- the portfolio is healthy."',
+        'reality': 'Power users carry the portfolio. 34.8% are single-product members '
+                   'with 3x churn risk. Business accounts are undermonetized.',
+        'headline_metric': '34.8%',
+        'headline_label': 'Single-Product Members',
+        'headline_context': 'with 18.5% churn risk -- highest attrition segment',
+        'impacts': [
+            ('Relationship Revenue Lift', '$18M', 'Annual'),
+            ('Cross-Sell Targets', '11,560', 'Accounts'),
+            ('Business Monetization Gap', '2.7x', 'vs Personal'),
+        ],
+    },
+    'spending_patterns': {
+        'arc_number': 2,
+        'title': 'Where the Money Goes',
+        'subtitle': 'Merchant concentration, MCC categories, transaction types',
+        'objection': '"Our transaction volume is diversified."',
+        'reality': 'Top 5 merchants = 38% of volume. Median members use only 1-2 '
+                   'MCC categories. Single-category users are 3x churn risk.',
+        'headline_metric': '38%',
+        'headline_label': 'Top 5 Merchant Share',
+        'headline_context': 'of all transaction volume -- dangerous concentration',
+        'impacts': [
+            ('Concentration Risk', '38%', 'Top 5 Share'),
+            ('Single-Category Churn', '3x', 'vs Multi-Category'),
+            ('PIN->SIG Opportunity', '$420K', 'Annual'),
+        ],
+    },
+    'loyalty_myth': {
+        'arc_number': 3,
+        'title': 'The Loyalty Myth',
+        'subtitle': 'Competitor penetration, fintech leakage, acquisition channel quality',
+        'objection': '"Members are loyal."',
+        'reality': '55.5% have competitor card activity. High-balance members send '
+                   '30%+ of card spend elsewhere. Fintech leakage is growing.',
+        'headline_metric': '55.5%',
+        'headline_label': 'Competitor Penetration',
+        'headline_context': 'of members use a competitor card',
+        'impacts': [
+            ('Recoverable Spend', '$61M', 'Annual'),
+            ('FinTech Leakage', '$15M', 'Annual'),
+            ('ICS Activation Gap', '2,480', 'Accounts'),
+        ],
+    },
+    'revenue_missing': {
+        'arc_number': 4,
+        'title': 'The Revenue You\'re Missing',
+        'subtitle': 'Interchange optimization, Reg E & overdraft, payroll capture',
+        'objection': '"Revenue is locked in by the networks. Overdraft is stable."',
+        'reality': '$420K interchange sitting on the table. OD opt-in declining. '
+                   'Only 28.1% payroll detected vs 50% industry.',
+        'headline_metric': '28.1%',
+        'headline_label': 'Payroll Detection',
+        'headline_context': 'vs 50% industry -- each payroll = $2,480 deposit lift',
+        'impacts': [
+            ('PIN->SIG Shift', '$420K', 'Annual'),
+            ('Reg E Revenue Risk', '$1.1M', 'If Opt-In -10%'),
+            ('Payroll Gap', '22pp', 'vs Industry'),
+        ],
+    },
+    'attrition_cascade': {
+        'arc_number': 5,
+        'title': 'The Attrition Cascade',
+        'subtitle': 'Risk scoring, balance flight, churn cost quantification',
+        'objection': '"Attrition is just part of the business."',
+        'reality': '18.3% of accounts are declining or at-risk. $12M annual spend '
+                   'lost from closed accounts. Dormant accounts cost $2.1M.',
+        'headline_metric': '$12M',
+        'headline_label': 'Annual Revenue Lost',
+        'headline_context': 'from closed accounts alone -- retention investment pays for itself',
+        'impacts': [
+            ('Closed Account Loss', '$12M', 'Annual'),
+            ('At-Risk Pipeline', '7,750', 'Accounts'),
+            ('Dormant Residual', '$2.1M', 'Recoverable'),
+        ],
+    },
+    'deepening_decline': {
+        'arc_number': 6,
+        'title': 'Deepening or Decline',
+        'subtitle': 'Relationship depth, segment migration, engagement momentum',
+        'objection': '"Engagement tiers are stable. Members hold the products they need."',
+        'reality': 'More members degrading than upgrading. 34.8% single-product '
+                   'with 3x churn. Only 4% of dormant recover.',
+        'headline_metric': '-8.7%',
+        'headline_label': 'Net Migration',
+        'headline_context': 'more members downgrading than upgrading each quarter',
+        'impacts': [
+            ('Cross-Sell Revenue', '$18M', 'Annual Lift'),
+            ('Dormant Recovery', '4%', 'Recovery Rate'),
+            ('Campaign Multiplier', '2x', 'Responder Upgrade Rate'),
+        ],
+    },
+}
+
+print(f"    Story Arc theme loaded: {len(ARC_METADATA)} arcs defined")
+print(f"    Arc colors: objection={ARC_COLORS['objection']}, reality={ARC_COLORS['reality']}")

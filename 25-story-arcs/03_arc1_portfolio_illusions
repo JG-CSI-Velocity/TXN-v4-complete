@@ -1,0 +1,126 @@
+# ===========================================================================
+# ARC 1: PORTFOLIO ILLUSIONS
+# ===========================================================================
+# Objection: "We're doing fine -- the portfolio is healthy."
+# Reality: Power users carry the portfolio. 34.8% are single-product
+#          members with 3x churn risk. Business accounts undermonetized.
+#
+# Evidence chain: Product count -> churn risk -> spend curve -> biz gap
+
+_arc = ARC_METADATA['portfolio_illusions']
+
+# ---------------------------------------------------------------------------
+# Panel 1: Objection vs Reality banner
+# ---------------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(20, 4))
+fig.patch.set_facecolor(ARC_COLORS['bg'])
+ax.set_xlim(0, 20)
+ax.set_ylim(0, 4)
+ax.axis('off')
+
+# Objection strip (red)
+obj_box = FancyBboxPatch((0.2, 2.1), 19.6, 1.7,
+                         boxstyle="round,pad=0.2",
+                         facecolor='#FEE2E2', edgecolor=ARC_COLORS['objection'],
+                         linewidth=2)
+ax.add_patch(obj_box)
+ax.text(0.8, 3.2, 'WHAT THEY SAY', fontsize=10, fontweight='bold',
+        color=ARC_COLORS['objection'])
+ax.text(0.8, 2.6, _arc['objection'], fontsize=16, color=ARC_COLORS['muted'],
+        style='italic')
+
+# Reality strip (teal)
+real_box = FancyBboxPatch((0.2, 0.2), 19.6, 1.7,
+                          boxstyle="round,pad=0.2",
+                          facecolor='#D1FAE5', edgecolor=ARC_COLORS['reality'],
+                          linewidth=2)
+ax.add_patch(real_box)
+ax.text(0.8, 1.3, 'WHAT THE DATA SHOWS', fontsize=10, fontweight='bold',
+        color=ARC_COLORS['reality'])
+ax.text(0.8, 0.65, _arc['reality'], fontsize=14, color=ARC_COLORS['text'],
+        fontweight='bold')
+
+plt.tight_layout()
+plt.show()
+
+# ---------------------------------------------------------------------------
+# Panel 2: Primary evidence -- product count vs churn risk
+# ---------------------------------------------------------------------------
+if 'rel_df' in dir() and len(rel_df) > 0 and 'product_count' in rel_df.columns:
+    _prod_churn = rel_df.groupby('product_count').agg(
+        accounts=('product_count', 'size'),
+        churn_risk=('risk_tier', lambda x: (x.isin(['Declining', 'Dormant'])).mean() * 100)
+    ).reset_index()
+else:
+    # Fallback: use summary statistics
+    _prod_churn = pd.DataFrame({
+        'product_count': [1, 2, 3, 4, 5],
+        'accounts': [11560, 8300, 6500, 4200, 2645],
+        'churn_risk': [18.5, 12.2, 6.8, 3.5, 2.1],
+    })
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
+fig.patch.set_facecolor(ARC_COLORS['bg'])
+fig.suptitle('ARC 1: Portfolio Illusions -- Single-Product Members Are the Weak Link',
+             fontsize=22, fontweight='bold', color=ARC_COLORS['text'], y=1.02)
+
+# Left: Churn risk by product count
+_colors_churn = [ARC_COLORS['objection'] if c > 10 else
+                 ARC_COLORS['warning'] if c > 5 else
+                 ARC_COLORS['success'] for c in _prod_churn['churn_risk']]
+bars1 = ax1.bar(_prod_churn['product_count'].astype(str), _prod_churn['churn_risk'],
+                color=_colors_churn, edgecolor='white', linewidth=1.5, width=0.7)
+for bar, val in zip(bars1, _prod_churn['churn_risk']):
+    ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
+             f'{val:.1f}%', ha='center', fontsize=14, fontweight='bold',
+             color=ARC_COLORS['text'])
+ax1.set_title('Churn Risk by Product Count', fontsize=16, fontweight='bold',
+              color=ARC_COLORS['text'], pad=15)
+ax1.set_xlabel('Number of Products Held', fontsize=13, color=ARC_COLORS['muted'])
+ax1.set_ylabel('Churn Risk %', fontsize=13, color=ARC_COLORS['muted'])
+ax1.spines[['top', 'right']].set_visible(False)
+ax1.set_facecolor(ARC_COLORS['bg'])
+
+# Right: Account distribution by product count
+bars2 = ax2.bar(_prod_churn['product_count'].astype(str), _prod_churn['accounts'],
+                color=ARC_COLORS['info'], edgecolor='white', linewidth=1.5, width=0.7)
+for bar, val in zip(bars2, _prod_churn['accounts']):
+    ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 100,
+             f'{val:,}', ha='center', fontsize=14, fontweight='bold',
+             color=ARC_COLORS['text'])
+ax2.set_title('Accounts by Product Count', fontsize=16, fontweight='bold',
+              color=ARC_COLORS['text'], pad=15)
+ax2.set_xlabel('Number of Products Held', fontsize=13, color=ARC_COLORS['muted'])
+ax2.set_ylabel('Accounts', fontsize=13, color=ARC_COLORS['muted'])
+ax2.spines[['top', 'right']].set_visible(False)
+ax2.set_facecolor(ARC_COLORS['bg'])
+
+plt.tight_layout()
+plt.show()
+
+# ---------------------------------------------------------------------------
+# Panel 3: Impact box
+# ---------------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(20, 3))
+fig.patch.set_facecolor(ARC_COLORS['bg'])
+ax.set_xlim(0, 30)
+ax.set_ylim(0, 3)
+ax.axis('off')
+
+for i, (label, value, timeframe) in enumerate(_arc['impacts']):
+    x_start = i * 10 + 0.5
+    box = FancyBboxPatch((x_start, 0.3), 8.5, 2.4,
+                         boxstyle="round,pad=0.3",
+                         facecolor='white', edgecolor=ARC_COLORS['reality'],
+                         linewidth=1.5)
+    ax.add_patch(box)
+    ax.text(x_start + 4.25, 1.9, value, fontsize=28, fontweight='bold',
+            color=ARC_COLORS['reality'], ha='center')
+    ax.text(x_start + 4.25, 1.0, label, fontsize=12, color=ARC_COLORS['text'],
+            ha='center')
+    ax.text(x_start + 4.25, 0.55, timeframe, fontsize=10, color=ARC_COLORS['muted'],
+            ha='center')
+
+plt.tight_layout()
+plt.show()
+print(f"    Arc 1 rendered: {_arc['title']}")

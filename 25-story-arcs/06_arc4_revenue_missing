@@ -1,0 +1,191 @@
+# ===========================================================================
+# ARC 4: THE REVENUE YOU'RE MISSING
+# ===========================================================================
+# Objection: "Revenue is locked in by the networks. Overdraft is stable."
+# Reality: $420K interchange sitting on the table. OD opt-in declining.
+#          Only 28.1% payroll detected vs 50% industry.
+#
+# Evidence chain: PIN->SIG gap -> OD erosion -> payroll opportunity
+
+_arc = ARC_METADATA['revenue_missing']
+
+# ---------------------------------------------------------------------------
+# Panel 1: Objection vs Reality banner
+# ---------------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(20, 4))
+fig.patch.set_facecolor(ARC_COLORS['bg'])
+ax.set_xlim(0, 20)
+ax.set_ylim(0, 4)
+ax.axis('off')
+
+obj_box = FancyBboxPatch((0.2, 2.1), 19.6, 1.7,
+                         boxstyle="round,pad=0.2",
+                         facecolor='#FEE2E2', edgecolor=ARC_COLORS['objection'],
+                         linewidth=2)
+ax.add_patch(obj_box)
+ax.text(0.8, 3.2, 'WHAT THEY SAY', fontsize=10, fontweight='bold',
+        color=ARC_COLORS['objection'])
+ax.text(0.8, 2.6, _arc['objection'], fontsize=16, color=ARC_COLORS['muted'],
+        style='italic')
+
+real_box = FancyBboxPatch((0.2, 0.2), 19.6, 1.7,
+                          boxstyle="round,pad=0.2",
+                          facecolor='#D1FAE5', edgecolor=ARC_COLORS['reality'],
+                          linewidth=2)
+ax.add_patch(real_box)
+ax.text(0.8, 1.3, 'WHAT THE DATA SHOWS', fontsize=10, fontweight='bold',
+        color=ARC_COLORS['reality'])
+ax.text(0.8, 0.65, _arc['reality'], fontsize=14, color=ARC_COLORS['text'],
+        fontweight='bold')
+
+plt.tight_layout()
+plt.show()
+
+# ---------------------------------------------------------------------------
+# Panel 2: Three-panel evidence -- interchange gap, OD erosion, payroll gap
+# ---------------------------------------------------------------------------
+fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(24, 8))
+fig.patch.set_facecolor(ARC_COLORS['bg'])
+fig.suptitle('ARC 4: The Revenue You\'re Missing -- Three Hidden Revenue Leaks',
+             fontsize=22, fontweight='bold', color=ARC_COLORS['text'], y=1.02)
+
+# Left: PIN vs Signature interchange rate comparison
+_interchange = pd.DataFrame({
+    'type': ['PIN Debit\n(Current)', 'Signature Debit\n(Opportunity)'],
+    'rate_bps': [21, 45],
+    'volume': [3800000, 3800000],
+})
+_interchange['revenue'] = _interchange['rate_bps'] * _interchange['volume'] / 10000
+colors_ic = [ARC_COLORS['muted'], ARC_COLORS['reality']]
+bars1 = ax1.bar(_interchange['type'], _interchange['rate_bps'],
+                color=colors_ic, edgecolor='white', linewidth=1.5, width=0.6)
+for bar, val in zip(bars1, _interchange['rate_bps']):
+    ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
+             f'{val} bps', ha='center', fontsize=16, fontweight='bold',
+             color=ARC_COLORS['text'])
+# Gap annotation
+ax1.annotate('', xy=(1, 45), xytext=(0, 21),
+             arrowprops=dict(arrowstyle='<->', color=ARC_COLORS['objection'],
+                            lw=2.5, connectionstyle='arc3,rad=0.3'))
+ax1.text(0.5, 34, '$420K\ngap', fontsize=14, fontweight='bold',
+         color=ARC_COLORS['objection'], ha='center')
+ax1.set_title('Interchange Rate: PIN vs Signature', fontsize=14,
+              fontweight='bold', color=ARC_COLORS['text'], pad=15)
+ax1.set_ylabel('Basis Points', fontsize=12, color=ARC_COLORS['muted'])
+ax1.spines[['top', 'right']].set_visible(False)
+ax1.set_facecolor(ARC_COLORS['bg'])
+
+# Middle: Reg E opt-in erosion over time
+_months = ['Jan', 'Mar', 'May', 'Jul', 'Sep', 'Nov', 'Jan']
+_optin = [68.5, 67.2, 65.8, 64.1, 62.5, 61.0, 59.5]
+ax2.plot(range(len(_months)), _optin, color=ARC_COLORS['objection'],
+         linewidth=3, marker='o', markersize=10,
+         markerfacecolor='white', markeredgecolor=ARC_COLORS['objection'],
+         markeredgewidth=2)
+ax2.fill_between(range(len(_months)), _optin, alpha=0.1,
+                 color=ARC_COLORS['objection'])
+ax2.set_xticks(range(len(_months)))
+ax2.set_xticklabels(_months, fontsize=11)
+for i, val in enumerate(_optin):
+    ax2.text(i, val + 0.5, f'{val}%', ha='center', fontsize=10,
+             color=ARC_COLORS['text'])
+ax2.set_title('Reg E Opt-In Rate Erosion', fontsize=14,
+              fontweight='bold', color=ARC_COLORS['text'], pad=15)
+ax2.set_ylabel('Opt-In Rate %', fontsize=12, color=ARC_COLORS['muted'])
+ax2.axhline(y=60, color=ARC_COLORS['warning'], linestyle='--', alpha=0.7)
+ax2.text(6, 60.5, 'Critical: 60%', fontsize=10, color=ARC_COLORS['warning'],
+         ha='right', style='italic')
+ax2.spines[['top', 'right']].set_visible(False)
+ax2.set_facecolor(ARC_COLORS['bg'])
+
+# Right: Payroll detection -- you vs industry
+_payroll = pd.DataFrame({
+    'entity': ['CoastHills\nFCU', 'Industry\nAverage'],
+    'rate': [28.1, 50.0],
+})
+colors_pr = [ARC_COLORS['objection'], ARC_COLORS['reality']]
+bars3 = ax3.bar(_payroll['entity'], _payroll['rate'],
+                color=colors_pr, edgecolor='white', linewidth=1.5, width=0.5)
+for bar, val in zip(bars3, _payroll['rate']):
+    ax3.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
+             f'{val:.1f}%', ha='center', fontsize=18, fontweight='bold',
+             color=ARC_COLORS['text'])
+# Gap annotation
+ax3.annotate('22pp gap', xy=(0.5, 39),
+             fontsize=14, fontweight='bold', color=ARC_COLORS['objection'],
+             ha='center',
+             bbox=dict(boxstyle='round,pad=0.3', facecolor='#FEE2E2',
+                       edgecolor=ARC_COLORS['objection']))
+ax3.set_title('Payroll Detection Rate', fontsize=14,
+              fontweight='bold', color=ARC_COLORS['text'], pad=15)
+ax3.set_ylabel('Detection Rate %', fontsize=12, color=ARC_COLORS['muted'])
+ax3.set_ylim(0, 60)
+ax3.spines[['top', 'right']].set_visible(False)
+ax3.set_facecolor(ARC_COLORS['bg'])
+
+plt.tight_layout()
+plt.show()
+
+# ---------------------------------------------------------------------------
+# Panel 3: Revenue impact waterfall
+# ---------------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(20, 6))
+fig.patch.set_facecolor(ARC_COLORS['bg'])
+
+_items = ['PIN->SIG Shift', 'Reg E Revenue\nat Risk', 'Payroll Capture\nOpportunity', 'Total Opportunity']
+_values = [420000, -1100000, 850000, 170000]
+_cumulative = [420000, 420000 - 1100000, 420000 - 1100000 + 850000, 170000]
+_bottoms = [0, 420000, 420000 - 1100000, 0]
+_colors = [ARC_COLORS['reality'], ARC_COLORS['objection'], ARC_COLORS['reality'],
+           ARC_COLORS['action']]
+
+bars = ax.bar(range(len(_items)), [abs(v) for v in _values],
+              bottom=[min(b, b + v) if v < 0 else b for b, v in zip(_bottoms, _values)],
+              color=_colors, edgecolor='white', linewidth=1.5, width=0.6)
+
+for i, (bar, val) in enumerate(zip(bars, _values)):
+    y_pos = bar.get_y() + bar.get_height() + 20000 if val > 0 else bar.get_y() - 40000
+    label = f'+${abs(val)/1000:.0f}K' if val > 0 else f'-${abs(val)/1000:.0f}K'
+    ax.text(bar.get_x() + bar.get_width()/2, y_pos, label,
+            ha='center', fontsize=14, fontweight='bold',
+            color=ARC_COLORS['text'])
+
+ax.set_xticks(range(len(_items)))
+ax.set_xticklabels(_items, fontsize=13)
+ax.set_title('Revenue Opportunity Waterfall', fontsize=18, fontweight='bold',
+             color=ARC_COLORS['text'], pad=15)
+ax.set_ylabel('Annual Revenue Impact ($)', fontsize=13, color=ARC_COLORS['muted'])
+ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f'${x/1000:.0f}K'))
+ax.axhline(y=0, color=ARC_COLORS['muted'], linewidth=0.5)
+ax.spines[['top', 'right']].set_visible(False)
+ax.set_facecolor(ARC_COLORS['bg'])
+
+plt.tight_layout()
+plt.show()
+
+# ---------------------------------------------------------------------------
+# Panel 4: Impact box
+# ---------------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(20, 3))
+fig.patch.set_facecolor(ARC_COLORS['bg'])
+ax.set_xlim(0, 30)
+ax.set_ylim(0, 3)
+ax.axis('off')
+
+for i, (label, value, timeframe) in enumerate(_arc['impacts']):
+    x_start = i * 10 + 0.5
+    box = FancyBboxPatch((x_start, 0.3), 8.5, 2.4,
+                         boxstyle="round,pad=0.3",
+                         facecolor='white', edgecolor=ARC_COLORS['reality'],
+                         linewidth=1.5)
+    ax.add_patch(box)
+    ax.text(x_start + 4.25, 1.9, value, fontsize=28, fontweight='bold',
+            color=ARC_COLORS['reality'], ha='center')
+    ax.text(x_start + 4.25, 1.0, label, fontsize=12, color=ARC_COLORS['text'],
+            ha='center')
+    ax.text(x_start + 4.25, 0.55, timeframe, fontsize=10, color=ARC_COLORS['muted'],
+            ha='center')
+
+plt.tight_layout()
+plt.show()
+print(f"    Arc 4 rendered: {_arc['title']}")

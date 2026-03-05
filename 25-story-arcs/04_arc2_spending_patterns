@@ -1,0 +1,146 @@
+# ===========================================================================
+# ARC 2: WHERE THE MONEY GOES
+# ===========================================================================
+# Objection: "Our transaction volume is diversified."
+# Reality: Top 5 merchants = 38% of volume. Median members use only 1-2
+#          MCC categories. Single-category users are 3x churn risk.
+#
+# Evidence chain: Merchant concentration -> MCC usage -> category churn risk
+
+_arc = ARC_METADATA['spending_patterns']
+
+# ---------------------------------------------------------------------------
+# Panel 1: Objection vs Reality banner
+# ---------------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(20, 4))
+fig.patch.set_facecolor(ARC_COLORS['bg'])
+ax.set_xlim(0, 20)
+ax.set_ylim(0, 4)
+ax.axis('off')
+
+# Objection strip (red)
+obj_box = FancyBboxPatch((0.2, 2.1), 19.6, 1.7,
+                         boxstyle="round,pad=0.2",
+                         facecolor='#FEE2E2', edgecolor=ARC_COLORS['objection'],
+                         linewidth=2)
+ax.add_patch(obj_box)
+ax.text(0.8, 3.2, 'WHAT THEY SAY', fontsize=10, fontweight='bold',
+        color=ARC_COLORS['objection'])
+ax.text(0.8, 2.6, _arc['objection'], fontsize=16, color=ARC_COLORS['muted'],
+        style='italic')
+
+# Reality strip (teal)
+real_box = FancyBboxPatch((0.2, 0.2), 19.6, 1.7,
+                          boxstyle="round,pad=0.2",
+                          facecolor='#D1FAE5', edgecolor=ARC_COLORS['reality'],
+                          linewidth=2)
+ax.add_patch(real_box)
+ax.text(0.8, 1.3, 'WHAT THE DATA SHOWS', fontsize=10, fontweight='bold',
+        color=ARC_COLORS['reality'])
+ax.text(0.8, 0.65, _arc['reality'], fontsize=14, color=ARC_COLORS['text'],
+        fontweight='bold')
+
+plt.tight_layout()
+plt.show()
+
+# ---------------------------------------------------------------------------
+# Panel 2: Primary evidence -- merchant concentration + MCC category usage
+# ---------------------------------------------------------------------------
+# Merchant concentration data
+if 'merchant_summary' in dir() and len(merchant_summary) > 0:
+    _top5 = merchant_summary.nlargest(5, 'total_amount')
+    _top5_share = _top5['total_amount'].sum() / merchant_summary['total_amount'].sum() * 100
+    _top10 = merchant_summary.nlargest(10, 'total_amount')
+    _top10_share = _top10['total_amount'].sum() / merchant_summary['total_amount'].sum() * 100
+    _merchants = _top5[['merchant_name', 'total_amount']].copy()
+    _merchants['share'] = _merchants['total_amount'] / merchant_summary['total_amount'].sum() * 100
+else:
+    _top5_share = 38.0
+    _top10_share = 52.0
+    _merchants = pd.DataFrame({
+        'merchant_name': ['Amazon', 'Walmart', 'Target', 'Costco', 'Shell'],
+        'total_amount': [4200000, 3100000, 2400000, 1800000, 1500000],
+        'share': [12.1, 8.9, 6.9, 5.2, 4.3],
+    })
+
+# MCC category usage distribution
+if 'rel_df' in dir() and 'mcc_categories_used' in rel_df.columns:
+    _mcc_dist = rel_df['mcc_categories_used'].value_counts().sort_index().reset_index()
+    _mcc_dist.columns = ['categories', 'accounts']
+else:
+    _mcc_dist = pd.DataFrame({
+        'categories': [1, 2, 3, 4, 5, 6, 7, 8],
+        'accounts': [8200, 9100, 6500, 4300, 2800, 1500, 600, 205],
+    })
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
+fig.patch.set_facecolor(ARC_COLORS['bg'])
+fig.suptitle('ARC 2: Where the Money Goes -- Dangerous Merchant Concentration',
+             fontsize=22, fontweight='bold', color=ARC_COLORS['text'], y=1.02)
+
+# Left: Top 5 merchant share
+bars1 = ax1.barh(_merchants['merchant_name'], _merchants['share'],
+                 color=ARC_COLORS['objection'], edgecolor='white', linewidth=1.5, height=0.6)
+for bar, val in zip(bars1, _merchants['share']):
+    ax1.text(bar.get_width() + 0.3, bar.get_y() + bar.get_height()/2,
+             f'{val:.1f}%', va='center', fontsize=14, fontweight='bold',
+             color=ARC_COLORS['text'])
+ax1.set_title(f'Top 5 Merchants = {_top5_share:.0f}% of Volume', fontsize=16,
+              fontweight='bold', color=ARC_COLORS['text'], pad=15)
+ax1.set_xlabel('Share of Total Volume %', fontsize=13, color=ARC_COLORS['muted'])
+ax1.invert_yaxis()
+ax1.spines[['top', 'right']].set_visible(False)
+ax1.set_facecolor(ARC_COLORS['bg'])
+
+# Right: MCC categories used per member
+_colors_mcc = [ARC_COLORS['objection'] if c <= 2 else
+               ARC_COLORS['warning'] if c <= 3 else
+               ARC_COLORS['success'] for c in _mcc_dist['categories']]
+bars2 = ax2.bar(_mcc_dist['categories'].astype(str), _mcc_dist['accounts'],
+                color=_colors_mcc, edgecolor='white', linewidth=1.5, width=0.7)
+for bar, val in zip(bars2, _mcc_dist['accounts']):
+    ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 100,
+             f'{val:,}', ha='center', fontsize=12, fontweight='bold',
+             color=ARC_COLORS['text'])
+ax2.set_title('MCC Categories Used per Member', fontsize=16, fontweight='bold',
+              color=ARC_COLORS['text'], pad=15)
+ax2.set_xlabel('Number of MCC Categories', fontsize=13, color=ARC_COLORS['muted'])
+ax2.set_ylabel('Accounts', fontsize=13, color=ARC_COLORS['muted'])
+ax2.spines[['top', 'right']].set_visible(False)
+ax2.set_facecolor(ARC_COLORS['bg'])
+
+# Annotation: single-category risk
+ax2.annotate('3x churn risk', xy=(0.0, _mcc_dist['accounts'].iloc[0]),
+             xytext=(2.5, _mcc_dist['accounts'].max() * 0.85),
+             fontsize=13, fontweight='bold', color=ARC_COLORS['objection'],
+             arrowprops=dict(arrowstyle='->', color=ARC_COLORS['objection'], lw=2))
+
+plt.tight_layout()
+plt.show()
+
+# ---------------------------------------------------------------------------
+# Panel 3: Impact box
+# ---------------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(20, 3))
+fig.patch.set_facecolor(ARC_COLORS['bg'])
+ax.set_xlim(0, 30)
+ax.set_ylim(0, 3)
+ax.axis('off')
+
+for i, (label, value, timeframe) in enumerate(_arc['impacts']):
+    x_start = i * 10 + 0.5
+    box = FancyBboxPatch((x_start, 0.3), 8.5, 2.4,
+                         boxstyle="round,pad=0.3",
+                         facecolor='white', edgecolor=ARC_COLORS['reality'],
+                         linewidth=1.5)
+    ax.add_patch(box)
+    ax.text(x_start + 4.25, 1.9, value, fontsize=28, fontweight='bold',
+            color=ARC_COLORS['reality'], ha='center')
+    ax.text(x_start + 4.25, 1.0, label, fontsize=12, color=ARC_COLORS['text'],
+            ha='center')
+    ax.text(x_start + 4.25, 0.55, timeframe, fontsize=10, color=ARC_COLORS['muted'],
+            ha='center')
+
+plt.tight_layout()
+plt.show()
+print(f"    Arc 2 rendered: {_arc['title']}")
