@@ -471,13 +471,14 @@ ALL_CATEGORIES = list(COMPETITOR_MERCHANTS.keys())
 # ===========================================================================
 
 def tag_competitors(df, merchant_col='merchant_consolidated'):
-    """Tag transactions with competitor_category and competitor_match columns.
+    """Tag transactions with competitor_category column.
 
     Memory-optimized for large DataFrames (13M+ rows):
       - Drops old columns + gc.collect() before allocating new ones
       - pd.Categorical for category (~13 MiB vs ~102 MiB object array)
       - numpy arrays in the loop to reduce pandas overhead
-      - Deletes merchant_upper before creating result columns
+      - competitor_match is NOT stored here (saves 102 MiB); derive it
+        downstream on the filtered competitor subset instead
     """
     import re, gc
     import numpy as np
@@ -493,7 +494,7 @@ def tag_competitors(df, merchant_col='merchant_consolidated'):
 
     tagged = np.zeros(n, dtype=bool)
     cat_names = list(COMPETITOR_MERCHANTS.keys())
-    cat_codes = np.full(n, -1, dtype=np.int8)  # -1 → NaN in Categorical
+    cat_codes = np.full(n, -1, dtype=np.int8)  # -1 -> NaN in Categorical
 
     for cat_idx, (category, patterns) in enumerate(COMPETITOR_MERCHANTS.items()):
         sw = [p.upper().strip() for p in patterns.get('starts_with', []) if p.strip()]
@@ -514,7 +515,7 @@ def tag_competitors(df, merchant_col='merchant_consolidated'):
             tagged |= new_hits
 
     # Free the large uppercase Series (~250 MiB) before allocating results
-    del merchant_upper
+    del merchant_upper, tagged
     gc.collect()
 
     # Categorical column: ~13 MiB (int8 codes) vs ~102 MiB (object array)
@@ -523,17 +524,6 @@ def tag_competitors(df, merchant_col='merchant_consolidated'):
         cat_codes, categories=cat_names
     )
     del cat_codes
-    gc.collect()
-
-    # competitor_match: merchant name where tagged, None elsewhere
-    _merch_vals = df[merchant_col].values
-    _match = np.empty(n, dtype=object)
-    _match[:] = None
-    if tagged.any():
-        _match[tagged] = _merch_vals[tagged]
-    df['competitor_match'] = _match
-
-    del _match, tagged
     gc.collect()
 
     return df

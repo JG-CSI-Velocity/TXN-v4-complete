@@ -6,7 +6,9 @@
 combined_df = tag_competitors(combined_df, merchant_col='merchant_consolidated')
 
 # Build summary from tagged results
-competitor_txns = combined_df[combined_df['competitor_category'].notna()]
+competitor_txns = combined_df[combined_df['competitor_category'].notna()].copy()
+# Derive competitor_match on filtered subset only (avoids 102 MiB object array on full df)
+competitor_txns['competitor_match'] = competitor_txns['merchant_consolidated']
 
 summary_data = competitor_txns.groupby(['competitor_category', 'competitor_match']).agg(
     total_transactions=('amount', 'count'),
