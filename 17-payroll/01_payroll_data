@@ -41,61 +41,47 @@ keyword_payroll = keyword_mask & credit_mask
 # ---------------------------------------------------------------------------
 # 2. Pattern-based detection: recurring credits of similar amounts
 # ---------------------------------------------------------------------------
-# For each account, find credits that repeat at similar amounts (+/- 5%)
-# with biweekly or monthly frequency
+# For each account, bucket credits by approximate amount (5% bands),
+# then check if any bucket has 3+ deposits with regular spacing.
+# Fully vectorized -- no per-row Python loops.
 
-def detect_recurring_credits(group):
-    """Detect recurring credits that look like payroll for one account."""
-    credits = group[group['amount'] > 0].copy()
-    if len(credits) < 2:
-        return pd.Series(False, index=group.index)
+pattern_payroll = pd.Series(False, index=combined_df.index)
 
-    credits = credits.sort_values('transaction_date')
-    pattern_mask = pd.Series(False, index=group.index)
-
-    # Group credits by approximate amount (within 5%)
-    amounts = credits['amount'].values
-    dates = pd.to_datetime(credits['transaction_date']).values
-
-    for i in range(len(credits)):
-        similar = []
-        for j in range(len(credits)):
-            if i == j:
-                continue
-            if amounts[j] > 0 and abs(amounts[i] - amounts[j]) / amounts[i] <= 0.05:
-                similar.append(j)
-
-        if len(similar) >= 1:
-            # Check if intervals are roughly biweekly (10-18 days) or monthly (25-35 days)
-            all_idx = sorted([i] + similar)
-            for k in range(len(all_idx) - 1):
-                d1 = pd.Timestamp(dates[all_idx[k]])
-                d2 = pd.Timestamp(dates[all_idx[k + 1]])
-                gap = (d2 - d1).days
-                if 10 <= gap <= 18 or 25 <= gap <= 35:
-                    pattern_mask.loc[credits.index[all_idx[k]]] = True
-                    pattern_mask.loc[credits.index[all_idx[k + 1]]] = True
-
-    return pattern_mask
-
-# Apply pattern detection per account (only on non-keyword matches to save time)
 non_keyword_credits = combined_df[~keyword_payroll & credit_mask].copy()
 if len(non_keyword_credits) > 0 and 'transaction_date' in combined_df.columns:
-    # Limit pattern detection to accounts with enough credits to matter
-    acct_credit_counts = non_keyword_credits.groupby('primary_account_num').size()
-    eligible_accts = acct_credit_counts[acct_credit_counts >= 3].index
-    eligible_df = non_keyword_credits[non_keyword_credits['primary_account_num'].isin(eligible_accts)]
+    # Only accounts with 3+ non-keyword credits are candidates
+    _acct_counts = non_keyword_credits.groupby('primary_account_num').size()
+    _eligible = _acct_counts[_acct_counts >= 3].index
+    _elig_df = non_keyword_credits[non_keyword_credits['primary_account_num'].isin(_eligible)].copy()
 
-    if len(eligible_df) > 0:
-        pattern_results = eligible_df.groupby(
-            'primary_account_num', group_keys=False
-        ).apply(detect_recurring_credits)
-        pattern_payroll = pd.Series(False, index=combined_df.index)
-        pattern_payroll.loc[pattern_results.index] = pattern_results.values
-    else:
-        pattern_payroll = pd.Series(False, index=combined_df.index)
-else:
-    pattern_payroll = pd.Series(False, index=combined_df.index)
+    if len(_elig_df) > 0:
+        # Bucket amounts: round to nearest 5% band (log-based bucketing)
+        _elig_df['_amt_bucket'] = (np.log1p(_elig_df['amount']) * 20).round()
+        _elig_df['_txn_date'] = pd.to_datetime(_elig_df['transaction_date'])
+        _elig_df = _elig_df.sort_values(['primary_account_num', '_amt_bucket', '_txn_date'])
+
+        # For each (account, bucket), compute day gaps between consecutive deposits
+        _elig_df['_day_gap'] = (
+            _elig_df.groupby(['primary_account_num', '_amt_bucket'])['_txn_date']
+            .diff().dt.days
+        )
+
+        # A gap is "regular" if biweekly (10-18d) or monthly (25-35d)
+        _elig_df['_regular_gap'] = _elig_df['_day_gap'].between(10, 18) | _elig_df['_day_gap'].between(25, 35)
+
+        # Count regular gaps per (account, bucket)
+        _bucket_regular = (
+            _elig_df.groupby(['primary_account_num', '_amt_bucket'])['_regular_gap']
+            .transform('sum')
+        )
+
+        # Need 2+ regular gaps (i.e., 3+ deposits in a regular pattern)
+        _pattern_mask = _bucket_regular >= 2
+        pattern_payroll.loc[_elig_df.index[_pattern_mask]] = True
+
+        # Cleanup temp columns
+        combined_df.drop(columns=['_amt_bucket', '_txn_date', '_day_gap', '_regular_gap'],
+                         errors='ignore', inplace=True)
 
 # Combine both detection methods
 combined_df['payroll_detected'] = keyword_payroll | pattern_payroll
@@ -184,9 +170,9 @@ payroll_df['payroll_frequency'] = payroll_df['payroll_frequency'].fillna('none')
 # 5. Merge rewards_df demographics
 # ---------------------------------------------------------------------------
 if 'rewards_df' in dir() or 'rewards_df' in globals():
-    reward_cols = {}
+    _acct_col = 'Acct Number' if 'Acct Number' in rewards_df.columns else ' Acct Number'
     col_map = {
-        'Acct Number': 'primary_account_num',
+        _acct_col: 'primary_account_num',
         'Account Holder Age': 'member_age',
         'Account Age': 'account_age_days',
         'Avg Bal': 'avg_balance',
@@ -206,13 +192,20 @@ if 'rewards_df' in dir() or 'rewards_df' in globals():
 # ---------------------------------------------------------------------------
 # 6. Merge combined_df activity totals
 # ---------------------------------------------------------------------------
-acct_activity = combined_df.groupby('primary_account_num').agg(
-    total_txn_count=('transaction_date', 'count'),
-    total_spend=('amount', 'sum'),
-    total_debit=('amount', lambda x: x[x < 0].sum()),
-    total_credit=('amount', lambda x: x[x > 0].sum()),
-    distinct_merchants=('merchant_consolidated', 'nunique') if has_merchant else ('amount', 'count'),
-).reset_index()
+_debit_amt = combined_df['amount'].clip(upper=0)
+_credit_amt = combined_df['amount'].clip(lower=0)
+_agg_dict = {
+    'total_txn_count': ('amount', 'count'),
+    'total_spend': ('amount', 'sum'),
+    'total_debit': ('_debit_amt', 'sum'),
+    'total_credit': ('_credit_amt', 'sum'),
+}
+combined_df['_debit_amt'] = _debit_amt
+combined_df['_credit_amt'] = _credit_amt
+if has_merchant:
+    _agg_dict['distinct_merchants'] = ('merchant_consolidated', 'nunique')
+acct_activity = combined_df.groupby('primary_account_num').agg(**_agg_dict).reset_index()
+combined_df.drop(columns=['_debit_amt', '_credit_amt'], inplace=True)
 
 payroll_df = payroll_df.merge(acct_activity, on='primary_account_num', how='left')
 payroll_df['total_txn_count'] = payroll_df['total_txn_count'].fillna(0).astype(int)
