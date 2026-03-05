@@ -77,8 +77,9 @@ if len(pers_consistency_df) > 0:
 # Merchant cohort (new / returning / lost per month)
 # ---------------------------------------------------------------------------
 sorted_months_pers = sorted(personal_df['year_month'].unique())
-first_month_map_pers = personal_df.groupby('merchant_consolidated')['year_month'].min()
-monthly_sets_pers = {m: set(personal_df[personal_df['year_month'] == m]['merchant_consolidated'].unique())
+_pers_valid = personal_df[personal_df['merchant_consolidated'].notna()]
+first_month_map_pers = _pers_valid.groupby('merchant_consolidated')['year_month'].min()
+monthly_sets_pers = {m: set(_pers_valid[_pers_valid['year_month'] == m]['merchant_consolidated'].unique())
                      for m in sorted_months_pers}
 
 pers_cohort_rows = []

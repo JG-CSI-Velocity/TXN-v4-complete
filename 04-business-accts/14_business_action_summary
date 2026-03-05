@@ -27,7 +27,7 @@ else:
     })
 
     # 3. Growth/decline dynamics
-    if len(sorted_months_biz) >= 2:
+    if 'biz_cohort_df' in dir() and len(biz_cohort_df) > 0 and len(sorted_months_biz) >= 2:
         avg_new_bf = biz_cohort_df['new'].mean()
         avg_lost_bf = biz_cohort_df['lost'].mean()
         net_bf = avg_new_bf - avg_lost_bf
