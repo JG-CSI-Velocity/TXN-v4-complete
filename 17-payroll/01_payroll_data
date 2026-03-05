@@ -1,0 +1,254 @@
+# ===========================================================================
+# PAYROLL DATA: Detection Pipeline & Account-Level Summary
+# ===========================================================================
+# Detects payroll/direct deposit transactions from merchant names and
+# recurring credit patterns. Builds payroll_df for all downstream analysis.
+
+import re
+import warnings
+warnings.filterwarnings('ignore')
+
+# ---------------------------------------------------------------------------
+# 1. Keyword-based payroll detection
+# ---------------------------------------------------------------------------
+PAYROLL_KEYWORDS = [
+    'PAYROLL', 'DIRECT DEP', 'DIRECT DEPOSIT', 'DDEP',
+    'SALARY', 'WAGES', 'PAY FROM', 'PAYCHECK',
+]
+
+PAYROLL_PROCESSORS = [
+    'ADP', 'PAYCHEX', 'GUSTO', 'CERIDIAN', 'WORKDAY',
+    'PAYLOCITY', 'PAYCOM', 'PAYCOR', 'INTUIT PAYROLL',
+    'QUICKBOOKS PAYROLL',
+]
+
+ALL_PAYROLL_PATTERNS = PAYROLL_KEYWORDS + PAYROLL_PROCESSORS
+payroll_regex = '|'.join([re.escape(p) for p in ALL_PAYROLL_PATTERNS])
+
+# Tag keyword-matched payroll transactions
+has_merchant = 'merchant_consolidated' in combined_df.columns
+if has_merchant:
+    keyword_mask = combined_df['merchant_consolidated'].str.contains(
+        payroll_regex, case=False, na=False, regex=True
+    )
+else:
+    keyword_mask = pd.Series(False, index=combined_df.index)
+
+# Only credits (positive amounts) qualify as payroll
+credit_mask = combined_df['amount'] > 0
+keyword_payroll = keyword_mask & credit_mask
+
+# ---------------------------------------------------------------------------
+# 2. Pattern-based detection: recurring credits of similar amounts
+# ---------------------------------------------------------------------------
+# For each account, find credits that repeat at similar amounts (+/- 5%)
+# with biweekly or monthly frequency
+
+def detect_recurring_credits(group):
+    """Detect recurring credits that look like payroll for one account."""
+    credits = group[group['amount'] > 0].copy()
+    if len(credits) < 2:
+        return pd.Series(False, index=group.index)
+
+    credits = credits.sort_values('transaction_date')
+    pattern_mask = pd.Series(False, index=group.index)
+
+    # Group credits by approximate amount (within 5%)
+    amounts = credits['amount'].values
+    dates = pd.to_datetime(credits['transaction_date']).values
+
+    for i in range(len(credits)):
+        similar = []
+        for j in range(len(credits)):
+            if i == j:
+                continue
+            if amounts[j] > 0 and abs(amounts[i] - amounts[j]) / amounts[i] <= 0.05:
+                similar.append(j)
+
+        if len(similar) >= 1:
+            # Check if intervals are roughly biweekly (10-18 days) or monthly (25-35 days)
+            all_idx = sorted([i] + similar)
+            for k in range(len(all_idx) - 1):
+                d1 = pd.Timestamp(dates[all_idx[k]])
+                d2 = pd.Timestamp(dates[all_idx[k + 1]])
+                gap = (d2 - d1).days
+                if 10 <= gap <= 18 or 25 <= gap <= 35:
+                    pattern_mask.loc[credits.index[all_idx[k]]] = True
+                    pattern_mask.loc[credits.index[all_idx[k + 1]]] = True
+
+    return pattern_mask
+
+# Apply pattern detection per account (only on non-keyword matches to save time)
+non_keyword_credits = combined_df[~keyword_payroll & credit_mask].copy()
+if len(non_keyword_credits) > 0 and 'transaction_date' in combined_df.columns:
+    # Limit pattern detection to accounts with enough credits to matter
+    acct_credit_counts = non_keyword_credits.groupby('primary_account_num').size()
+    eligible_accts = acct_credit_counts[acct_credit_counts >= 3].index
+    eligible_df = non_keyword_credits[non_keyword_credits['primary_account_num'].isin(eligible_accts)]
+
+    if len(eligible_df) > 0:
+        pattern_results = eligible_df.groupby(
+            'primary_account_num', group_keys=False
+        ).apply(detect_recurring_credits)
+        pattern_payroll = pd.Series(False, index=combined_df.index)
+        pattern_payroll.loc[pattern_results.index] = pattern_results.values
+    else:
+        pattern_payroll = pd.Series(False, index=combined_df.index)
+else:
+    pattern_payroll = pd.Series(False, index=combined_df.index)
+
+# Combine both detection methods
+combined_df['payroll_detected'] = keyword_payroll | pattern_payroll
+
+# ---------------------------------------------------------------------------
+# 3. Identify the payroll source/processor
+# ---------------------------------------------------------------------------
+def extract_processor(merchant_name):
+    """Extract known processor name from merchant string."""
+    if pd.isna(merchant_name):
+        return 'Unknown'
+    upper = str(merchant_name).upper()
+    for proc in PAYROLL_PROCESSORS:
+        if proc in upper:
+            return proc
+    for kw in PAYROLL_KEYWORDS:
+        if kw in upper:
+            return 'Direct Deposit (Generic)'
+    return 'Recurring Credit Pattern'
+
+if has_merchant:
+    combined_df.loc[combined_df['payroll_detected'], 'payroll_source'] = (
+        combined_df.loc[combined_df['payroll_detected'], 'merchant_consolidated']
+        .apply(extract_processor)
+    )
+else:
+    combined_df.loc[combined_df['payroll_detected'], 'payroll_source'] = 'Unknown'
+
+# ---------------------------------------------------------------------------
+# 4. Account-level payroll summary
+# ---------------------------------------------------------------------------
+payroll_txns = combined_df[combined_df['payroll_detected']].copy()
+all_accounts = combined_df['primary_account_num'].unique()
+
+if len(payroll_txns) > 0:
+    acct_payroll = payroll_txns.groupby('primary_account_num').agg(
+        payroll_count=('amount', 'count'),
+        payroll_total=('amount', 'sum'),
+        avg_payroll_amount=('amount', 'mean'),
+        first_payroll=('transaction_date', 'min'),
+        last_payroll=('transaction_date', 'max'),
+    ).reset_index()
+
+    # Estimate frequency from median gap between payroll deposits
+    def estimate_frequency(group):
+        if len(group) < 2:
+            return 'irregular'
+        dates = pd.to_datetime(group['transaction_date']).sort_values()
+        gaps = dates.diff().dt.days.dropna()
+        if len(gaps) == 0:
+            return 'irregular'
+        median_gap = gaps.median()
+        if median_gap <= 9:
+            return 'weekly'
+        elif median_gap <= 18:
+            return 'biweekly'
+        elif median_gap <= 35:
+            return 'monthly'
+        return 'irregular'
+
+    freq_map = payroll_txns.groupby('primary_account_num').apply(
+        estimate_frequency
+    ).reset_index()
+    freq_map.columns = ['primary_account_num', 'payroll_frequency']
+    acct_payroll = acct_payroll.merge(freq_map, on='primary_account_num', how='left')
+    acct_payroll['has_payroll'] = True
+else:
+    acct_payroll = pd.DataFrame({
+        'primary_account_num': [],
+        'payroll_count': [], 'payroll_total': [],
+        'avg_payroll_amount': [], 'first_payroll': [],
+        'last_payroll': [], 'payroll_frequency': [],
+        'has_payroll': [],
+    })
+
+# Build full account-level dataframe (including non-payroll accounts)
+payroll_df = pd.DataFrame({'primary_account_num': all_accounts})
+payroll_df = payroll_df.merge(acct_payroll, on='primary_account_num', how='left')
+payroll_df['has_payroll'] = payroll_df['has_payroll'].fillna(False)
+payroll_df['payroll_count'] = payroll_df['payroll_count'].fillna(0).astype(int)
+payroll_df['payroll_total'] = payroll_df['payroll_total'].fillna(0)
+payroll_df['avg_payroll_amount'] = payroll_df['avg_payroll_amount'].fillna(0)
+payroll_df['payroll_frequency'] = payroll_df['payroll_frequency'].fillna('none')
+
+# ---------------------------------------------------------------------------
+# 5. Merge rewards_df demographics
+# ---------------------------------------------------------------------------
+if 'rewards_df' in dir() or 'rewards_df' in globals():
+    reward_cols = {}
+    col_map = {
+        'Acct Number': 'primary_account_num',
+        'Account Holder Age': 'member_age',
+        'Account Age': 'account_age_days',
+        'Avg Bal': 'avg_balance',
+        'Curr Bal': 'curr_balance',
+        'Prod Code': 'prod_code',
+        'Prod Desc': 'prod_desc',
+        'Business?': 'is_business',
+        'Branch': 'branch',
+    }
+    avail_cols = [c for c in col_map.keys() if c in rewards_df.columns]
+    if avail_cols:
+        demo_df = rewards_df[avail_cols].copy()
+        demo_df = demo_df.rename(columns=col_map)
+        if 'primary_account_num' in demo_df.columns:
+            payroll_df = payroll_df.merge(demo_df, on='primary_account_num', how='left')
+
+# ---------------------------------------------------------------------------
+# 6. Merge combined_df activity totals
+# ---------------------------------------------------------------------------
+acct_activity = combined_df.groupby('primary_account_num').agg(
+    total_txn_count=('transaction_date', 'count'),
+    total_spend=('amount', 'sum'),
+    total_debit=('amount', lambda x: x[x < 0].sum()),
+    total_credit=('amount', lambda x: x[x > 0].sum()),
+    distinct_merchants=('merchant_consolidated', 'nunique') if has_merchant else ('amount', 'count'),
+).reset_index()
+
+payroll_df = payroll_df.merge(acct_activity, on='primary_account_num', how='left')
+payroll_df['total_txn_count'] = payroll_df['total_txn_count'].fillna(0).astype(int)
+
+# ---------------------------------------------------------------------------
+# 7. Age bands for demographic analysis
+# ---------------------------------------------------------------------------
+if 'member_age' in payroll_df.columns:
+    bins = [0, 25, 35, 45, 55, 65, 200]
+    labels = ['18-25', '26-35', '36-45', '46-55', '56-65', '65+']
+    payroll_df['age_band'] = pd.cut(
+        payroll_df['member_age'], bins=bins, labels=labels, right=True
+    )
+
+# Account age bands
+if 'account_age_days' in payroll_df.columns:
+    acct_bins = [0, 90, 180, 365, 730, 1095, 1825, 3650, 7300, 999999]
+    acct_labels = ['1-90d', '91-180d', '181-365d', '1-2yr', '2-3yr',
+                   '3-5yr', '5-10yr', '10-20yr', '20yr+']
+    payroll_df['acct_age_band'] = pd.cut(
+        payroll_df['account_age_days'], bins=acct_bins, labels=acct_labels, right=True
+    )
+
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
+n_total = len(payroll_df)
+n_payroll = payroll_df['has_payroll'].sum()
+pct_payroll = n_payroll / n_total * 100 if n_total > 0 else 0
+avg_payroll_amt = payroll_df.loc[payroll_df['has_payroll'], 'avg_payroll_amount'].mean()
+n_payroll_txns = len(payroll_txns) if len(payroll_txns) > 0 else 0
+
+print("Payroll detection complete.")
+print(f"  {n_payroll:,} of {n_total:,} accounts ({pct_payroll:.1f}%) have detected payroll")
+print(f"  {n_payroll_txns:,} payroll transactions identified")
+print(f"  Avg payroll deposit: ${avg_payroll_amt:,.0f}" if avg_payroll_amt > 0 else "  Avg payroll deposit: N/A")
+print(f"  Detection methods: keyword match + recurring credit pattern")
+print(f"  Columns added to combined_df: payroll_detected, payroll_source")
+print(f"  payroll_df shape: {payroll_df.shape}")
