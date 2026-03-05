@@ -1,0 +1,317 @@
+# ===========================================================================
+# SEGMENT EVOLUTION: Action Summary & Findings
+# ===========================================================================
+# Summarizes portfolio health, campaign effectiveness evidence,
+# degradation risk, and recommended interventions per segment.
+
+if 'seg_evo_df' not in dir() or len(seg_evo_df) == 0:
+    print("    No segment evolution data available. Skipping action summary.")
+else:
+    from IPython.display import HTML
+
+    with_data = seg_evo_df[seg_evo_df['waves_present'] > 0]
+    n_total = len(with_data)
+
+    if n_total == 0:
+        print("    No accounts with segmentation data. Skipping action summary.")
+    else:
+        upgraded_ct = (with_data['direction'] == 'upgraded').sum()
+        degraded_ct = (with_data['direction'] == 'degraded').sum()
+        stable_ct = (with_data['direction'] == 'stable').sum()
+
+        pct_upgraded = upgraded_ct / n_total * 100
+        pct_degraded = degraded_ct / n_total * 100
+        pct_stable = stable_ct / n_total * 100
+        upgrade_degrade_ratio = upgraded_ct / max(degraded_ct, 1)
+
+        # ------------------------------------------------------------------
+        # Portfolio Health Assessment
+        # ------------------------------------------------------------------
+        if upgrade_degrade_ratio >= 2.0:
+            health_label = "Strong"
+            health_color = GEN_COLORS['success']
+            health_desc = (
+                f"The portfolio is healthy: upgrades outnumber degrades "
+                f"{upgrade_degrade_ratio:.1f}:1. Net positive member movement."
+            )
+        elif upgrade_degrade_ratio >= 1.0:
+            health_label = "Moderate"
+            health_color = GEN_COLORS['warning']
+            health_desc = (
+                f"The portfolio is moderately healthy: upgrades slightly "
+                f"outnumber degrades at {upgrade_degrade_ratio:.1f}:1. "
+                f"Room for improvement."
+            )
+        else:
+            health_label = "At Risk"
+            health_color = GEN_COLORS['accent']
+            health_desc = (
+                f"The portfolio is at risk: degrades outnumber upgrades "
+                f"({upgrade_degrade_ratio:.1f}:1 upgrade-to-degrade ratio). "
+                f"Intervention needed."
+            )
+
+        # ------------------------------------------------------------------
+        # Campaign Effectiveness (if available)
+        # ------------------------------------------------------------------
+        campaign_finding = ""
+        try:
+            rewards_cols_check = [c.strip() for c in rewards_df.columns]
+            resp_cols_check = [c for c in rewards_cols_check
+                               if c.endswith(' Resp')]
+            if len(resp_cols_check) > 0:
+                resp_data_check = rewards_df[
+                    ['Acct Number'] + resp_cols_check
+                ].copy()
+                resp_data_check['Acct Number'] = (
+                    resp_data_check['Acct Number'].astype(str).str.strip()
+                )
+                resp_data_check['any_response'] = (
+                    resp_data_check[resp_cols_check].notna().any(axis=1)
+                )
+                temp_merge = with_data.merge(
+                    resp_data_check[['Acct Number', 'any_response']],
+                    on='Acct Number', how='left',
+                )
+                temp_merge['any_response'] = (
+                    temp_merge['any_response'].fillna(False)
+                )
+                resp_up = (
+                    temp_merge[temp_merge['any_response']]['direction']
+                    == 'upgraded'
+                ).mean() * 100
+                nonresp_up = (
+                    temp_merge[~temp_merge['any_response']]['direction']
+                    == 'upgraded'
+                ).mean() * 100
+                diff = resp_up - nonresp_up
+                if diff > 0:
+                    campaign_finding = (
+                        f"Campaign responders upgrade at {resp_up:.1f}% vs. "
+                        f"{nonresp_up:.1f}% for non-responders "
+                        f"(+{diff:.1f}pp). Campaigns show positive ROI "
+                        f"evidence for segment improvement."
+                    )
+                else:
+                    campaign_finding = (
+                        f"Campaign responders upgrade at {resp_up:.1f}% vs. "
+                        f"{nonresp_up:.1f}% for non-responders "
+                        f"({diff:.1f}pp). Campaign impact on segment "
+                        f"migration is not clearly positive."
+                    )
+        except Exception:
+            campaign_finding = (
+                "Campaign response data not available for cross-reference."
+            )
+
+        # ------------------------------------------------------------------
+        # Segment-level degradation risk
+        # ------------------------------------------------------------------
+        seg_risk_rows = []
+        for seg in SEG_ORDER:
+            seg_accts = with_data[with_data['first_segment'] == seg]
+            n_seg = len(seg_accts)
+            if n_seg == 0:
+                continue
+            n_deg = (seg_accts['direction'] == 'degraded').sum()
+            n_upg = (seg_accts['direction'] == 'upgraded').sum()
+            deg_rate = n_deg / n_seg * 100
+            upg_rate = n_upg / n_seg * 100
+            seg_risk_rows.append({
+                'Segment': seg,
+                'Accounts': n_seg,
+                'Upgrade %': upg_rate,
+                'Degrade %': deg_rate,
+                'Net Flow': upg_rate - deg_rate,
+            })
+
+        seg_risk_df = pd.DataFrame(seg_risk_rows)
+
+        # ------------------------------------------------------------------
+        # Build HTML summary
+        # ------------------------------------------------------------------
+        findings_html = f"""
+        <div style="font-family: sans-serif; max-width: 900px; padding: 20px;">
+            <h1 style="color: {GEN_COLORS['dark_text']}; font-size: 28px;
+                        border-bottom: 3px solid {GEN_COLORS['primary']};
+                        padding-bottom: 10px;">
+                Segment Evolution: Action Summary
+            </h1>
+            <p style="color: {GEN_COLORS['muted']}; font-style: italic;
+                       font-size: 15px;">
+                {DATASET_LABEL} -- {len(SEG_WAVES)} bimonthly waves
+                ({', '.join(SEG_WAVES)})
+            </p>
+
+            <h2 style="color: {health_color}; font-size: 22px;
+                        margin-top: 25px;">
+                Portfolio Health: {health_label}
+            </h2>
+            <p style="font-size: 15px; line-height: 1.6;">
+                {health_desc}<br>
+                <strong>Upgraded:</strong> {pct_upgraded:.1f}%
+                ({upgraded_ct:,} accounts) |
+                <strong>Degraded:</strong> {pct_degraded:.1f}%
+                ({degraded_ct:,} accounts) |
+                <strong>Stable:</strong> {pct_stable:.1f}%
+                ({stable_ct:,} accounts)
+            </p>
+
+            <h2 style="color: {GEN_COLORS['info']}; font-size: 22px;
+                        margin-top: 25px;">
+                Campaign Effectiveness
+            </h2>
+            <p style="font-size: 15px; line-height: 1.6;">
+                {campaign_finding if campaign_finding else
+                 'No campaign data available for analysis.'}
+            </p>
+
+            <h2 style="color: {GEN_COLORS['warning']}; font-size: 22px;
+                        margin-top: 25px;">
+                Segment-Level Risk
+            </h2>
+        </div>
+        """
+
+        display(HTML(findings_html))
+
+        # Segment risk table
+        if len(seg_risk_df) > 0:
+            styled_risk = (
+                seg_risk_df.style
+                .hide(axis='index')
+                .format({
+                    'Accounts': '{:,}',
+                    'Upgrade %': '{:.1f}%',
+                    'Degrade %': '{:.1f}%',
+                    'Net Flow': '{:+.1f}pp',
+                })
+                .background_gradient(
+                    subset=['Net Flow'],
+                    cmap='RdYlGn',
+                    vmin=-30, vmax=30,
+                )
+                .set_properties(**{
+                    'font-size': '13px', 'font-weight': 'bold',
+                    'text-align': 'center',
+                    'border': '1px solid #E9ECEF',
+                    'padding': '7px 10px',
+                })
+                .set_table_styles([
+                    {'selector': 'th', 'props': [
+                        ('background-color', GEN_COLORS['warning']),
+                        ('color', 'white'), ('font-size', '14px'),
+                        ('font-weight', 'bold'), ('text-align', 'center'),
+                        ('padding', '8px 10px'),
+                    ]},
+                    {'selector': 'caption', 'props': [
+                        ('font-size', '18px'), ('font-weight', 'bold'),
+                        ('color', GEN_COLORS['dark_text']),
+                        ('text-align', 'left'),
+                        ('padding-bottom', '10px'),
+                    ]},
+                ])
+                .set_caption("Segment-Level Migration Rates (First Wave Cohort)")
+            )
+            display(styled_risk)
+
+        # ------------------------------------------------------------------
+        # Recommended interventions
+        # ------------------------------------------------------------------
+        interventions_html = f"""
+        <div style="font-family: sans-serif; max-width: 900px; padding: 20px;">
+            <h2 style="color: {GEN_COLORS['primary']}; font-size: 22px;
+                        margin-top: 15px;">
+                Recommended Interventions
+            </h2>
+            <table style="border-collapse: collapse; width: 100%;
+                          font-size: 14px;">
+                <tr style="background-color: {GEN_COLORS['primary']};
+                           color: white;">
+                    <th style="padding: 10px; text-align: left;">Target</th>
+                    <th style="padding: 10px; text-align: left;">Action</th>
+                    <th style="padding: 10px; text-align: left;">Rationale</th>
+                </tr>
+                <tr style="border-bottom: 1px solid #E9ECEF;">
+                    <td style="padding: 10px; font-weight: bold;">
+                        Bottom-segment accounts on watch list
+                    </td>
+                    <td style="padding: 10px;">
+                        Proactive outreach with personalized offers; increase
+                        campaign mail frequency
+                    </td>
+                    <td style="padding: 10px;">
+                        Declining trend + low balance = high churn risk.
+                        Early intervention prevents full disengagement.
+                    </td>
+                </tr>
+                <tr style="border-bottom: 1px solid #E9ECEF;
+                           background-color: #F8F9FA;">
+                    <td style="padding: 10px; font-weight: bold;">
+                        Recently degraded accounts
+                    </td>
+                    <td style="padding: 10px;">
+                        Win-back campaign; balance transfer incentives;
+                        relationship review call
+                    </td>
+                    <td style="padding: 10px;">
+                        Recent degradation is recoverable. These accounts
+                        had higher engagement previously.
+                    </td>
+                </tr>
+                <tr style="border-bottom: 1px solid #E9ECEF;">
+                    <td style="padding: 10px; font-weight: bold;">
+                        Stable middle-segment accounts
+                    </td>
+                    <td style="padding: 10px;">
+                        Cross-sell additional products; reward consistency;
+                        nudge toward next tier
+                    </td>
+                    <td style="padding: 10px;">
+                        Stable accounts are loyal but underutilized. Small
+                        nudges can trigger upgrades.
+                    </td>
+                </tr>
+                <tr style="border-bottom: 1px solid #E9ECEF;
+                           background-color: #F8F9FA;">
+                    <td style="padding: 10px; font-weight: bold;">
+                        Top-segment accounts
+                    </td>
+                    <td style="padding: 10px;">
+                        Retention programs; exclusive benefits;
+                        referral incentives
+                    </td>
+                    <td style="padding: 10px;">
+                        Protect highest-value members. Losing a top-segment
+                        account has outsized portfolio impact.
+                    </td>
+                </tr>
+            </table>
+
+            <h2 style="color: {GEN_COLORS['primary']}; font-size: 22px;
+                        margin-top: 25px;">
+                Key Takeaways
+            </h2>
+            <ul style="font-size: 15px; line-height: 1.8;">
+                <li><strong>Upgrade-to-degrade ratio
+                    ({upgrade_degrade_ratio:.1f}:1)</strong> is the single
+                    best leading indicator of portfolio momentum.</li>
+                <li>Segment migration is a <strong>more sensitive signal</strong>
+                    than raw balance or transaction counts because it captures
+                    behavioral shifts before financial impact materializes.</li>
+                <li>Track this ratio monthly. If it drops below 1.0,
+                    escalate to portfolio management immediately.</li>
+                <li>Campaign effectiveness should be measured not just by
+                    response rates but by <strong>segment upgrade rates</strong>
+                    among responders.</li>
+            </ul>
+        </div>
+        """
+        display(HTML(interventions_html))
+
+        print(f"\n    Segment Evolution analysis complete.")
+        print(f"    Portfolio health: {health_label} "
+              f"(upgrade:degrade = {upgrade_degrade_ratio:.1f}:1)")
+        print(f"    Total accounts analyzed: {n_total:,}")
+        print(f"    Segments tracked: {len(SEG_ORDER)} "
+              f"across {len(SEG_WAVES)} waves")
