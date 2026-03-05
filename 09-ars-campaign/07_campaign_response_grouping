@@ -1,9 +1,12 @@
 # ===========================================================================
 # CAMPAIGN RESPONSE GROUPING: Challenge Outcomes & NU Conversion (Conf. Ed.)
 # ===========================================================================
-# Two-panel: (1) response outcome by challenge type, (2) NU conversion tracking.
+# Three separate charts:
+#   1. Challenge outcome distribution (horizontal bar)
+#   2. NU conversion pipeline by wave (stacked bar + conversion line)
+#   3. Cumulative NU conversion funnel
 # Shows which challenges drive success and whether NU 1-4 accounts convert
-# to NU 5+ in subsequent waves. (16,7).
+# to NU 5+ in subsequent waves.
 
 if 'camp_acct' not in dir() or len(camp_acct) == 0:
     print("    No campaign data available. Skipping response grouping.")
@@ -17,7 +20,6 @@ else:
         _mailed_mask = camp_raw[mc].notna()
         _resp_vals = camp_raw.loc[_mailed_mask, rc].copy()
 
-        # Classify each value
         for val in _resp_vals:
             if pd.isna(val):
                 _resp_values_all.append({'period': period_label, 'outcome': 'No Response'})
@@ -37,7 +39,7 @@ else:
             return 'NU 5+ (Success)'
         if v in ('NU 1-4', 'NU1-4'):
             return 'NU 1-4 (Partial)'
-        return v  # keep any other values as-is
+        return v
 
     _rv_df['category'] = _rv_df['outcome'].apply(_outcome_category)
 
@@ -61,10 +63,9 @@ else:
     # -----------------------------------------------------------------
     _acct_col_name = 'Acct Number' if 'Acct Number' in camp_raw.columns else ' Acct Number'
     _nu_tracking = []
-    _nu_partial_ever = set()  # accounts that were ever NU 1-4
-    _nu_success_ever = set()  # accounts that were ever NU 5+
+    _nu_partial_ever = set()
+    _nu_success_ever = set()
 
-    # Sort mail/resp cols chronologically
     _sorted_periods = camp_summary['period'].tolist()
     _mc_map = {mc.replace(' Mail', ''): mc for mc in mail_cols}
     _rc_map = {rc.replace(' Resp', ''): rc for rc in resp_cols}
@@ -79,7 +80,6 @@ else:
         _resp = camp_raw[rc]
         _accts = camp_raw[_acct_col_name].astype(str).str.strip()
 
-        # Find NU 1-4 and NU 5+ accounts this period
         _rv = _resp.astype(str).str.strip().str.upper()
         _nu14_mask = _rv.isin(['NU 1-4', 'NU1-4']) & _resp.notna()
         _nu5_mask = _rv.isin(['NU 5+', 'NU5+']) & _resp.notna()
@@ -87,9 +87,7 @@ else:
         _nu14_accts = set(_accts[_nu14_mask])
         _nu5_accts = set(_accts[_nu5_mask])
 
-        # How many NU 1-4 from previous waves converted to NU 5+ this wave?
         converted = _nu_partial_ever & _nu5_accts
-        # How many NU 1-4 from previous waves are NU 1-4 again (still trying)?
         still_partial = _nu_partial_ever & _nu14_accts
 
         _nu_tracking.append({
@@ -106,14 +104,12 @@ else:
 
     _nu_df = pd.DataFrame(_nu_tracking)
 
-    # -----------------------------------------------------------------
-    # 3. Two-panel chart
-    # -----------------------------------------------------------------
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7),
-                                    gridspec_kw={'width_ratios': [1, 1.2]})
-
-    # --- LEFT: Response outcome distribution (horizontal bar) ---
+    # =================================================================
+    # CHART 1: Challenge Outcome Distribution
+    # =================================================================
     if len(_cat_counts) > 0:
+        fig1, ax1 = plt.subplots(figsize=(14, 7))
+
         _sorted_cats = _cat_counts.sort_values()
         _names = [str(n)[:25] for n in _sorted_cats.index]
         _y_pos = range(len(_sorted_cats))
@@ -122,29 +118,40 @@ else:
         ax1.barh(_y_pos, _sorted_cats.values, color=_colors,
                  edgecolor='white', linewidth=0.5, height=0.65)
         ax1.set_yticks(_y_pos)
-        ax1.set_yticklabels(_names, fontsize=11, fontweight='bold')
-        ax1.set_xlabel("Count (account-periods)", fontsize=12, fontweight='bold', labelpad=8)
+        ax1.set_yticklabels(_names, fontsize=12, fontweight='bold')
+        ax1.set_xlabel("Count (account-periods)", fontsize=14, fontweight='bold', labelpad=8)
 
-        # Value labels
         for j, (cat_name, count) in enumerate(_sorted_cats.items()):
             _total_responses = _cat_counts.sum()
             _pct = count / _total_responses * 100
             ax1.text(count + _total_responses * 0.01, j,
                      f"{count:,} ({_pct:.1f}%)",
-                     va='center', fontsize=10, fontweight='bold',
+                     va='center', fontsize=11, fontweight='bold',
                      color=GEN_COLORS['dark_text'])
 
         gen_clean_axes(ax1, keep_left=True, keep_bottom=True)
         ax1.xaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
         ax1.set_axisbelow(True)
-        ax1.set_title("Challenge Outcomes", fontsize=20, fontweight='bold',
-                       color=GEN_COLORS['dark_text'], pad=15)
 
-    # --- RIGHT: NU conversion over waves ---
+        ax1.set_title("Challenge Outcome Distribution",
+                       fontsize=26, fontweight='bold',
+                       color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax1.text(0.0, 1.02,
+                 f"Which challenge types drive the most responses?  ({DATASET_LABEL})",
+                 transform=ax1.transAxes, fontsize=14,
+                 color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()
+
+    # =================================================================
+    # CHART 2: NU Conversion Pipeline by Wave
+    # =================================================================
     if len(_nu_df) > 0 and _nu_df['nu_14_this_wave'].sum() > 0:
+        fig2, ax2 = plt.subplots(figsize=(14, 7))
+
         x = range(len(_nu_df))
 
-        # Stacked bars: NU 1-4 (warning) and NU 5+ (success) per wave
         ax2.bar(x, _nu_df['nu_14_this_wave'], color=GEN_COLORS['warning'],
                 edgecolor='white', linewidth=0.5, width=0.6, label='NU 1-4 (Partial)')
         ax2.bar(x, _nu_df['nu_5plus_this_wave'], bottom=_nu_df['nu_14_this_wave'],
@@ -158,46 +165,82 @@ else:
                       color=GEN_COLORS['accent'], linewidth=2.5, marker='D',
                       markersize=7, markeredgecolor='white', markeredgewidth=1.5,
                       label='Prior NU 1-4 Converted', zorder=5)
-            ax2b.set_ylabel("Prior NU 1-4 Converted to NU 5+", fontsize=11,
+            ax2b.set_ylabel("Prior NU 1-4 Converted to NU 5+", fontsize=12,
                             fontweight='bold', color=GEN_COLORS['accent'], labelpad=10)
             ax2b.spines['top'].set_visible(False)
             ax2b.spines['left'].set_visible(False)
             ax2b.grid(False)
-            ax2b.legend(loc='upper right', fontsize=10)
+            ax2b.legend(loc='upper right', fontsize=11)
 
         ax2.set_xticks(list(x))
-        ax2.set_xticklabels(_nu_df['period'], fontsize=10, fontweight='bold',
+        ax2.set_xticklabels(_nu_df['period'], fontsize=11, fontweight='bold',
                             rotation=45, ha='right')
-        ax2.set_ylabel("Accounts per Wave", fontsize=12, fontweight='bold', labelpad=10)
+        ax2.set_ylabel("Accounts per Wave", fontsize=14, fontweight='bold', labelpad=10)
 
         gen_clean_axes(ax2, keep_left=True, keep_bottom=True)
         ax2.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
         ax2.set_axisbelow(True)
-        ax2.legend(loc='upper left', fontsize=10)
-        ax2.set_title("Non-User Conversion Pipeline", fontsize=20, fontweight='bold',
-                       color=GEN_COLORS['dark_text'], pad=15)
-    else:
-        ax2.text(0.5, 0.5, "No NU data available", ha='center', va='center',
-                 fontsize=14, color=GEN_COLORS['muted'], transform=ax2.transAxes)
-        ax2.axis('off')
+        ax2.legend(loc='upper left', fontsize=11)
 
-    fig.suptitle("Response Grouping & Non-User Conversion",
-                 fontsize=26, fontweight='bold',
-                 color=GEN_COLORS['dark_text'], y=1.04)
-    fig.text(0.5, 0.97, f"Which challenges work? Are NU 1-4 accounts converting over time?  ({DATASET_LABEL})",
-             ha='center', fontsize=14, color=GEN_COLORS['muted'], style='italic')
+        ax2.set_title("Non-User Conversion Pipeline by Wave",
+                       fontsize=26, fontweight='bold',
+                       color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax2.text(0.0, 1.02,
+                 f"NU 1-4 vs NU 5+ each wave, with prior-wave conversions  ({DATASET_LABEL})",
+                 transform=ax2.transAxes, fontsize=14,
+                 color=GEN_COLORS['muted'], style='italic')
 
-    plt.tight_layout()
-    plt.show()
+        plt.tight_layout()
+        plt.show()
 
-    # -----------------------------------------------------------------
-    # 4. Summary stats
-    # -----------------------------------------------------------------
+    # =================================================================
+    # CHART 3: Cumulative NU Conversion Funnel
+    # =================================================================
     _total_nu14_ever = len(_nu_partial_ever)
     _total_nu5_ever = len(_nu_success_ever)
     _converted_ever = len(_nu_partial_ever & _nu_success_ever)
     _conversion_rate = _converted_ever / _total_nu14_ever * 100 if _total_nu14_ever > 0 else 0
 
+    if _total_nu14_ever > 0:
+        fig3, ax3 = plt.subplots(figsize=(14, 7))
+
+        _never_converted = _total_nu14_ever - _converted_ever
+        funnel_labels = ['Total NU 1-4\n(Ever)', 'Converted to\nNU 5+', 'Never\nConverted']
+        funnel_values = [_total_nu14_ever, _converted_ever, _never_converted]
+        funnel_colors = [GEN_COLORS['warning'], GEN_COLORS['success'], GEN_COLORS['muted']]
+
+        bars = ax3.bar(range(len(funnel_labels)), funnel_values,
+                       color=funnel_colors, edgecolor='white', linewidth=0.5, width=0.5)
+
+        ax3.set_xticks(range(len(funnel_labels)))
+        ax3.set_xticklabels(funnel_labels, fontsize=13, fontweight='bold')
+        ax3.set_ylabel("Unique Accounts", fontsize=14, fontweight='bold', labelpad=10)
+
+        for bar, val in zip(bars, funnel_values):
+            pct = val / _total_nu14_ever * 100
+            ax3.text(bar.get_x() + bar.get_width() / 2, bar.get_height() * 1.02,
+                     f"{val:,}\n({pct:.1f}%)",
+                     ha='center', va='bottom', fontsize=13, fontweight='bold',
+                     color=GEN_COLORS['dark_text'])
+
+        gen_clean_axes(ax3, keep_left=True, keep_bottom=True)
+        ax3.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax3.set_axisbelow(True)
+
+        ax3.set_title("Non-User Conversion Funnel (Cumulative)",
+                       fontsize=26, fontweight='bold',
+                       color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax3.text(0.0, 1.02,
+                 f"Do NU 1-4 accounts eventually convert to NU 5+ in later waves?  ({DATASET_LABEL})",
+                 transform=ax3.transAxes, fontsize=14,
+                 color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()
+
+    # -----------------------------------------------------------------
+    # Summary stats
+    # -----------------------------------------------------------------
     print(f"\n    Challenge outcome distribution (across all periods):")
     for cat, count in _cat_counts.items():
         print(f"      {cat:<25s}: {count:>6,}")
