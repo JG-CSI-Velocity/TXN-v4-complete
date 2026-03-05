@@ -7,16 +7,7 @@
 #
 # Includes name normalization (Golden 1 variants, Revolut variants, etc.)
 
-def normalize_competitor_name(bank_name: str) -> str:
-    """Roll up variant spellings to a single canonical name."""
-    if not isinstance(bank_name, str):
-        return bank_name
-    name_u = bank_name.upper()
-    if "GOLDEN 1" in name_u:
-        return "GOLDEN 1 CREDIT UNION"
-    if "REVOLUT" in name_u:
-        return "REVOLUT"
-    return bank_name
+# normalize_competitor_name is defined in 01_competitor_config
 
 if len(all_competitor_data) > 0:
     bank_categories = BANK_CATEGORIES

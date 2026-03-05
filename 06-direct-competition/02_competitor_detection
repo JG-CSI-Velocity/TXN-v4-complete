@@ -9,7 +9,7 @@ combined_df = tag_competitors(combined_df, merchant_col='merchant_consolidated')
 
 # Build summary from tagged results
 competitor_txns = combined_df[combined_df['competitor_category'].notna()].copy()
-competitor_txns['competitor_match'] = competitor_txns['merchant_consolidated']
+competitor_txns['competitor_match'] = competitor_txns['merchant_consolidated'].apply(normalize_competitor_name)
 
 summary_data = competitor_txns.groupby(['competitor_category', 'competitor_match']).agg(
     total_transactions=('amount', 'count'),

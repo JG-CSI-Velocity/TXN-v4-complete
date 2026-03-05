@@ -586,6 +586,80 @@ def discover_unmatched_financial(df, merchant_col='merchant_consolidated', top_n
 
 
 # ---------------------------------------------------------------------------
+# Name normalization (roll up merchant variants to canonical names)
+# ---------------------------------------------------------------------------
+def normalize_competitor_name(bank_name: str) -> str:
+    """Roll up variant merchant names to a single canonical name.
+
+    Merchant data often has variants like 'ALLY BANK TRANSFER',
+    'ALLY BANK SAVINGS', 'ALLY FINANCIAL AUTO' that should all
+    roll up to 'ALLY BANK'.
+    """
+    if not isinstance(bank_name, str):
+        return bank_name
+    name_u = bank_name.upper().strip()
+
+    # Map: if name starts with key, normalize to value
+    _ROLLUPS = {
+        # Big Nationals
+        'CHASE':            'CHASE',
+        'JPMORGAN':         'CHASE',
+        'WELLS FARGO':      'WELLS FARGO',
+        'BANK OF AMERICA':  'BANK OF AMERICA',
+        'BOFA':             'BANK OF AMERICA',
+        'US BANK':          'US BANK',
+        'U.S. BANK':        'US BANK',
+        'CITIBANK':         'CITIBANK',
+        'CITI CARD':        'CITIBANK',
+        'CAPITAL ONE':      'CAPITAL ONE',
+        'PNC BANK':         'PNC BANK',
+        'PNC FINANCIAL':    'PNC BANK',
+        'TRUIST':           'TRUIST',
+        'TD BANK':          'TD BANK',
+        'USAA':             'USAA',
+        # Digital Banks
+        'ALLY BANK':        'ALLY BANK',
+        'ALLY FINANCIAL':   'ALLY BANK',
+        'DISCOVER BANK':    'DISCOVER',
+        'DISCOVER SAVINGS': 'DISCOVER',
+        'DISCOVER CARD':    'DISCOVER',
+        'DISCOVER ':        'DISCOVER',
+        'CHIME':            'CHIME',
+        'SOFI':             'SOFI',
+        'VARO':             'VARO',
+        'CURRENT MOBILE':   'CURRENT',
+        'CURRENT BANK':     'CURRENT',
+        'MARCUS BY':        'MARCUS (GOLDMAN SACHS)',
+        'MARCUS BANK':      'MARCUS (GOLDMAN SACHS)',
+        'REVOLUT':          'REVOLUT',
+        'SYNCHRONY':        'SYNCHRONY BANK',
+        'AXOS':             'AXOS BANK',
+        'GO2BANK':          'GO2BANK',
+        # Ecosystems
+        'PAYPAL':           'PAYPAL',
+        'VENMO':            'VENMO',
+        'CASH APP':         'CASH APP',
+        'SQUARE CASH':      'CASH APP',
+        'APPLE PAY':        'APPLE PAY',
+        'APPLE CASH':       'APPLE CASH',
+        'GOOGLE PAY':       'GOOGLE PAY',
+        'GOOGLE WALLET':    'GOOGLE PAY',
+        'ZELLE':            'ZELLE',
+        'AFFIRM':           'AFFIRM',
+        'KLARNA':           'KLARNA',
+        'AFTERPAY':         'AFTERPAY',
+        # CU variants
+        'GOLDEN 1':         'GOLDEN 1 CREDIT UNION',
+    }
+
+    for prefix, canonical in _ROLLUPS.items():
+        if name_u.startswith(prefix):
+            return canonical
+
+    return bank_name
+
+
+# ---------------------------------------------------------------------------
 # Category helpers
 # ---------------------------------------------------------------------------
 def clean_category(cat_str):
