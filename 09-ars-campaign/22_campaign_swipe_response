@@ -1,43 +1,47 @@
 # ===========================================================================
 # CAMPAIGN RESPONSE BY SWIPE CATEGORY: Who Responds? (Conference Edition)
 # ===========================================================================
-# Bar chart: response rate by SwipeCat12 tier. (14,7).
-# Depends on swipe_lookup from general/29_swipe_category_data.
+# Bar chart: response rate by SwipeCat tier. (14,7).
+# Depends on swipe_lookup DataFrame from general/29_swipe_category_data.
+# Skips if SwipeCat columns are not in the ODDD.
 
 if 'swipe_lookup' not in dir() or not isinstance(swipe_lookup, pd.DataFrame) or len(swipe_lookup) == 0:
-    print("    No swipe category data available. Skipping swipe response chart.")
+    print("    No SwipeCat data in ODDD. Skipping swipe response chart.")
 elif 'camp_acct' not in dir() or len(camp_acct) == 0:
     print("    No campaign data available. Skipping swipe response chart.")
 else:
-    try:
+    # Determine which SwipeCat column to use
+    _cat_col = None
+    _order_var = None
+    _palette_var = None
+
+    if 'swipe_cat12' in swipe_lookup.columns and 'SWIPE12_ORDER' in dir():
         _cat_col = 'swipe_cat12'
-        _order_var = SWIPE12_ORDER if 'SWIPE12_ORDER' in dir() else SWIPE_ORDER
-        _palette_var = SWIPE12_PALETTE if 'SWIPE12_PALETTE' in dir() else SWIPE_PALETTE
+        _order_var = SWIPE12_ORDER
+        _palette_var = SWIPE12_PALETTE
+    elif 'swipe_cat3' in swipe_lookup.columns and 'SWIPE3_ORDER' in dir():
+        _cat_col = 'swipe_cat3'
+        _order_var = SWIPE3_ORDER
+        _palette_var = SWIPE3_PALETTE
 
-        if _cat_col not in swipe_lookup.columns:
-            # Fallback to 3-month if 12-month not available
-            _cat_col = 'swipe_cat3'
-            _order_var = SWIPE3_ORDER if 'SWIPE3_ORDER' in dir() else SWIPE_ORDER
-            _palette_var = SWIPE3_PALETTE if 'SWIPE3_PALETTE' in dir() else SWIPE_PALETTE
-
+    if _cat_col is None:
+        print("    No SwipeCat tier columns found in swipe_lookup. Skipping.")
+    else:
         _swipe_camp = camp_acct[['primary_account_num', 'camp_status', 'total_responses']].merge(
             swipe_lookup[['primary_account_num', _cat_col]], on='primary_account_num', how='inner'
         )
 
-        # Filter to mailed accounts only
         _mailed = _swipe_camp[_swipe_camp['camp_status'] != 'Never Mailed']
 
         if len(_mailed) == 0:
             print("    No mailed accounts with swipe data. Skipping chart.")
         else:
-            # Response rate by swipe tier
             _swipe_resp = _mailed.groupby(_cat_col).agg(
                 total_mailed=('primary_account_num', 'count'),
                 responders=('total_responses', lambda x: (x > 0).sum()),
             ).reset_index()
             _swipe_resp['response_rate'] = _swipe_resp['responders'] / _swipe_resp['total_mailed'] * 100
 
-            # Order by discovered palette order
             _tier_order = [t for t in _order_var if t in _swipe_resp[_cat_col].values]
             if len(_tier_order) == 0:
                 _tier_order = _swipe_resp[_cat_col].tolist()
@@ -78,6 +82,3 @@ else:
 
             plt.tight_layout()
             plt.show()
-
-    except NameError as e:
-        print(f"    Missing dependency for swipe response chart: {e}")
