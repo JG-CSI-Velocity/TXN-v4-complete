@@ -13,6 +13,10 @@ print(rewards_df['Business?'].value_counts())
 odd_subset = rewards_df[['Acct Number', 'Business?']].copy()
 odd_subset.columns = ['account_number', 'business_flag']
 
+# Normalize account numbers to string (Excel loads as int/float, TSV as string)
+odd_subset['account_number'] = odd_subset['account_number'].astype(str).str.strip().str.replace(r'\.0$', '', regex=True)
+combined_df['primary_account_num'] = combined_df['primary_account_num'].astype(str).str.strip()
+
 # Drop stale merge columns so cell is safe to re-run
 for col in ['business_flag', 'account_number', 'business_flag_x', 'business_flag_y']:
     if col in combined_df.columns:
@@ -35,9 +39,22 @@ print(f"  Total transactions: {len(combined_df):,}")
 print(f"  Matched to ODD: {combined_df['business_flag'].notna().sum():,}")
 print(f"  Unmatched: {combined_df['business_flag'].isna().sum():,}")
 
+# Debug: show sample account numbers from each side if match rate is low
+_match_rate = combined_df['business_flag'].notna().mean()
+if _match_rate < 0.5:
+    print(f"\n  WARNING: Low match rate ({_match_rate:.1%})")
+    print(f"  Sample txn acct nums: {combined_df['primary_account_num'].head(3).tolist()}")
+    print(f"  Sample ODDD acct nums: {odd_subset['account_number'].head(3).tolist()}")
+
 # Check what the actual values are
 print("\nBusiness flag unique values in merged data:")
 print(combined_df['business_flag'].value_counts())
+
+# Normalize business_flag values (handle Y/Yes/YES/True variants)
+_bf = combined_df['business_flag'].astype(str).str.strip().str.lower()
+combined_df['business_flag'] = _bf.map(
+    lambda v: 'Yes' if v in ('yes', 'y', 'true', '1') else ('No' if v in ('no', 'n', 'false', '0') else None)
+)
 
 # Split into business and personal
 business_df = combined_df[combined_df['business_flag'] == 'Yes'].copy()
