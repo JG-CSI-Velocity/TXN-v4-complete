@@ -16,14 +16,18 @@ try:
     # -----------------------------------------------------------------
     rewards_cols = [c.strip() for c in rewards_df.columns]
 
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+
     spend_month_cols = sorted(
         [c for c in rewards_cols if c.endswith(' Spend') and c[0].isupper()
-         and len(c.split(' ')[0]) in (5, 6)],
+         and len(c.split(' ')[0]) in (5, 6)
+         and c.split(' ')[0][:3] in _VALID_MON],
         key=lambda c: pd.to_datetime(c.replace(' Spend', ''), format='%b%y')
     )
     swipe_month_cols = sorted(
         [c for c in rewards_cols if c.endswith(' Swipes') and c[0].isupper()
-         and len(c.split(' ')[0]) in (5, 6)],
+         and len(c.split(' ')[0]) in (5, 6)
+         and c.split(' ')[0][:3] in _VALID_MON],
         key=lambda c: pd.to_datetime(c.replace(' Swipes', ''), format='%b%y')
     )
 
