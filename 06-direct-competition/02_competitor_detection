@@ -1,5 +1,5 @@
 # ===========================================================================
-# COMPETITOR DETECTION
+# COMPETITOR DETECTION & SUMMARY
 # ===========================================================================
 
 # Tag competitors using the matching function from 01_competitor_config
@@ -7,7 +7,6 @@ combined_df = tag_competitors(combined_df, merchant_col='merchant_consolidated')
 
 # Build summary from tagged results
 competitor_txns = combined_df[combined_df['competitor_category'].notna()].copy()
-# Derive competitor_match on filtered subset only (avoids 102 MiB object array on full df)
 competitor_txns['competitor_match'] = competitor_txns['merchant_consolidated']
 
 summary_data = competitor_txns.groupby(['competitor_category', 'competitor_match']).agg(
@@ -30,20 +29,64 @@ if 'business_df' in dir() and len(business_df) > 0:
 if 'personal_df' in dir() and len(personal_df) > 0:
     personal_df = tag_competitors(personal_df, merchant_col='merchant_consolidated')
 
+# --- Summary ---
 total_accounts = combined_df['primary_account_num'].nunique()
 comp_accounts = competitor_txns['primary_account_num'].nunique()
 
-print(f"Searched {len(combined_df):,} transactions across {total_accounts:,} accounts")
-print(f"  Competitor transactions: {len(competitor_txns):,} ({len(competitor_txns)/len(combined_df)*100:.1f}%)")
-print(f"  Accounts with competitor activity: {comp_accounts:,} ({comp_accounts/total_accounts*100:.1f}%)")
-print(f"  Unique competitors matched: {len(all_competitor_data)}")
-print(f"  Categories with activity: {competitor_txns['competitor_category'].nunique()}")
+print("=" * 120)
+print(" " * 40 + "COMPETITOR DETECTION SUMMARY")
+print("=" * 120)
 
-print(f"\nBy category:")
-cat_summary = competitor_txns.groupby('competitor_category').agg(
-    transactions=('amount', 'count'),
-    accounts=('primary_account_num', 'nunique')
-).sort_values('transactions', ascending=False)
-for cat, row in cat_summary.iterrows():
-    label = cat.replace('_', ' ').title()
-    print(f"  {label:25s} {row['transactions']:>8,} txns  ({row['accounts']:,} accounts)")
+if len(competitor_txns) == 0:
+    print("\nNo competitor transactions found")
+else:
+    total_comp_spend = competitor_txns['amount'].sum()
+    pct_comp_txns = len(competitor_txns) / len(combined_df) * 100
+    pct_comp_accounts = comp_accounts / total_accounts * 100
+
+    print(f"\nSearched {len(combined_df):,} transactions across {total_accounts:,} accounts")
+    print(f"  Competitor transactions: {len(competitor_txns):,} ({pct_comp_txns:.1f}% of total)")
+    print(f"  Accounts with activity:  {comp_accounts:,} ({pct_comp_accounts:.1f}% of {total_accounts:,})")
+    print(f"  Unique competitors:      {competitor_txns['merchant_consolidated'].nunique()}")
+    print(f"  Categories with activity: {competitor_txns['competitor_category'].nunique()}")
+
+    # Category breakdown
+    print(f"\nBy Category:")
+    cat_summary = competitor_txns.groupby('competitor_category').agg(
+        transactions=('amount', 'count'),
+        accounts=('primary_account_num', 'nunique')
+    ).sort_values('transactions', ascending=False)
+    for cat, row in cat_summary.iterrows():
+        label = cat.replace('_', ' ').title()
+        print(f"  {label:25s} {row['transactions']:>8,} txns  ({row['accounts']:,} accounts)")
+
+    # True competitors vs payment ecosystems
+    true_txns = len(competitor_txns[competitor_txns['competitor_category'].isin(TRUE_COMPETITORS)])
+    eco_txns = len(competitor_txns[competitor_txns['competitor_category'].isin(PAYMENT_ECOSYSTEMS)])
+    print(f"\n  True competitor txns:    {true_txns:>10,}")
+    print(f"  Payment ecosystem txns:  {eco_txns:>10,}")
+
+    # Top 10 competitors
+    top10 = (
+        competitor_txns.groupby('merchant_consolidated')
+        .agg(
+            txns=('amount', 'count'),
+            accounts=('primary_account_num', 'nunique'),
+            category=('competitor_category', 'first'),
+        )
+        .sort_values('txns', ascending=False)
+        .head(10)
+    )
+    print(f"\nTop 10 Competitors:")
+    for merchant, row in top10.iterrows():
+        label = row['category'].replace('_', ' ').title()
+        print(f"  {merchant:40s} {row['txns']:>6,} txns  {row['accounts']:>5,} accts  [{label}]")
+
+    # Unmatched financial discovery
+    print(f"\n{'=' * 120}")
+    unmatched = discover_unmatched_financial(competitor_txns)
+    if len(unmatched) > 0:
+        print(f"\nPotential competitors NOT in config ({len(unmatched)}):")
+        display(unmatched.head(20))
+
+print("=" * 120)
