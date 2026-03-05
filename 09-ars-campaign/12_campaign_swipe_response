@@ -1,0 +1,83 @@
+# ===========================================================================
+# CAMPAIGN RESPONSE BY SWIPE CATEGORY: Who Responds? (Conference Edition)
+# ===========================================================================
+# Bar chart: response rate by SwipeCat12 tier. (14,7).
+# Depends on swipe_lookup from general/29_swipe_category_data.
+
+if 'swipe_lookup' not in dir() or len(swipe_lookup) == 0:
+    print("    No swipe category data available. Skipping swipe response chart.")
+elif 'camp_acct' not in dir() or len(camp_acct) == 0:
+    print("    No campaign data available. Skipping swipe response chart.")
+else:
+    try:
+        _cat_col = 'swipe_cat12'
+        _order_var = SWIPE12_ORDER if 'SWIPE12_ORDER' in dir() else SWIPE_ORDER
+        _palette_var = SWIPE12_PALETTE if 'SWIPE12_PALETTE' in dir() else SWIPE_PALETTE
+
+        if _cat_col not in swipe_lookup.columns:
+            # Fallback to 3-month if 12-month not available
+            _cat_col = 'swipe_cat3'
+            _order_var = SWIPE3_ORDER if 'SWIPE3_ORDER' in dir() else SWIPE_ORDER
+            _palette_var = SWIPE3_PALETTE if 'SWIPE3_PALETTE' in dir() else SWIPE_PALETTE
+
+        _swipe_camp = camp_acct[['primary_account_num', 'camp_status', 'total_responses']].merge(
+            swipe_lookup[['primary_account_num', _cat_col]], on='primary_account_num', how='inner'
+        )
+
+        # Filter to mailed accounts only
+        _mailed = _swipe_camp[_swipe_camp['camp_status'] != 'Never Mailed']
+
+        if len(_mailed) == 0:
+            print("    No mailed accounts with swipe data. Skipping chart.")
+        else:
+            # Response rate by swipe tier
+            _swipe_resp = _mailed.groupby(_cat_col).agg(
+                total_mailed=('primary_account_num', 'count'),
+                responders=('total_responses', lambda x: (x > 0).sum()),
+            ).reset_index()
+            _swipe_resp['response_rate'] = _swipe_resp['responders'] / _swipe_resp['total_mailed'] * 100
+
+            # Order by discovered palette order
+            _tier_order = [t for t in _order_var if t in _swipe_resp[_cat_col].values]
+            if len(_tier_order) == 0:
+                _tier_order = _swipe_resp[_cat_col].tolist()
+            _swipe_resp = _swipe_resp.set_index(_cat_col).loc[_tier_order].reset_index()
+
+            fig, ax = plt.subplots(figsize=(14, 7))
+
+            x = range(len(_swipe_resp))
+            colors = [_palette_var.get(t, GEN_COLORS['muted']) for t in _swipe_resp[_cat_col]]
+
+            bars = ax.bar(x, _swipe_resp['response_rate'], color=colors,
+                          edgecolor='white', linewidth=0.5, width=0.5)
+
+            ax.set_xticks(x)
+            ax.set_xticklabels(_swipe_resp[_cat_col], fontsize=13, fontweight='bold')
+            ax.set_ylabel("Response Rate %", fontsize=16, fontweight='bold', labelpad=10)
+            ax.yaxis.set_major_formatter(plt.FuncFormatter(gen_fmt_pct))
+
+            gen_clean_axes(ax, keep_left=True, keep_bottom=True)
+            ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+
+            for bar, (_, row) in zip(bars, _swipe_resp.iterrows()):
+                ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.3,
+                        f"{row['response_rate']:.1f}%\n({int(row['responders']):,} of {int(row['total_mailed']):,})",
+                        ha='center', va='bottom', fontsize=10, fontweight='bold',
+                        color=_palette_var.get(row[_cat_col], GEN_COLORS['muted']))
+
+            _window_label = '12-month' if '12' in _cat_col else '3-month'
+            ax.set_title("Campaign Response Rate by Swipe Category",
+                         fontsize=26, fontweight='bold',
+                         color=GEN_COLORS['dark_text'], pad=35, loc='left')
+            ax.text(0.0, 1.02,
+                    f"Do frequent swipers respond more to campaigns?  "
+                    f"Tiers = {_window_label} avg monthly swipes  ({DATASET_LABEL})",
+                    transform=ax.transAxes, fontsize=13,
+                    color=GEN_COLORS['muted'], style='italic')
+
+            plt.tight_layout()
+            plt.show()
+
+    except NameError as e:
+        print(f"    Missing dependency for swipe response chart: {e}")
