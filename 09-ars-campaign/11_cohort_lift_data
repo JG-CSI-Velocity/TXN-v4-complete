@@ -142,16 +142,16 @@ try:
         mask = was_mailed
         for idx in rewards_df.index[mask]:
             cohort_rows.append({
-                'acct_number': acct_nums.iloc[idx],
+                'acct_number': acct_nums.loc[idx],
                 'wave': wave_label,
                 'wave_date': wc['mail_date'],
-                'status': 'Responder' if was_responded.iloc[idx] else 'Non-Responder',
-                'pre_spend': pre_spend_vals.iloc[idx],
-                'post_spend': post_spend_vals.iloc[idx],
-                'spend_delta': post_spend_vals.iloc[idx] - pre_spend_vals.iloc[idx],
-                'pre_swipes': pre_swipe_vals.iloc[idx],
-                'post_swipes': post_swipe_vals.iloc[idx],
-                'swipe_delta': post_swipe_vals.iloc[idx] - pre_swipe_vals.iloc[idx],
+                'status': 'Responder' if was_responded.loc[idx] else 'Non-Responder',
+                'pre_spend': pre_spend_vals.loc[idx],
+                'post_spend': post_spend_vals.loc[idx],
+                'spend_delta': post_spend_vals.loc[idx] - pre_spend_vals.loc[idx],
+                'pre_swipes': pre_swipe_vals.loc[idx],
+                'post_swipes': post_swipe_vals.loc[idx],
+                'swipe_delta': post_swipe_vals.loc[idx] - pre_swipe_vals.loc[idx],
                 'post_window_months': len(post_months),
             })
 
