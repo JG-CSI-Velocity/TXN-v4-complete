@@ -7,34 +7,56 @@
 if 'cohort_summary' not in dir() or len(cohort_summary) == 0:
     print("    No cohort data available. Skipping counterfactual chart.")
 else:
-    # Build monthly portfolio-level spend (sum of all mailed accounts)
-    # and counterfactual (replace responder post-spend with non-resp trend)
-
-    # Get all mailed account indices
+    # -----------------------------------------------------------------
+    # 1. Pre-compute responder info per wave (vectorized, done once)
+    # -----------------------------------------------------------------
     acct_col = 'Acct Number' if 'Acct Number' in rewards_df.columns else ' Acct Number'
-    all_acct_nums = rewards_df[acct_col].astype(str).str.strip()
 
-    # Determine which accounts are responders in any wave
-    ever_responded = set()
-    wave_resp_info = {}  # wave -> set of responder acct indices
+    wave_cf_data = {}  # wave -> {resp_mask, pre_avg, change_ratio, mail_date}
     for wave_label, wc in WAVE_CONFIG.items():
         mail_col = wc['mail_col'].strip()
         resp_col = wc['resp_col'].strip()
         was_mailed = rewards_df[mail_col].notna()
-        # TH-* or NU 5+ = true responder
+
         if resp_col in [c.strip() for c in rewards_df.columns]:
             _rv = rewards_df[resp_col]
-            was_responded = _rv.map(lambda v: False if pd.isna(v) else str(v).strip().upper().startswith('TH') or str(v).strip().upper() in ('NU 5+','NU5+','NU 5','NU 6','NU 7','NU 8','NU 9','NU 10'))
+            was_responded = _rv.map(lambda v: False if pd.isna(v) else
+                                    str(v).strip().upper().startswith('TH') or
+                                    str(v).strip().upper() in ('NU 5+','NU5+'))
         else:
             was_responded = pd.Series(False, index=rewards_df.index)
-        resp_indices = set(rewards_df.index[was_mailed & was_responded])
-        wave_resp_info[wave_label] = {
-            'resp_indices': resp_indices,
+
+        resp_mask = was_mailed & was_responded
+        if resp_mask.sum() == 0:
+            continue
+
+        # Pre-period average spend for ALL responders (vectorized)
+        pre_cols = [spend_lookup[pm] for pm in wc['pre_months'] if pm in spend_lookup]
+        if len(pre_cols) == 0:
+            continue
+
+        pre_avg = rewards_df[pre_cols].apply(pd.to_numeric, errors='coerce').mean(axis=1)
+
+        # Non-resp change ratio from cohort_summary
+        wave_row = cohort_summary[cohort_summary['wave'] == wave_label]
+        if len(wave_row) == 0:
+            continue
+        nr_pre = wave_row['nonresp_pre_spend'].values[0]
+        nr_post = wave_row['nonresp_post_spend'].values[0]
+        change_ratio = nr_post / nr_pre if nr_pre > 0 else 1.0
+
+        # Counterfactual spend for responders = their pre_avg * change_ratio
+        cf_resp_spend = pre_avg * change_ratio
+
+        wave_cf_data[wave_label] = {
+            'resp_mask': resp_mask,
+            'cf_resp_spend': cf_resp_spend,  # what each responder "would" spend
             'mail_date': wc['mail_date'],
         }
-        ever_responded |= resp_indices
 
-    # Compute actual vs counterfactual monthly spend
+    # -----------------------------------------------------------------
+    # 2. Build actual vs counterfactual monthly totals (vectorized)
+    # -----------------------------------------------------------------
     actual_monthly = []
     counterfactual_monthly = []
 
@@ -44,58 +66,43 @@ else:
         col = spend_lookup[m]
         month_date = pd.to_datetime(m, format='%b%y')
 
-        # Actual total spend (all accounts)
+        # Actual total spend
         all_spend = pd.to_numeric(rewards_df[col], errors='coerce').fillna(0)
-        actual_total = all_spend.sum()
-        actual_monthly.append({'month': m, 'month_date': month_date, 'spend': actual_total})
+        actual_monthly.append({'month': m, 'month_date': month_date, 'spend': all_spend.sum()})
 
-        # Counterfactual: for responders in post-period, apply non-resp change rate
+        # Counterfactual: start with actual, replace responders in post-period
         cf_spend = all_spend.copy()
-        for wave_label, info in wave_resp_info.items():
-            wc = WAVE_CONFIG[wave_label]
-            months_after = (month_date.year - info['mail_date'].year) * 12 + \
-                           (month_date.month - info['mail_date'].month)
-            if months_after >= 1:  # This month is post-campaign for this wave
-                # Get non-resp change ratio for this wave
-                wave_row = cohort_summary[cohort_summary['wave'] == wave_label]
-                if len(wave_row) > 0:
-                    nr_pre = wave_row['nonresp_pre_spend'].values[0]
-                    nr_post = wave_row['nonresp_post_spend'].values[0]
-                    # Change ratio (how non-responders changed)
-                    change_ratio = nr_post / nr_pre if nr_pre > 0 else 1.0
-
-                    # For responder accounts in this wave, replace with
-                    # their pre-spend * non-resp change ratio
-                    for idx in info['resp_indices']:
-                        # Get this responder's pre-period avg
-                        pre_cols = [spend_lookup[pm] for pm in wc['pre_months'] if pm in spend_lookup]
-                        if len(pre_cols) > 0:
-                            resp_pre = pd.to_numeric(
-                                rewards_df.loc[idx, pre_cols], errors='coerce'
-                            ).mean()
-                            if pd.notna(resp_pre) and resp_pre > 0:
-                                cf_spend.loc[idx] = resp_pre * change_ratio
+        for wave_label, wd in wave_cf_data.items():
+            months_after = (month_date.year - wd['mail_date'].year) * 12 + \
+                           (month_date.month - wd['mail_date'].month)
+            if months_after >= 1:
+                # Replace responder actual spend with counterfactual
+                mask = wd['resp_mask']
+                cf_vals = wd['cf_resp_spend']
+                # Only replace where pre_avg > 0 and not NaN
+                valid = mask & cf_vals.notna() & (cf_vals > 0)
+                cf_spend.loc[valid] = cf_vals.loc[valid]
 
         counterfactual_monthly.append({'month': m, 'month_date': month_date, 'spend': cf_spend.sum()})
 
     actual_df = pd.DataFrame(actual_monthly)
     cf_df = pd.DataFrame(counterfactual_monthly)
 
+    # -----------------------------------------------------------------
+    # 3. Chart
+    # -----------------------------------------------------------------
     fig, ax = plt.subplots(figsize=(16, 8))
 
-    # Actual line
     ax.plot(range(len(actual_df)), actual_df['spend'],
             color=GEN_COLORS['success'], linewidth=3, marker='o',
             markersize=7, markeredgecolor='white', markeredgewidth=1.5,
             label='Actual Portfolio Spend', zorder=5)
 
-    # Counterfactual line (dashed)
     ax.plot(range(len(cf_df)), cf_df['spend'],
             color=GEN_COLORS['accent'], linewidth=3, linestyle='--',
             marker='s', markersize=6, markeredgecolor='white', markeredgewidth=1.5,
             label='Without ARS Program', zorder=4)
 
-    # Fill the gap
     ax.fill_between(range(len(actual_df)),
                     cf_df['spend'], actual_df['spend'],
                     where=actual_df['spend'].values >= cf_df['spend'].values,
@@ -114,7 +121,6 @@ else:
 
     ax.legend(loc='upper right', fontsize=13)
 
-    # Annotate the gap at the latest month
     if len(actual_df) > 0:
         last_actual = actual_df['spend'].iloc[-1]
         last_cf = cf_df['spend'].iloc[-1]
