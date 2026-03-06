@@ -83,42 +83,35 @@ FINANCIAL_SERVICES_PATTERNS = {
         'ONDECK CAPITAL'
     ],
 
-    'Other Banks': [
-        'BANK OF AMERICA PAYMENT', 'BANK OF AMERICA TRANSFER',
-        'B OF A PAYMENT', 'B OF A TRANSFER',
-        'WELLS FARGO PAYMENT', 'WELLS FARGO TRANSFER',
-        'WELLS FARGO BANK PAYMENT', 'WELLS FARGO BANK TRANSFER',
-        'CHASE PAYMENT', 'CHASE TRANSFER',
-        'JPMORGAN CHASE PAYMENT', 'JPMORGAN CHASE TRANSFER',
-        'US BANK PAYMENT', 'US BANK TRANSFER',
-        'U.S. BANK PAYMENT', 'U.S. BANK TRANSFER',
-        'CITIBANK PAYMENT', 'CITIBANK TRANSFER',
-        'CITI CARD PAYMENT', 'CITI CARD TRANSFER',
-        'CAPITAL ONE BANK PAYMENT', 'CAPITAL ONE BANK TRANSFER',
-        'CAPITAL ONE PAYMENT', 'CAPITAL ONE TRANSFER',
-        'MECHANICS BANK PAYMENT', 'MECHANICS BANK TRANSFER',
-        'PACIFIC PREMIER BANK PAYMENT', 'PACIFIC PREMIER BANK TRANSFER',
-        'COLUMBIA BANK PAYMENT', 'COLUMBIA BANK TRANSFER',
-        'AMERICAN RIVIERA BANK PAYMENT', 'AMERICAN RIVIERA BANK TRANSFER',
-        'COMMUNITY BANK OF SANTA MARIA PAYMENT',
-        'COMMUNITY BANK OF SANTA MARIA TRANSFER',
-        'BANK OF THE SIERRA PAYMENT', 'BANK OF THE SIERRA TRANSFER',
-        'WEST COAST COMMUNITY BANK PAYMENT',
-        'WEST COAST COMMUNITY BANK TRANSFER',
-        'SESLOC CREDIT UNION PAYMENT', 'SESLOC CREDIT UNION TRANSFER',
-        'SESLOC CU PAYMENT', 'SESLOC CU TRANSFER',
-        'SLO CREDIT UNION PAYMENT', 'SLO CREDIT UNION TRANSFER',
-        'SLO CU PAYMENT', 'SLO CU TRANSFER',
-        'NAVY FEDERAL CREDIT UNION PAYMENT',
-        'NAVY FEDERAL CREDIT UNION TRANSFER',
-        'NAVY FEDERAL CU PAYMENT', 'NAVY FEDERAL CU TRANSFER',
-        'GOLDEN 1 CREDIT UNION PAYMENT', 'GOLDEN 1 CREDIT UNION TRANSFER',
-        'GOLDEN 1 CU PAYMENT', 'GOLDEN 1 CU TRANSFER',
-        'ALLY BANK PAYMENT', 'DISCOVER BANK PAYMENT',
-        'CAPITAL ONE 360 PAYMENT', 'MARCUS BY GOLDMAN PAYMENT',
-        'CHIME TRANSFER'
-    ]
+    # 'Other Banks' is built dynamically below from COMPETITOR_MERCHANTS
 }
+
+# ---------------------------------------------------------------------------
+# Auto-build "Other Banks" from competitor config (client-agnostic)
+# Requires COMPETITOR_MERCHANTS from 06-direct-competition/01_competitor_config
+# ---------------------------------------------------------------------------
+_other_banks = []
+if 'COMPETITOR_MERCHANTS' in dir():
+    _suffixes = ['PAYMENT', 'TRANSFER', 'ONLINE PMT', 'MOBILE PMT', 'CHECK PYMT']
+    for _cat, _pats in COMPETITOR_MERCHANTS.items():
+        # Skip payment ecosystems (wallets, p2p, bnpl)
+        if _cat in ('wallets', 'p2p', 'bnpl'):
+            continue
+        for _p in _pats.get('starts_with', []):
+            _p_clean = _p.strip()
+            if _p_clean:
+                for _s in _suffixes:
+                    _other_banks.append(f'{_p_clean} {_s}')
+
+if _other_banks:
+    FINANCIAL_SERVICES_PATTERNS['Other Banks'] = _other_banks
+else:
+    # Fallback if competitor config not loaded yet
+    FINANCIAL_SERVICES_PATTERNS['Other Banks'] = [
+        'BANK OF AMERICA PAYMENT', 'WELLS FARGO PAYMENT',
+        'CHASE PAYMENT', 'US BANK PAYMENT', 'CITIBANK PAYMENT',
+        'CAPITAL ONE PAYMENT', 'ALLY BANK PAYMENT',
+    ]
 
 import pandas as pd
 import matplotlib.pyplot as plt
