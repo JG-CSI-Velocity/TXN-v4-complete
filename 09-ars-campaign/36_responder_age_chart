@@ -115,6 +115,7 @@ else:
         _extra = [s for s in resp_age_df['segment'].unique()
                   if s not in _SEG_ORDER and s != 'Unknown']
         _plot_segs = _plot_segs + sorted(_extra)
+        _plot_segs = list(reversed(_plot_segs))  # high to low (NU on bottom)
 
         _pivot = resp_age_df.groupby(['segment', 'age_band'], observed=True).apply(
             lambda g: (g['status'] == 'Responder').sum() / len(g) * 100
