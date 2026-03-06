@@ -5,6 +5,10 @@
 # Vectorized: single groupby on full data, then split into dict.
 
 if len(all_competitor_data) > 0:
+    # Ensure competitor_match exists (created in cell 02; guard for run-order safety)
+    if 'competitor_match' not in competitor_txns.columns:
+        competitor_txns['competitor_match'] = competitor_txns['merchant_consolidated'].apply(normalize_competitor_name)
+
     # One bulk groupby instead of N individual ones
     _bulk = (
         competitor_txns.groupby(['competitor_match', 'primary_account_num'])

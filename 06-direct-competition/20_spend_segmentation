@@ -18,6 +18,10 @@ SEGMENT_PALETTE = {
 }
 
 if len(all_competitor_data) > 0:
+    # Ensure competitor_match exists (created in cell 02; guard for run-order safety)
+    if 'competitor_match' not in competitor_txns.columns:
+        competitor_txns['competitor_match'] = competitor_txns['merchant_consolidated'].apply(normalize_competitor_name)
+
     # Total spend per account across ALL transactions (computed once)
     _account_totals = (
         combined_df.groupby('primary_account_num')
