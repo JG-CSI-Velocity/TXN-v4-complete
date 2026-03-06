@@ -1,10 +1,11 @@
 # ===========================================================================
-# RESPONDER AGE CHARTS: Account Age vs Response Likelihood
+# RESPONDER AGE DASHBOARD: Account Age vs Response Likelihood
 # ===========================================================================
-# Three charts:
-#   1. Response rate by account age band (bar + line)
-#   2. Composition: where do responders come from? (stacked % bars)
-#   3. Age distribution overlay (Responder vs Non-Responder)
+# Single figure, 4 panels:
+#   Top-left:     Response rate by age band (hero chart)
+#   Top-right:    Composition (% of mailed vs % of responders)
+#   Bottom-left:  Age distribution histogram (resp vs non-resp)
+#   Bottom-right: Segment × age heatmap (or key stats if no segments)
 #
 # Depends on: resp_age_df, resp_age_summary (from cell 35)
 
@@ -22,201 +23,222 @@ else:
     _bands = resp_age_summary['age_band'].tolist()
     x = np.arange(len(_bands))
 
-    # =====================================================================
-    # CHART 1: Response Rate by Account Age (bar + trend line)
-    # =====================================================================
-    fig1, ax1 = plt.subplots(figsize=(14, 7))
+    # Check if we have segment data for bottom-right panel
+    _has_segments = ('resp_age_df' in dir() and len(resp_age_df) > 0
+                     and resp_age_df['segment'].nunique() > 1
+                     and 'Unknown' not in resp_age_df['segment'].unique())
+
+    # Build figure
+    fig = plt.figure(figsize=(22, 14))
+    gs = fig.add_gridspec(2, 2, hspace=0.35, wspace=0.25)
+
+    # =================================================================
+    # TOP-LEFT: Response Rate by Account Age (hero)
+    # =================================================================
+    ax1 = fig.add_subplot(gs[0, 0])
 
     bars = ax1.bar(x, resp_age_summary['response_rate'], width=0.6,
                    color=_RESP_COLOR, edgecolor='white', linewidth=0.5, alpha=0.85)
 
-    # Color the highest bar differently
     _max_idx = resp_age_summary['response_rate'].idxmax()
-    _max_pos = resp_age_summary.index.get_loc(_max_idx) if hasattr(resp_age_summary.index, 'get_loc') else _max_idx
+    _max_pos = list(resp_age_summary.index).index(_max_idx)
     for i, bar in enumerate(bars):
         if i == _max_pos:
             bar.set_color(_ACCENT)
             bar.set_alpha(1.0)
 
-    # Value labels
     for i, (bar, rate, mailed) in enumerate(zip(bars,
                                                   resp_age_summary['response_rate'],
                                                   resp_age_summary['mailed'])):
         ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.3,
-                 f'{rate:.1f}%', ha='center', va='bottom', fontsize=11,
+                 f'{rate:.1f}%', ha='center', va='bottom', fontsize=10,
                  fontweight='bold',
                  color=_ACCENT if i == _max_pos else _RESP_COLOR)
         ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height() / 2,
-                 f'{int(mailed):,}\nmailed', ha='center', va='center', fontsize=8,
+                 f'{int(mailed):,}\nmailed', ha='center', va='center', fontsize=7,
                  color='white', fontweight='bold')
 
-    # Overall avg line
     _overall_rate = resp_age_summary['responded'].sum() / resp_age_summary['mailed'].sum() * 100
     ax1.axhline(_overall_rate, color=_MUTED, linewidth=1.5, linestyle='--', zorder=2)
-    ax1.text(len(x) - 0.5, _overall_rate + 0.2, f'Overall: {_overall_rate:.1f}%',
-             fontsize=11, fontweight='bold', color=_MUTED, ha='right')
+    ax1.text(len(x) - 0.5, _overall_rate + 0.2, f'Avg: {_overall_rate:.1f}%',
+             fontsize=10, fontweight='bold', color=_MUTED, ha='right')
 
     ax1.set_xticks(x)
-    ax1.set_xticklabels(_bands, fontsize=12, fontweight='bold', rotation=30, ha='right')
-    ax1.set_ylabel('Response Rate (%)', fontsize=16, fontweight='bold', labelpad=10)
+    ax1.set_xticklabels(_bands, fontsize=10, fontweight='bold', rotation=30, ha='right')
+    ax1.set_ylabel('Response Rate', fontsize=12, fontweight='bold', labelpad=6)
     ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.0f}%"))
-
-    ax1.set_title('Response Rate by Account Age at Time of Mail',
-                   fontsize=24, fontweight='bold', color=_DARK, pad=30, loc='left')
-    ax1.text(0.0, 1.02,
-             'Are newer accounts more responsive to the campaign?  '
-             '(Accounts < 90 days excluded from mailing, all waves pooled)',
-             transform=ax1.transAxes, fontsize=13, color=_MUTED, style='italic')
+    ax1.set_title('Response Rate by Account Age at Mail',
+                   fontsize=16, fontweight='bold', color=_DARK, pad=10)
 
     gen_clean_axes(ax1, keep_left=True, keep_bottom=True)
     ax1.yaxis.grid(True, color=_GRID, linewidth=0.5, alpha=0.5)
     ax1.set_axisbelow(True)
 
-    plt.tight_layout()
-    plt.show()
-
-    # =====================================================================
-    # CHART 2: Where Do Responders Come From? (composition bars)
-    # =====================================================================
-    fig2, ax2 = plt.subplots(figsize=(14, 7))
+    # =================================================================
+    # TOP-RIGHT: Composition (% mailed vs % responders)
+    # =================================================================
+    ax2 = fig.add_subplot(gs[0, 1])
 
     w = 0.35
+    ax2.bar(x - w/2, resp_age_summary['pct_of_mailed'], width=w * 0.9,
+            color=_INFO, edgecolor='white', linewidth=0.5,
+            label='% of Mailed', alpha=0.7)
+    ax2.bar(x + w/2, resp_age_summary['pct_of_responders'], width=w * 0.9,
+            color=_RESP_COLOR, edgecolor='white', linewidth=0.5,
+            label='% of Responders')
 
-    # % of mailed population vs % of responders by age band
-    bars_mailed = ax2.bar(x - w/2, resp_age_summary['pct_of_mailed'], width=w * 0.9,
-                          color=_INFO, edgecolor='white', linewidth=0.5,
-                          label='% of Mailed Population', alpha=0.7)
-    bars_resp = ax2.bar(x + w/2, resp_age_summary['pct_of_responders'], width=w * 0.9,
-                        color=_RESP_COLOR, edgecolor='white', linewidth=0.5,
-                        label='% of Responders')
-
-    for bar, pct in zip(bars_mailed, resp_age_summary['pct_of_mailed']):
-        if pct > 2:
-            ax2.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.3,
-                     f'{pct:.1f}%', ha='center', va='bottom', fontsize=9,
-                     fontweight='bold', color=_INFO)
-    for bar, pct in zip(bars_resp, resp_age_summary['pct_of_responders']):
-        if pct > 2:
-            ax2.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.3,
-                     f'{pct:.1f}%', ha='center', va='bottom', fontsize=9,
-                     fontweight='bold', color=_RESP_COLOR)
+    for i in range(len(x)):
+        _m_pct = resp_age_summary['pct_of_mailed'].iloc[i]
+        _r_pct = resp_age_summary['pct_of_responders'].iloc[i]
+        if _m_pct > 3:
+            ax2.text(x[i] - w/2, _m_pct + 0.3, f'{_m_pct:.0f}%',
+                     ha='center', va='bottom', fontsize=8, fontweight='bold', color=_INFO)
+        if _r_pct > 3:
+            ax2.text(x[i] + w/2, _r_pct + 0.3, f'{_r_pct:.0f}%',
+                     ha='center', va='bottom', fontsize=8, fontweight='bold', color=_RESP_COLOR)
 
     ax2.set_xticks(x)
-    ax2.set_xticklabels(_bands, fontsize=12, fontweight='bold', rotation=30, ha='right')
-    ax2.set_ylabel('% Share', fontsize=16, fontweight='bold', labelpad=10)
+    ax2.set_xticklabels(_bands, fontsize=10, fontweight='bold', rotation=30, ha='right')
+    ax2.set_ylabel('% Share', fontsize=12, fontweight='bold', labelpad=6)
     ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.0f}%"))
-    ax2.legend(fontsize=12, framealpha=0.9, loc='upper right')
-
-    ax2.set_title('Responder Composition vs Mailed Population',
-                   fontsize=24, fontweight='bold', color=_DARK, pad=30, loc='left')
-    ax2.text(0.0, 1.02,
-             'Are certain age bands over-represented among responders?  (All waves pooled)',
-             transform=ax2.transAxes, fontsize=13, color=_MUTED, style='italic')
+    ax2.legend(fontsize=10, framealpha=0.9, loc='upper right')
+    ax2.set_title('Are Certain Age Bands Over-Represented?',
+                   fontsize=16, fontweight='bold', color=_DARK, pad=10)
 
     gen_clean_axes(ax2, keep_left=True, keep_bottom=True)
     ax2.yaxis.grid(True, color=_GRID, linewidth=0.5, alpha=0.5)
     ax2.set_axisbelow(True)
 
-    plt.tight_layout()
-    plt.show()
+    # =================================================================
+    # BOTTOM-LEFT: Age Distribution (histogram)
+    # =================================================================
+    ax3 = fig.add_subplot(gs[1, 0])
 
-    # =====================================================================
-    # CHART 3: Age Distribution (histogram overlay)
-    # =====================================================================
     if 'resp_age_df' in dir() and len(resp_age_df) > 0:
-        fig3, ax3 = plt.subplots(figsize=(14, 6))
-
-        # Convert to years for readability
         _cap = resp_age_df['age_at_mail_days'].quantile(0.99)
-        _bins = np.linspace(91, min(_cap, 10000), 60)
+        _bins = np.linspace(91, min(_cap, 10000), 50)
 
-        for stat, color, alpha in [('Non-Responder', _NONRESP_COLOR, 0.45),
-                                    ('Responder', _RESP_COLOR, 0.65)]:
+        for stat, color, alpha in [('Non-Responder', _NONRESP_COLOR, 0.4),
+                                    ('Responder', _RESP_COLOR, 0.6)]:
             _d = resp_age_df[resp_age_df['status'] == stat]['age_at_mail_days']
             _d = _d[(_d >= 91) & (_d <= _cap)]
             n = len(_d)
             ax3.hist(_d, bins=_bins, alpha=alpha, color=color, edgecolor='white',
                      linewidth=0.3, label=f'{stat} ({n:,})', density=True)
 
-        # Median lines
         for stat, color, ls in [('Responder', _RESP_COLOR, '-'),
                                  ('Non-Responder', _NONRESP_COLOR, '--')]:
             _med = resp_age_df[resp_age_df['status'] == stat]['age_at_mail_days'].median()
-            ax3.axvline(_med, color=color, linewidth=2.5, linestyle=ls, zorder=5)
+            ax3.axvline(_med, color=color, linewidth=2, linestyle=ls, zorder=5)
             _yrs = _med / 365.25
-            ax3.text(_med + 50, ax3.get_ylim()[1] * 0.85,
-                     f'Median: {_yrs:.1f} yr', color=color, fontsize=11,
-                     fontweight='bold', va='top')
+            _offset = 80 if stat == 'Responder' else -80
+            _ha = 'left' if stat == 'Responder' else 'right'
+            ax3.text(_med + _offset, ax3.get_ylim()[1] * 0.88,
+                     f'{_yrs:.1f}yr', color=color, fontsize=10,
+                     fontweight='bold', va='top', ha=_ha)
 
-        # Year markers on x-axis
-        _year_marks = [365, 730, 1095, 1826, 3651, 7301]
-        _year_labels = ['1yr', '2yr', '3yr', '5yr', '10yr', '20yr']
+        # Year markers
+        _year_ticks = [365, 730, 1826, 3651, 7301]
+        _year_labels = ['1yr', '2yr', '5yr', '10yr', '20yr']
         ax3_top = ax3.twiny()
         ax3_top.set_xlim(ax3.get_xlim())
-        ax3_top.set_xticks(_year_marks)
-        ax3_top.set_xticklabels(_year_labels, fontsize=10, color=_MUTED)
+        ax3_top.set_xticks(_year_ticks)
+        ax3_top.set_xticklabels(_year_labels, fontsize=9, color=_MUTED)
         ax3_top.spines['top'].set_visible(False)
         ax3_top.spines['right'].set_visible(False)
         ax3_top.tick_params(length=0)
 
-        ax3.set_xlabel('Account Age at Mail (days)', fontsize=14, fontweight='bold', labelpad=8)
-        ax3.set_ylabel('Density', fontsize=14, fontweight='bold', labelpad=8)
-        ax3.legend(fontsize=12, framealpha=0.9)
-        ax3.set_title('Account Age Distribution: Responders vs Non-Responders',
-                       fontsize=22, fontweight='bold', color=_DARK, pad=30, loc='left')
-        ax3.text(0.0, 1.02,
-                 'Age computed at time of mailing, accounts < 90 days excluded  (All waves pooled)',
-                 transform=ax3.transAxes, fontsize=13, color=_MUTED, style='italic')
+        ax3.set_xlabel('Account Age at Mail (days)', fontsize=11, fontweight='bold', labelpad=6)
+        ax3.set_ylabel('Density', fontsize=12, fontweight='bold', labelpad=6)
+        ax3.legend(fontsize=9, framealpha=0.9)
+        ax3.set_title('Age Distribution: Resp vs Non-Resp',
+                       fontsize=16, fontweight='bold', color=_DARK, pad=10)
 
         gen_clean_axes(ax3, keep_left=True, keep_bottom=True)
         ax3.yaxis.grid(True, color=_GRID, linewidth=0.5, alpha=0.5)
         ax3.set_axisbelow(True)
 
-        plt.tight_layout()
-        plt.show()
+    # =================================================================
+    # BOTTOM-RIGHT: Segment × Age Heatmap (or key stats)
+    # =================================================================
+    ax4 = fig.add_subplot(gs[1, 1])
 
-    # =====================================================================
-    # CHART 4: Response rate by segment × age (heatmap, if segments exist)
-    # =====================================================================
-    if 'resp_age_df' in dir() and resp_age_df['segment'].nunique() > 1:
+    if _has_segments:
         _SEG_ORDER = ['NU', 'TH-10', 'TH-15', 'TH-20', 'TH-25']
         _plot_segs = [s for s in _SEG_ORDER if s in resp_age_df['segment'].values]
         _extra = [s for s in resp_age_df['segment'].unique()
                   if s not in _SEG_ORDER and s != 'Unknown']
         _plot_segs = _plot_segs + sorted(_extra)
 
-        if len(_plot_segs) >= 2:
-            _pivot = resp_age_df.groupby(['segment', 'age_band'], observed=True).apply(
-                lambda g: (g['status'] == 'Responder').sum() / len(g) * 100
-                if len(g) >= 20 else np.nan
-            ).unstack(level='age_band')
+        _pivot = resp_age_df.groupby(['segment', 'age_band'], observed=True).apply(
+            lambda g: (g['status'] == 'Responder').sum() / len(g) * 100
+            if len(g) >= 20 else np.nan
+        ).unstack(level='age_band')
 
-            # Reorder
-            _pivot = _pivot.reindex(index=_plot_segs)
-            _pivot = _pivot[[c for c in _bands if c in _pivot.columns]]
+        _pivot = _pivot.reindex(index=_plot_segs)
+        _pivot = _pivot[[c for c in _bands if c in _pivot.columns]]
 
-            if _pivot.notna().any().any():
-                fig4, ax4 = plt.subplots(figsize=(14, max(4, len(_plot_segs) * 1.2)))
+        if _pivot.notna().any().any():
+            sns.heatmap(
+                _pivot, annot=True, fmt='.1f', cmap='YlGn',
+                linewidths=2, linecolor='white',
+                cbar_kws={'shrink': 0.6, 'label': 'Rate %'},
+                annot_kws={'fontsize': 9, 'fontweight': 'bold'},
+                ax=ax4, vmin=0,
+            )
+            ax4.set_xlabel('Account Age', fontsize=11, fontweight='bold', labelpad=6)
+            ax4.set_ylabel('Segment', fontsize=12, fontweight='bold', labelpad=6)
+            ax4.set_xticklabels(ax4.get_xticklabels(), fontsize=9,
+                                fontweight='bold', rotation=30, ha='right')
+            ax4.set_yticklabels(ax4.get_yticklabels(), fontsize=10,
+                                fontweight='bold', rotation=0)
+            ax4.set_title('Response Rate: Segment x Age',
+                           fontsize=16, fontweight='bold', color=_DARK, pad=10)
+        else:
+            ax4.axis('off')
+    else:
+        # No segment data: show key stats as text panel instead
+        ax4.axis('off')
 
-                sns.heatmap(
-                    _pivot, annot=True, fmt='.1f', cmap='YlGn',
-                    linewidths=2, linecolor='white',
-                    cbar_kws={'shrink': 0.6, 'label': 'Response Rate %'},
-                    annot_kws={'fontsize': 11, 'fontweight': 'bold'},
-                    ax=ax4, vmin=0,
-                )
+        _r_med = resp_age_df[resp_age_df['status'] == 'Responder']['age_at_mail_days'].median()
+        _nr_med = resp_age_df[resp_age_df['status'] == 'Non-Responder']['age_at_mail_days'].median()
+        _r_mean = resp_age_df[resp_age_df['status'] == 'Responder']['age_at_mail_days'].mean()
+        _nr_mean = resp_age_df[resp_age_df['status'] == 'Non-Responder']['age_at_mail_days'].mean()
+        _top = resp_age_summary.loc[resp_age_summary['response_rate'].idxmax()]
+        _bot = resp_age_summary.loc[resp_age_summary['response_rate'].idxmin()]
+        _total_mailed = resp_age_summary['mailed'].sum()
+        _total_resp = resp_age_summary['responded'].sum()
 
-                ax4.set_xlabel('Account Age at Mail', fontsize=14,
-                               fontweight='bold', labelpad=10)
-                ax4.set_ylabel('Challenge Segment', fontsize=14,
-                               fontweight='bold', labelpad=10)
-                ax4.set_xticklabels(ax4.get_xticklabels(), fontsize=11,
-                                    fontweight='bold', rotation=30, ha='right')
-                ax4.set_yticklabels(ax4.get_yticklabels(), fontsize=12,
-                                    fontweight='bold', rotation=0)
+        _stats = [
+            ('Total Mailed', f'{_total_mailed:,}'),
+            ('Total Responded', f'{_total_resp:,}'),
+            ('Overall Rate', f'{_total_resp / _total_mailed * 100:.1f}%'),
+            ('', ''),
+            ('Median Age (Resp)', f'{_r_med / 365.25:.1f} years'),
+            ('Median Age (Non-R)', f'{_nr_med / 365.25:.1f} years'),
+            ('', ''),
+            ('Best Band', f'{_top["age_band"]} ({_top["response_rate"]:.1f}%)'),
+            ('Worst Band', f'{_bot["age_band"]} ({_bot["response_rate"]:.1f}%)'),
+        ]
 
-                ax4.set_title('Response Rate: Segment x Account Age',
-                               fontsize=22, fontweight='bold', color=_DARK, pad=20)
+        _y = 0.92
+        ax4.set_title('Key Metrics', fontsize=16, fontweight='bold',
+                       color=_DARK, pad=10)
+        for label, val in _stats:
+            if label == '':
+                _y -= 0.04
+                continue
+            ax4.text(0.1, _y, label, fontsize=13, fontweight='bold',
+                     color=_MUTED, transform=ax4.transAxes, va='top')
+            ax4.text(0.9, _y, val, fontsize=14, fontweight='bold',
+                     color=_DARK, transform=ax4.transAxes, va='top', ha='right')
+            _y -= 0.10
 
-                plt.tight_layout()
-                plt.show()
+    # Main title
+    fig.suptitle('Account Age & Campaign Response',
+                 fontsize=26, fontweight='bold', color=_DARK, y=0.98)
+    fig.text(0.5, 0.95,
+             'Accounts < 90 days excluded from mailing  |  All waves pooled',
+             ha='center', fontsize=14, color=_MUTED, style='italic')
+
+    plt.show()
