@@ -103,10 +103,10 @@ kpi_data = [
         'color': _hero_color,
     },
     {
-        'label': 'Monthly Trend',
-        'value': f'{_fmt_spend(abs(_monthly_slope))}/mo',
-        'sub': f'{"gaining" if _trend_up else "losing"} per month',
-        'color': _trend_color,
+        'label': 'Total $ Change',
+        'value': _fmt_spend(spend[-1] - spend[0]),
+        'sub': f'{_direction} over {_n_months} months',
+        'color': _hero_color,
     },
 ]
 
@@ -125,13 +125,13 @@ for idx, kpi in enumerate(kpi_data):
     ax.add_patch(card)
 
     ax.text(5, 7.2, kpi['label'],
-            ha='center', va='center', fontsize=14, fontweight='bold',
+            ha='center', va='center', fontsize=18, fontweight='bold',
             color=_DARK)
     ax.text(5, 4.5, kpi['value'],
-            ha='center', va='center', fontsize=38, fontweight='bold',
+            ha='center', va='center', fontsize=44, fontweight='bold',
             color=kpi['color'])
     ax.text(5, 2.0, kpi['sub'],
-            ha='center', va='center', fontsize=13,
+            ha='center', va='center', fontsize=16,
             color=_MUTED, style='italic')
 
 # =================================================================
@@ -158,7 +158,7 @@ ax_chart.plot(dates[0], spend[0], marker='D', markersize=14, color=_MUTED,
 ax_chart.annotate(_fmt_spend(spend[0]),
                   xy=(dates[0], spend[0]),
                   xytext=(15, -30), textcoords='offset points',
-                  fontsize=16, fontweight='bold', color=_MUTED, ha='left',
+                  fontsize=20, fontweight='bold', color=_MUTED, ha='left',
                   arrowprops=dict(arrowstyle='->', color=_MUTED, lw=2))
 
 # End diamond
@@ -167,7 +167,7 @@ ax_chart.plot(dates[-1], spend[-1], marker='D', markersize=14, color=_hero_color
 ax_chart.annotate(f'{_fmt_spend(spend[-1])}  ({_pct_change:+.1f}%)',
                   xy=(dates[-1], spend[-1]),
                   xytext=(-15, 25), textcoords='offset points',
-                  fontsize=16, fontweight='bold', color=_hero_color, ha='right',
+                  fontsize=20, fontweight='bold', color=_hero_color, ha='right',
                   arrowprops=dict(arrowstyle='->', color=_hero_color, lw=2))
 
 # Min/Max callouts
@@ -179,7 +179,7 @@ if _min_idx not in [0, len(spend) - 1]:
     ax_chart.annotate(f'Low: {_fmt_spend(spend[_min_idx])}',
                       xy=(dates[_min_idx], spend[_min_idx]),
                       xytext=(0, -22), textcoords='offset points',
-                      fontsize=13, fontweight='bold', color=_ACCENT, ha='center')
+                      fontsize=16, fontweight='bold', color=_ACCENT, ha='center')
 
 if _max_idx not in [0, len(spend) - 1]:
     ax_chart.plot(dates[_max_idx], spend[_max_idx], marker='^', markersize=10,
@@ -187,21 +187,21 @@ if _max_idx not in [0, len(spend) - 1]:
     ax_chart.annotate(f'High: {_fmt_spend(spend[_max_idx])}',
                       xy=(dates[_max_idx], spend[_max_idx]),
                       xytext=(0, 18), textcoords='offset points',
-                      fontsize=13, fontweight='bold', color=_SUCCESS, ha='center')
+                      fontsize=16, fontweight='bold', color=_SUCCESS, ha='center')
 
 # Average line
 ax_chart.axhline(_avg_spend, color=_MUTED, linewidth=1.2, linestyle=':', alpha=0.5)
 ax_chart.text(dates[_n_months // 2], _avg_spend,
               f'  Avg: {_fmt_spend(_avg_spend)}',
-              fontsize=13, color=_MUTED, va='bottom', fontweight='bold')
+              fontsize=16, color=_MUTED, va='bottom', fontweight='bold')
 
-ax_chart.set_ylabel('Total Monthly Spend', fontsize=16, fontweight='bold', labelpad=8)
+ax_chart.set_ylabel('Total Monthly Spend', fontsize=20, fontweight='bold', labelpad=8)
 ax_chart.yaxis.set_major_formatter(plt.FuncFormatter(
     lambda v, _: f"${v/1e6:,.1f}M" if v >= 1e6 else f"${v/1e3:,.0f}K"))
 ax_chart.xaxis.set_major_formatter(mdates.DateFormatter('%b\n%Y'))
-ax_chart.tick_params(axis='x', rotation=0, labelsize=13)
-ax_chart.tick_params(axis='y', labelsize=13)
-ax_chart.legend(fontsize=14, framealpha=0.9, loc='upper left')
+ax_chart.tick_params(axis='x', rotation=0, labelsize=16)
+ax_chart.tick_params(axis='y', labelsize=16)
+ax_chart.legend(fontsize=16, framealpha=0.9, loc='upper left')
 gen_clean_axes(ax_chart, keep_left=True, keep_bottom=True)
 ax_chart.yaxis.grid(True, color=_GRID, linewidth=0.5, alpha=0.5)
 ax_chart.set_axisbelow(True)
@@ -229,15 +229,15 @@ if len(_type_changes) > 0:
                       bar.get_y() + bar.get_height() / 2,
                       f'{_sign}{_tp:.1f}%  ({_fmt_spend(_tf)} > {_fmt_spend(_tl)})',
                       va='center', ha='left' if _tp >= 0 else 'right',
-                      fontsize=14, fontweight='bold',
+                      fontsize=18, fontweight='bold',
                       color=_tc_colors[i])
 
     ax_types.axvline(0, color=_DARK, linewidth=1, alpha=0.3)
     ax_types.set_yticks(_y_pos)
-    ax_types.set_yticklabels(_tc_types, fontsize=15, fontweight='bold')
-    ax_types.set_xlabel('% Change (First to Last Month)', fontsize=14, fontweight='bold')
+    ax_types.set_yticklabels(_tc_types, fontsize=18, fontweight='bold')
+    ax_types.set_xlabel('% Change (First to Last Month)', fontsize=16, fontweight='bold')
     ax_types.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:+.0f}%"))
-    ax_types.tick_params(axis='x', labelsize=12)
+    ax_types.tick_params(axis='x', labelsize=15)
     # No panel title -- avoids overlap with data labels
     gen_clean_axes(ax_types, keep_left=True, keep_bottom=True)
     ax_types.xaxis.grid(True, color=_GRID, linewidth=0.5, alpha=0.5)
@@ -260,23 +260,23 @@ if len(_type_changes) > 0:
 
     ax_verdict.text(0.50, 0.62,
                     f'Spend is {_direction}',
-                    fontsize=30, fontweight='bold', color=_hero_color,
+                    fontsize=36, fontweight='bold', color=_hero_color,
                     transform=ax_verdict.transAxes, ha='center', va='center')
 
     ax_verdict.text(0.50, 0.38,
                     f'{_fmt_spend(spend[0])} > {_fmt_spend(spend[-1])}',
-                    fontsize=18, fontweight='bold', color=_DARK,
+                    fontsize=22, fontweight='bold', color=_DARK,
                     transform=ax_verdict.transAxes, ha='center', va='center')
 
     ax_verdict.text(0.50, 0.18,
                     f'{_pct_change:+.1f}% over {_n_months} months',
-                    fontsize=15, fontweight='bold', color=_MUTED,
+                    fontsize=18, fontweight='bold', color=_MUTED,
                     transform=ax_verdict.transAxes, ha='center', va='center')
 
 fig.suptitle('Total Spend Volume: Is Spend Actually Down?',
-             fontsize=28, fontweight='bold', color=_DARK, y=0.96)
+             fontsize=32, fontweight='bold', color=_DARK, y=0.96)
 fig.text(0.5, 0.92, DATASET_LABEL,
-         ha='center', fontsize=15, color=_MUTED, style='italic')
+         ha='center', fontsize=18, color=_MUTED, style='italic')
 
 plt.show()
 
@@ -287,7 +287,7 @@ print(f"    Period: {_first_mo} to {_last_mo} ({_n_months} months)")
 print(f"    First month:  {_fmt_spend(spend[0])}")
 print(f"    Last month:   {_fmt_spend(spend[-1])}")
 print(f"    YoY change:   {_pct_change:+.1f}% ({_direction})")
-print(f"    Monthly trend: {_fmt_spend(abs(_monthly_slope))}/mo {'gain' if _trend_up else 'loss'}")
+print(f"    Total $ change: {_fmt_spend(spend[-1] - spend[0])}")
 print(f"    Avg monthly:  {_fmt_spend(_avg_spend)}")
 for t, _tf, _tl, _tp in _type_changes:
     print(f"      {t}: {_fmt_spend(_tf)} > {_fmt_spend(_tl)}  ({_tp:+.1f}%)")
