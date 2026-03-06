@@ -29,7 +29,8 @@ display_matrix = cooccurrence.copy().astype(float)
 for i in range(len(categories_list)):
     display_matrix.iloc[i, i] = np.nan
 
-fig, ax = plt.subplots(figsize=(16, 11))
+_n_cats = len(categories_list)
+fig, ax = plt.subplots(figsize=(max(16, _n_cats * 1.1), max(11, _n_cats * 0.8)))
 fig.subplots_adjust(top=0.88, bottom=0.18, left=0.18, right=0.95)
 
 from matplotlib.colors import LinearSegmentedColormap

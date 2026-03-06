@@ -26,7 +26,7 @@ for category, acct_df in all_financial_accounts.items():
 
 cat_order = sorted(new_by_cat.keys(), key=lambda c: new_by_cat[c] + recurring_by_cat[c])
 
-fig, ax = plt.subplots(figsize=(14, 8))
+fig, ax = plt.subplots(figsize=(14, max(8, len(cat_order) * 0.55)))
 
 y_pos = range(len(cat_order))
 

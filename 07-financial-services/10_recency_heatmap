@@ -23,7 +23,7 @@ pivot = pivot[[t for t in tier_order if t in pivot.columns]]
 pivot['_sort'] = pivot.get('Active (0-30d)', 0)
 pivot = pivot.sort_values('_sort', ascending=False).drop(columns='_sort')
 
-fig, ax = plt.subplots(figsize=(14, 8))
+fig, ax = plt.subplots(figsize=(14, max(8, len(pivot) * 0.7)))
 
 # Custom colormap: white -> warning -> accent (more = hotter)
 from matplotlib.colors import LinearSegmentedColormap

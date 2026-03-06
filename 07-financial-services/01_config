@@ -223,7 +223,7 @@ config_df = pd.DataFrame(config_rows).sort_values('Patterns', ascending=True)
 total_patterns = config_df['Patterns'].sum()
 
 # --- Conference-grade visual ---
-fig, ax = plt.subplots(figsize=(14, 7))
+fig, ax = plt.subplots(figsize=(14, max(7, len(config_df) * 0.55)))
 
 _DARK = '#1B2A4A'
 _ACCENT = '#E63946'

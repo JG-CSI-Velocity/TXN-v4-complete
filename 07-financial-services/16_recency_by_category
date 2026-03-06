@@ -17,7 +17,7 @@ rec_df = pd.DataFrame(recency_data)
 rec_df['total'] = rec_df[['Active (0-30d)', 'Cooling (30-90d)', 'Dormant (90-365d)', 'Lapsed (365d+)']].sum(axis=1)
 rec_df = rec_df.sort_values('total', ascending=True)
 
-fig, ax = plt.subplots(figsize=(14, 8))
+fig, ax = plt.subplots(figsize=(14, max(8, len(rec_df) * 0.55)))
 
 tier_colors = {
     'Active (0-30d)':   GEN_COLORS['accent'],

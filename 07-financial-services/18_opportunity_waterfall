@@ -19,7 +19,7 @@ for category, acct_df in all_financial_accounts.items():
 
 opp_df = pd.DataFrame(opp_data).sort_values('leaking', ascending=True)
 
-fig, ax = plt.subplots(figsize=(14, 9))
+fig, ax = plt.subplots(figsize=(14, max(9, len(opp_df) * 0.6)))
 
 # Background: total members (light gray, full width)
 ax.barh(range(len(opp_df)), [total_members] * len(opp_df),

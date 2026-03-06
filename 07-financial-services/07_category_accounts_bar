@@ -4,7 +4,7 @@
 
 cat_data = finserv_summary_df.copy().sort_values('unique_accounts', ascending=True)
 
-fig, ax = plt.subplots(figsize=(14, 9))
+fig, ax = plt.subplots(figsize=(14, max(9, len(cat_data) * 0.6)))
 
 colors = [fs_get_color(c) for c in cat_data['category']]
 
