@@ -30,7 +30,12 @@ else:
     def _period_to_dates(s):
         """Convert a year_month Series (Period or string) to datetime."""
         try:
-            return s.dt.to_timestamp()
+            if hasattr(s.dtype, 'freq'):
+                return s.dt.to_timestamp()
+        except Exception:
+            pass
+        try:
+            return pd.PeriodIndex(s).to_timestamp()
         except Exception:
             return pd.to_datetime(s.astype(str))
 
