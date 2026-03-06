@@ -27,9 +27,16 @@ else:
     if _has_chk:
         _types_to_plot.append(('CHK', _CHK_COLOR, '-', 's'))
 
+    def _period_to_dates(s):
+        """Convert a year_month Series (Period or string) to datetime."""
+        try:
+            return s.dt.to_timestamp()
+        except Exception:
+            return pd.to_datetime(s.astype(str))
+
     for t, color, ls, marker in _types_to_plot:
         _data = tt_monthly[tt_monthly['transaction_type'] == t].sort_values('year_month')
-        dates = _data['year_month'].to_timestamp() if hasattr(_data['year_month'], 'to_timestamp') else pd.to_datetime(_data['year_month'].astype(str))
+        dates = _period_to_dates(_data['year_month'])
         vals = _data['spend_share_pct'].values
 
         ax.plot(dates, vals, color=color, linewidth=3, marker=marker,
@@ -51,7 +58,10 @@ else:
     _non_debit = tt_monthly[tt_monthly['transaction_type'].isin(['ACH', 'CHK'])].copy()
     if len(_non_debit) > 0:
         _combined = _non_debit.groupby('year_month')['spend_share_pct'].sum().sort_index()
-        _combined_dates = _combined.index.to_timestamp()
+        try:
+            _combined_dates = _combined.index.to_timestamp()
+        except Exception:
+            _combined_dates = pd.to_datetime(_combined.index.astype(str))
         ax.plot(_combined_dates, _combined.values, color=_MUTED, linewidth=2,
                 linestyle=':', alpha=0.6, zorder=3, label='ACH + CHK Combined')
         ax.text(_combined_dates[-1], _combined.values[-1],
@@ -62,7 +72,10 @@ else:
     _debit = tt_monthly[tt_monthly['transaction_type'].isin(['PIN', 'SIG'])].copy()
     if len(_debit) > 0:
         _debit_share = _debit.groupby('year_month')['spend_share_pct'].sum().sort_index()
-        _debit_dates = _debit_share.index.to_timestamp()
+        try:
+            _debit_dates = _debit_share.index.to_timestamp()
+        except Exception:
+            _debit_dates = pd.to_datetime(_debit_share.index.astype(str))
         ax.fill_between(_debit_dates, _debit_share.values, alpha=0.05,
                         color=GEN_COLORS.get('success', '#2A9D8F'))
 
