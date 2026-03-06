@@ -12,8 +12,10 @@ if len(competitor_spend_analysis) > 0:
         n = len(df)
         if n < MIN_DISPLAY_ACCOUNTS:
             continue
-        seg_counts = df['segment'].value_counts()
         cat_raw = df['competitor_category'].iloc[0]
+        if cat_raw in PAYMENT_ECOSYSTEMS:
+            continue
+        seg_counts = df['segment'].value_counts()
         _rows.append({
             'competitor': comp_name,
             'category': clean_category(cat_raw),

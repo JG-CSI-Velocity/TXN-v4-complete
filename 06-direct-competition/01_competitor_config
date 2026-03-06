@@ -432,8 +432,9 @@ CLIENT_CONFIGS = {
         ],
         'custom': [],
         'rollups': {
-            'CAPE COD 5':               'CAPE COD FIVE',
-            'CAPE COD FIVE CENTS':      'CAPE COD FIVE',
+            'CAPE COD FIVE':            'Cape Cod Five Cents Savings Bank',
+            'CAPE COD 5':               'Cape Cod Five Cents Savings Bank',
+            'CAPE COD FIVE CENTS':      'Cape Cod Five Cents Savings Bank',
             'SEAMENS BANK':             "SEAMEN'S BANK",
             'MARTHAS VINEYARD SAVINGS': "MARTHA'S VINEYARD SAVINGS BANK",
             'MV BANK':                  "MARTHA'S VINEYARD SAVINGS BANK",
@@ -722,7 +723,7 @@ def normalize_competitor_name(bank_name: str) -> str:
         if name_u.startswith(prefix):
             return canonical
 
-    return bank_name
+    return bank_name.strip()
 
 
 # ---------------------------------------------------------------------------

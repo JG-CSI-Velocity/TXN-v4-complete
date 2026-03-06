@@ -64,9 +64,11 @@ if len(all_competitor_data) > 0:
     }
     del _merged
 
-    # Rank competitors by account count for deep-dive selection
+    # Rank TRUE competitors by account count for deep-dive selection
+    # (exclude payment ecosystems: wallets, p2p, bnpl)
     _comp_sizes = {
         name: len(df) for name, df in competitor_spend_analysis.items()
+        if df['competitor_category'].iloc[0] not in PAYMENT_ECOSYSTEMS
     }
     deep_dive_competitors = sorted(
         _comp_sizes, key=_comp_sizes.get, reverse=True

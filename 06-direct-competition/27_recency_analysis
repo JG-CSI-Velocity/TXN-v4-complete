@@ -5,13 +5,22 @@
 # a 30/90/180-day breakdown. Uses all_account_summaries.
 
 if len(all_account_summaries) > 0:
+    # Build category lookup from competitor_txns (robust to key mismatches)
+    _cat_lookup = (
+        competitor_txns.groupby('competitor_match')['competitor_category']
+        .first()
+        .to_dict()
+    )
+
     # Combine recency from all competitors into one view
     _all_recency = []
     for comp_name, acct_df in all_account_summaries.items():
-        cat = all_competitor_data[comp_name]['competitor_category'].iloc[0]
+        cat_raw = _cat_lookup.get(comp_name, None)
+        if cat_raw is None or cat_raw in PAYMENT_ECOSYSTEMS:
+            continue
         _r = acct_df[['recency_days']].copy()
         _r['competitor'] = comp_name
-        _r['category'] = clean_category(cat)
+        _r['category'] = clean_category(cat_raw)
         _all_recency.append(_r)
 
     recency_all = pd.concat(_all_recency, ignore_index=True)

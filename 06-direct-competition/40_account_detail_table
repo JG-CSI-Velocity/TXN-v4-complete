@@ -6,12 +6,19 @@
 # many competitors -- placed at end so visualizations render first.
 
 if len(all_account_summaries) > 0:
+    # Build category lookup from competitor_txns (robust to key mismatches)
+    _cat_lookup_40 = (
+        competitor_txns.groupby('competitor_match')['competitor_category']
+        .first()
+        .to_dict()
+    )
+
     for comp_name in deep_dive_competitors:
         if comp_name not in all_account_summaries:
             continue
 
         acct = all_account_summaries[comp_name]
-        cat = all_competitor_data[comp_name]['competitor_category'].iloc[0]
+        cat = _cat_lookup_40.get(comp_name, 'unknown')
         cat_label = clean_category(cat)
 
         print(f"\n    {comp_name} [{cat_label}] -- Top 25 Accounts by Spend")

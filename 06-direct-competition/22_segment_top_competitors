@@ -7,6 +7,10 @@
 if len(competitor_spend_analysis) > 0:
     _rows = []
     for comp_name, df in competitor_spend_analysis.items():
+        # Skip payment ecosystems (wallets, p2p, bnpl)
+        cat_raw = df['competitor_category'].iloc[0] if len(df) > 0 else ''
+        if cat_raw in PAYMENT_ECOSYSTEMS:
+            continue
         seg = df['segment'].value_counts()
         n = len(df)
         _rows.append({

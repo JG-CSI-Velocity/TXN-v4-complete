@@ -6,17 +6,20 @@
 
 if len(all_competitor_data) > 0 and len(summary_data) > 0:
     _sdf = pd.DataFrame(summary_data)
+    # Filter out payment ecosystems
+    _sdf = _sdf[~_sdf['category'].isin(PAYMENT_ECOSYSTEMS)].copy()
     _sdf['category_label'] = _sdf['category'].apply(clean_category)
     _sdf['norm_name'] = _sdf['competitor'].apply(normalize_competitor_name)
 
     # Roll up normalized names within each category
     _rolled = (
-        _sdf.groupby(['category', 'category_label', 'norm_name'], as_index=False)
+        _sdf.groupby(['category', 'category_label', 'norm_name'])
         .agg(
             total_amount=('total_amount', 'sum'),
             unique_accounts=('unique_accounts', 'sum'),
             total_transactions=('total_transactions', 'sum'),
         )
+        .reset_index()
     )
 
     # Top competitor per category (by total spend)
