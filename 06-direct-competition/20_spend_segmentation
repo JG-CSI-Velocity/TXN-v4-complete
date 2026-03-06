@@ -3,7 +3,7 @@
 # ===========================================================================
 # Single canonical build of competitor_spend_analysis.
 # 3-tier segments: CU-Focused (<25%), Balanced (25-50%), Competitor-Heavy (>50%)
-# Also defines DEEP_DIVE_TOP_N for downstream per-competitor charts.
+# Vectorized: one bulk groupby + one merge, then split into dict.
 
 # How many competitors get individual deep-dive charts (cells 25-29)
 DEEP_DIVE_TOP_N = 8
@@ -18,39 +18,47 @@ SEGMENT_PALETTE = {
 }
 
 if len(all_competitor_data) > 0:
-    # Total spend per account across ALL transactions
+    # Total spend per account across ALL transactions (computed once)
     _account_totals = (
         combined_df.groupby('primary_account_num')
         .agg(total_spend=('amount', 'sum'), total_txns=('amount', 'count'))
         .reset_index()
     )
 
-    competitor_spend_analysis = {}
+    # One bulk groupby instead of N individual ones
+    _acct_comp = (
+        competitor_txns.groupby(['competitor_match', 'primary_account_num'])
+        .agg(competitor_spend=('amount', 'sum'), competitor_txns=('amount', 'count'))
+        .reset_index()
+    )
 
-    for comp_name, grp in all_competitor_data.items():
-        acct_comp = (
-            grp.groupby('primary_account_num')
-            .agg(competitor_spend=('amount', 'sum'), competitor_txns=('amount', 'count'))
-            .reset_index()
-        )
+    # One merge instead of N individual merges
+    _merged = _acct_comp.merge(_account_totals, on='primary_account_num', how='left')
+    del _acct_comp, _account_totals
 
-        merged = acct_comp.merge(_account_totals, on='primary_account_num', how='left')
-        merged['your_cu_spend'] = merged['total_spend'] - merged['competitor_spend']
-        merged['your_cu_txns'] = merged['total_txns'] - merged['competitor_txns']
-        merged['competitor_pct'] = (
-            merged['competitor_spend'] / merged['total_spend'] * 100
-        ).clip(0, 100)
+    _merged['your_cu_spend'] = _merged['total_spend'] - _merged['competitor_spend']
+    _merged['your_cu_txns'] = _merged['total_txns'] - _merged['competitor_txns']
+    _merged['competitor_pct'] = (
+        _merged['competitor_spend'] / _merged['total_spend'] * 100
+    ).clip(0, 100)
+    _merged['segment'] = pd.cut(
+        _merged['competitor_pct'],
+        bins=SEGMENT_BINS,
+        labels=SEGMENT_LABELS,
+        include_lowest=True,
+    )
 
-        merged['segment'] = pd.cut(
-            merged['competitor_pct'],
-            bins=SEGMENT_BINS,
-            labels=SEGMENT_LABELS,
-            include_lowest=True,
-        )
+    # Add category from competitor_txns (one lookup, not N)
+    _cat_map = competitor_txns.groupby('competitor_match')['competitor_category'].first()
+    _merged['competitor_category'] = _merged['competitor_match'].map(_cat_map)
+    _merged['competitor_name'] = _merged['competitor_match']
 
-        merged['competitor_name'] = comp_name
-        merged['competitor_category'] = grp['competitor_category'].iloc[0]
-        competitor_spend_analysis[comp_name] = merged
+    # Split into dict (trivial index slicing)
+    competitor_spend_analysis = {
+        name: grp.reset_index(drop=True)
+        for name, grp in _merged.groupby('competitor_match')
+    }
+    del _merged
 
     # Rank competitors by account count for deep-dive selection
     _comp_sizes = {

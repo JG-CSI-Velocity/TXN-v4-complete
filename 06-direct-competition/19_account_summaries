@@ -2,25 +2,30 @@
 # ACCOUNT SUMMARIES: Per-Competitor Account-Level Metrics
 # ===========================================================================
 # Builds all_account_summaries dict for downstream deep-dive visualizations.
-# Lightweight data prep -- no display output.
+# Vectorized: single groupby on full data, then split into dict.
 
 if len(all_competitor_data) > 0:
-    all_account_summaries = {}
-
-    for competitor, comp_trans in all_competitor_data.items():
-        acct = comp_trans.groupby('primary_account_num').agg(
+    # One bulk groupby instead of N individual ones
+    _bulk = (
+        competitor_txns.groupby(['competitor_match', 'primary_account_num'])
+        .agg(
             total_amount=('amount', 'sum'),
             txn_count=('amount', 'count'),
             avg_amount=('amount', 'mean'),
             first_txn=('transaction_date', 'min'),
             last_txn=('transaction_date', 'max'),
-        ).round(2)
+        )
+        .round(2)
+    )
+    _bulk['days_active'] = (_bulk['last_txn'] - _bulk['first_txn']).dt.days
+    _bulk['recency_days'] = (pd.Timestamp.now() - _bulk['last_txn']).dt.days
 
-        acct['days_active'] = (acct['last_txn'] - acct['first_txn']).dt.days
-        acct['recency_days'] = (pd.Timestamp.now() - acct['last_txn']).dt.days
-        acct = acct.sort_values('total_amount', ascending=False)
-
-        all_account_summaries[competitor] = acct
+    # Split into dict (trivial -- no computation, just index slicing)
+    all_account_summaries = {
+        comp: grp.droplevel(0).sort_values('total_amount', ascending=False)
+        for comp, grp in _bulk.groupby(level=0)
+    }
+    del _bulk
 
     print(f"    Built account summaries for {len(all_account_summaries)} competitors")
 else:
