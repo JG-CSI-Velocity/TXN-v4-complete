@@ -26,11 +26,15 @@ _unique_merch_series = pd.Series(_unique_merchants)
 
 for category, patterns in FINANCIAL_SERVICES_PATTERNS.items():
     # Match patterns against unique merchant names (much smaller list)
+    # Uses prefix matching (str.match with ^) to be consistent with
+    # section 06's tag_competitors() which also uses starts_with logic.
+    import re as _re
     _merch_mask = pd.Series(False, index=_unique_merch_series.index)
     for _i in range(0, len(patterns), _REGEX_BATCH_SIZE):
         _batch = patterns[_i:_i + _REGEX_BATCH_SIZE]
-        _merch_mask |= _unique_merch_series.str.contains(
-            '|'.join(_batch), case=False, na=False, regex=True
+        _regex = '^(?:' + '|'.join(_re.escape(p) for p in _batch) + ')'
+        _merch_mask |= _unique_merch_series.str.match(
+            _regex, case=False, na=False
         )
     _matched_merchants = set(_unique_merch_series[_merch_mask].values)
 

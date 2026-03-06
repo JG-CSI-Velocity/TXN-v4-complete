@@ -107,15 +107,7 @@ FINANCIAL_SERVICES_PATTERNS = {
         'ROOT INSURANCE', 'HIPPO INSURANCE',
     ],
 
-    'BNPL/Pay Later': [
-        'AFFIRM PAYMENT', 'AFFIRM INC', 'AFFIRM LOAN',
-        'KLARNA', 'KLARNA PAYMENT',
-        'AFTERPAY', 'AFTERPAY US',
-        'SEZZLE', 'SEZZLE INC',
-        'ZIP PAY', 'QUADPAY', 'ZIP CO',
-        'SPLITIT', 'SPLITIT PAYMENT',
-        'BREAD FINANCIAL', 'BREAD PAY',
-    ],
+    # 'BNPL/Pay Later' is built dynamically below from UNIVERSAL_ECOSYSTEMS
 
     'Crypto/Digital Assets': [
         'COINBASE', 'COINBASE INC', 'COINBASE PRO',
@@ -165,19 +157,27 @@ FINANCIAL_SERVICES_PATTERNS = {
         'MYFICO', 'FICO SCORE',
     ],
 
-    'Digital Wallets/P2P': [
-        'PAYPAL', 'PAYPAL PAYMENT', 'PAYPAL TRANSFER',
-        'VENMO', 'VENMO PAYMENT',
-        'CASH APP', 'SQUARE CASH', 'CASHAPP',
-        'ZELLE', 'ZELLE PAYMENT',
-        'APPLE CASH', 'APPLE PAY CASH',
-        'GOOGLE PAY TRANSFER',
-    ],
+    # 'Digital Wallets/P2P' is built dynamically below from UNIVERSAL_ECOSYSTEMS
 
     # NOTE: "Other Banks" removed. Competitor bank detection is handled
     # by section 06 (tag_competitors). This section focuses on financial
     # products/services, not institutions.
 }
+
+# ---------------------------------------------------------------------------
+# Auto-build BNPL and Wallets/P2P from UNIVERSAL_ECOSYSTEMS (section 06)
+# Single source of truth — both sections use the same patterns.
+# ---------------------------------------------------------------------------
+if 'UNIVERSAL_ECOSYSTEMS' in dir():
+    if 'bnpl' in UNIVERSAL_ECOSYSTEMS:
+        FINANCIAL_SERVICES_PATTERNS['BNPL/Pay Later'] = \
+            UNIVERSAL_ECOSYSTEMS['bnpl'].get('starts_with', [])
+    _wallet_p2p = []
+    for _eco_key in ('wallets', 'p2p'):
+        if _eco_key in UNIVERSAL_ECOSYSTEMS:
+            _wallet_p2p.extend(UNIVERSAL_ECOSYSTEMS[_eco_key].get('starts_with', []))
+    if _wallet_p2p:
+        FINANCIAL_SERVICES_PATTERNS['Digital Wallets/P2P'] = _wallet_p2p
 
 import pandas as pd
 import matplotlib.pyplot as plt
