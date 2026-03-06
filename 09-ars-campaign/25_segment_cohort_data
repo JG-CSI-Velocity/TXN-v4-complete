@@ -1,363 +1,217 @@
 # ===========================================================================
-# SEGMENT COHORT DATA: Segment-Level Responder vs Non-Responder Analysis
+# SEGMENT COHORT DATA: Build Per-Account Spend + Swipe Time Series
 # ===========================================================================
-# Builds per-segment cohort data comparing each challenge segment's
-# responders vs non-responders over extended time windows.
+# For each mailer wave, classifies EVERY mailed account into a challenge
+# segment and response status, then attaches monthly spend and swipe values
+# at offsets relative to the mail date (-6 to +36 months).
 #
-# Segments: NU (non-user), TH-10, TH-15, TH-20, TH-25
-# Time: 6 months before mail → up to 36 months after
+# Segment assignment priority:
+#   1. Responders (TH-* or NU 5+) → segment from resp column
+#   2. NU 1-4 (tried, missed) → segment = NU, status = Non-Responder
+#   3. Null response → segment from mail column if available, else Unknown
 #
-# For each wave, determines challenge segment for EVERY mailed account:
-#   - Responders: segment from resp column (TH-10 → TH-10, NU 5+ → NU)
-#   - NU 1-4: segment = NU (tried but missed goal)
-#   - Non-responders (null resp): segment from mail column if available
+# Output:  segment_cohort_raw  (one row per account × wave)
+#   Columns: acct_number, wave, wave_date, segment, status,
+#            m-6..m+36 (spend), sw-6..sw+36 (swipes)
 #
-# Outputs: segment_cohort_monthly, segment_cohort_summary
-# Depends on: WAVE_CONFIG, spend_lookup, rewards_df (from cell 11)
+# Depends on: WAVE_CONFIG, spend_lookup, swipe_month_map, rewards_df (cell 11)
 
 try:
     if 'WAVE_CONFIG' not in dir() or len(WAVE_CONFIG) == 0:
         raise NameError("WAVE_CONFIG not available -- run cell 11 first")
 
-    # ------------------------------------------------------------------
-    # 1. Inspect mail column values to understand format
-    # ------------------------------------------------------------------
     _acct_col = 'Acct Number' if 'Acct Number' in rewards_df.columns else ' Acct Number'
 
-    print("    Inspecting mail/resp column values...\n")
-    _all_mail_vals = set()
-    _all_resp_vals = set()
-    for mc, rc in zip(mail_cols, resp_cols):
-        _mv = rewards_df[mc].dropna().astype(str).str.strip().str.upper().unique()
-        _rv = rewards_df[rc].dropna().astype(str).str.strip().str.upper().unique()
-        _all_mail_vals.update(_mv)
-        _all_resp_vals.update(_rv)
-
-    print(f"    Unique mail values ({len(_all_mail_vals)}): {sorted(_all_mail_vals)[:15]}")
-    print(f"    Unique resp values ({len(_all_resp_vals)}): {sorted(_all_resp_vals)[:15]}")
-
     # ------------------------------------------------------------------
-    # 2. Segment parsers
+    # Segment parser
     # ------------------------------------------------------------------
-    def _parse_challenge_segment(val):
-        """Parse a mail or resp value into a challenge segment label."""
+    def _parse_segment(val):
+        """Map a mail or resp value to a canonical segment label."""
         if pd.isna(val):
             return None
         v = str(val).strip().upper()
-        # Threshold challenges
         if v.startswith('TH-'):
-            return v                   # TH-10, TH-15, TH-20, TH-25
+            return v
         if v.startswith('TH') and len(v) > 2 and v[2:].strip('-').isdigit():
-            return f"TH-{v[2:].strip('-')}"  # TH10 → TH-10
-        # Non-user outcomes
-        if v in ('NU 5+', 'NU5+', 'NU 5', 'NU 6', 'NU 7', 'NU 8', 'NU 9', 'NU 10'):
+            return f"TH-{v[2:].strip('-')}"
+        if v in ('NU 5+', 'NU5+', 'NU 5', 'NU 6', 'NU 7', 'NU 8', 'NU 9', 'NU 10',
+                 'NU 1-4', 'NU1-4', 'NU', 'NON-USER', 'NONUSER', 'NON USER'):
             return 'NU'
-        if v in ('NU 1-4', 'NU1-4'):
-            return 'NU'
-        if v in ('NU', 'NON-USER', 'NONUSER', 'NON USER'):
-            return 'NU'
-        # Numeric thresholds (if mail column just has the number)
         if v in ('10', '15', '20', '25'):
             return f"TH-{v}"
         if v in ('5', '5+'):
             return 'NU'
         return None
 
-    # Check if mail columns contain challenge info
-    _mail_has_segments = sum(
-        1 for v in _all_mail_vals if _parse_challenge_segment(v) is not None
-    )
-    _mail_segment_pct = _mail_has_segments / max(len(_all_mail_vals), 1) * 100
-    print(f"\n    Mail column segment coverage: {_mail_has_segments}/{len(_all_mail_vals)} "
-          f"unique values ({_mail_segment_pct:.0f}%)")
-
-    if _mail_segment_pct < 30:
-        print("    NOTE: Mail column does not contain challenge levels.")
-        print("    Non-responders with null response will have segment='Unknown'.")
-        print("    Only responders (TH-*) and NU 1-4 accounts will have known segments.")
-
     # ------------------------------------------------------------------
-    # 3. Build monthly spend time series per account per wave
+    # Build raw data: one row per mailed account per wave
     # ------------------------------------------------------------------
-    # Month offsets: -6 to +36 relative to mail date
     MAX_POST_MONTHS = 36
     MONTH_OFFSETS = list(range(-6, MAX_POST_MONTHS + 1))
 
-    seg_monthly_rows = []
-    _wave_diagnostics = []
+    _wave_rows = []
+    _overview = []
 
     for wave_label, wc in WAVE_CONFIG.items():
         mail_date = wc['mail_date']
-        mail_col_name = wc['mail_col'].strip()
-        resp_col_name = wc['resp_col'].strip()
+        mc = wc['mail_col'].strip()
+        rc = wc['resp_col'].strip()
 
-        was_mailed = rewards_df[mail_col_name].notna()
+        was_mailed = rewards_df[mc].notna()
         n_mailed = was_mailed.sum()
         if n_mailed == 0:
             continue
 
-        # -- Classify each mailed account's segment --
-        resp_vals = rewards_df.loc[was_mailed, resp_col_name] if resp_col_name in rewards_cols else pd.Series(None, index=rewards_df.index[was_mailed])
-        mail_vals = rewards_df.loc[was_mailed, mail_col_name]
-        acct_nums_wave = rewards_df.loc[was_mailed, _acct_col].astype(str).str.strip()
+        # Classify segment and status
+        resp_vals = rewards_df.loc[was_mailed, rc] if rc in rewards_cols else pd.Series(None, index=rewards_df.index[was_mailed])
+        mail_vals = rewards_df.loc[was_mailed, mc]
+        acct_nums = rewards_df.loc[was_mailed, _acct_col].astype(str).str.strip()
 
-        # Vectorized segment classification
-        resp_segments = resp_vals.map(_parse_challenge_segment)
-        mail_segments = mail_vals.map(_parse_challenge_segment)
+        resp_seg = resp_vals.map(_parse_segment)
+        mail_seg = mail_vals.map(_parse_segment)
 
-        # Response status
-        _rv_upper = resp_vals.astype(str).str.strip().str.upper()
-        is_success = _rv_upper.str.startswith('TH') | _rv_upper.isin(['NU 5+', 'NU5+', 'NU 5', 'NU 6', 'NU 7', 'NU 8', 'NU 9', 'NU 10'])
-        is_success = is_success & resp_vals.notna()
-        is_nu_partial = _rv_upper.isin(['NU 1-4', 'NU1-4']) & resp_vals.notna()
+        _rv = resp_vals.astype(str).str.strip().str.upper()
+        is_success = (_rv.str.startswith('TH') |
+                      _rv.isin(['NU 5+', 'NU5+', 'NU 5', 'NU 6', 'NU 7', 'NU 8', 'NU 9', 'NU 10'])
+                     ) & resp_vals.notna()
 
-        # Final segment assignment
-        # Priority: resp_segment (responders), NU (NU 1-4), mail_segment, Unknown
-        final_segment = pd.Series('Unknown', index=resp_vals.index)
-        # Non-responders with mail segment info
-        _has_mail_seg = mail_segments.notna()
-        final_segment[_has_mail_seg] = mail_segments[_has_mail_seg]
-        # NU 1-4 → NU segment
-        final_segment[is_nu_partial] = 'NU'
-        # Responders → their response segment (NU 5+ → NU, TH-10 → TH-10)
-        _has_resp_seg = resp_segments.notna()
-        final_segment[_has_resp_seg & is_success] = resp_segments[_has_resp_seg & is_success]
+        # Segment: resp_segment > NU (for NU 1-4) > mail_segment > Unknown
+        segment = pd.Series('Unknown', index=resp_vals.index)
+        segment[mail_seg.notna()] = mail_seg[mail_seg.notna()]
+        _is_nu_partial = _rv.isin(['NU 1-4', 'NU1-4']) & resp_vals.notna()
+        segment[_is_nu_partial] = 'NU'
+        segment[resp_seg.notna() & is_success] = resp_seg[resp_seg.notna() & is_success]
 
-        # Status
         status = pd.Series('Non-Responder', index=resp_vals.index)
         status[is_success] = 'Responder'
 
-        # -- Compute spend AND swipes at each month offset --
-        offset_spend = {}
-        offset_swipes = {}
-        _avail_offsets = []
-        _avail_swipe_offsets = []
+        # Collect spend + swipe values at each month offset
+        spend_data = {}
+        swipe_data = {}
         for offset in MONTH_OFFSETS:
-            target_date = mail_date + pd.DateOffset(months=offset)
-            target_label = target_date.strftime('%b%y')
-            if target_label in spend_lookup:
-                s_col = spend_lookup[target_label]
-                offset_spend[offset] = pd.to_numeric(
-                    rewards_df.loc[was_mailed, s_col], errors='coerce'
+            target = (mail_date + pd.DateOffset(months=offset)).strftime('%b%y')
+            if target in spend_lookup:
+                spend_data[offset] = pd.to_numeric(
+                    rewards_df.loc[was_mailed, spend_lookup[target]], errors='coerce'
                 ).fillna(0)
-                _avail_offsets.append(offset)
-            if 'swipe_month_map' in dir() and target_label in swipe_month_map:
-                sw_col = swipe_month_map[target_label]
-                offset_swipes[offset] = pd.to_numeric(
-                    rewards_df.loc[was_mailed, sw_col], errors='coerce'
+            if 'swipe_month_map' in dir() and target in swipe_month_map:
+                swipe_data[offset] = pd.to_numeric(
+                    rewards_df.loc[was_mailed, swipe_month_map[target]], errors='coerce'
                 ).fillna(0)
-                _avail_swipe_offsets.append(offset)
 
-        if len(_avail_offsets) == 0:
+        if len(spend_data) == 0:
             continue
 
-        _min_offset = min(_avail_offsets)
-        _max_offset = max(_avail_offsets)
-
-        # Build one row per account with segment, status, spend + swipes by offset
-        _wave_df = pd.DataFrame({
-            'acct_number': acct_nums_wave.values,
+        # Assemble wave DataFrame
+        wdf = pd.DataFrame({
+            'acct_number': acct_nums.values,
             'wave': wave_label,
             'wave_date': mail_date,
-            'segment': final_segment.values,
+            'segment': segment.values,
             'status': status.values,
         })
-        for offset in _avail_offsets:
-            _wave_df[f'm{offset:+d}'] = offset_spend[offset].values
-        for offset in _avail_swipe_offsets:
-            _wave_df[f'sw{offset:+d}'] = offset_swipes[offset].values
+        for o, vals in spend_data.items():
+            wdf[f'm{o:+d}'] = vals.values
+        for o, vals in swipe_data.items():
+            wdf[f'sw{o:+d}'] = vals.values
 
-        seg_monthly_rows.append(_wave_df)
+        _wave_rows.append(wdf)
 
-        # Diagnostics
-        _seg_counts = pd.Series(final_segment.values).value_counts()
-        _n_resp = is_success.sum()
-        _wave_diagnostics.append({
-            'wave': wave_label,
-            'mailed': n_mailed,
-            'responders': _n_resp,
-            'offsets': f"{_min_offset} to {_max_offset}",
-            'segments': dict(_seg_counts),
+        # Overview stats
+        seg_counts = pd.Series(segment.values).value_counts().to_dict()
+        _overview.append({
+            'Wave': wave_label,
+            'Date': mail_date.strftime('%b %Y'),
+            'Mailed': n_mailed,
+            'Responders': int(is_success.sum()),
+            'Spend Months': f"{min(spend_data):+d} to {max(spend_data):+d}",
+            'Swipe Months': f"{min(swipe_data):+d} to {max(swipe_data):+d}" if swipe_data else '--',
+            'Segments': ', '.join(f"{s}: {c:,}" for s, c in sorted(seg_counts.items()) if s != 'Unknown'),
         })
 
-    # Combine all waves
-    if len(seg_monthly_rows) == 0:
+    if len(_wave_rows) == 0:
         raise ValueError("No waves with usable data")
 
-    segment_cohort_raw = pd.concat(seg_monthly_rows, ignore_index=True)
+    segment_cohort_raw = pd.concat(_wave_rows, ignore_index=True)
 
-    # Print diagnostics
-    print(f"\n    Per-wave diagnostics:")
-    for d in _wave_diagnostics:
-        print(f"      {d['wave']}: {d['mailed']:,} mailed, {d['responders']:,} responders, "
-              f"offsets {d['offsets']}")
-        for seg, cnt in sorted(d['segments'].items()):
-            print(f"        {seg}: {cnt:,}")
-
-    # ------------------------------------------------------------------
-    # 4. Aggregate: avg monthly spend by segment × status × month_offset
-    # ------------------------------------------------------------------
-    # Identify month offset columns
-    _offset_cols = [c for c in segment_cohort_raw.columns if c.startswith('m') and ('+' in c or '-' in c)]
-    _offset_vals = sorted([int(c[1:]) for c in _offset_cols])
-
-    # Filter to segments with enough data (both responders and non-responders)
+    # Fallback: if no segment has enough data in both groups, broaden TH-* → TH (All)
     MIN_SEGMENT_N = 10
-    _seg_status_counts = segment_cohort_raw.groupby(['segment', 'status']).size().unstack(fill_value=0)
-    _valid_segments = []
-    for seg in _seg_status_counts.index:
-        n_resp = _seg_status_counts.loc[seg].get('Responder', 0)
-        n_nonresp = _seg_status_counts.loc[seg].get('Non-Responder', 0)
-        if n_resp >= MIN_SEGMENT_N and n_nonresp >= MIN_SEGMENT_N:
-            _valid_segments.append(seg)
-
-    print(f"\n    Segment × Status counts:")
-    print(_seg_status_counts.to_string())
-    print(f"\n    Valid segments (>={MIN_SEGMENT_N} in both groups): {_valid_segments}")
-
-    if len(_valid_segments) == 0:
-        print("    WARNING: No segments with enough data in both groups.")
-        print("    Falling back to aggregate Responder vs Non-Responder by TH vs NU grouping.")
-        # Create broad segments: group all TH-* into "TH (All)", keep NU
-        segment_cohort_raw['segment_broad'] = segment_cohort_raw['segment'].apply(
+    _xtab = segment_cohort_raw.groupby(['segment', 'status']).size().unstack(fill_value=0)
+    _has_valid = any(
+        _xtab.loc[s].get('Responder', 0) >= MIN_SEGMENT_N and
+        _xtab.loc[s].get('Non-Responder', 0) >= MIN_SEGMENT_N
+        for s in _xtab.index
+    )
+    if not _has_valid:
+        segment_cohort_raw['segment'] = segment_cohort_raw['segment'].apply(
             lambda s: 'TH (All)' if s.startswith('TH') else s
         )
-        _seg_status_counts_broad = segment_cohort_raw.groupby(['segment_broad', 'status']).size().unstack(fill_value=0)
-        _valid_segments = [
-            seg for seg in _seg_status_counts_broad.index
-            if _seg_status_counts_broad.loc[seg].get('Responder', 0) >= MIN_SEGMENT_N
-            and _seg_status_counts_broad.loc[seg].get('Non-Responder', 0) >= MIN_SEGMENT_N
-        ]
-        segment_cohort_raw['segment'] = segment_cohort_raw['segment_broad']
-        print(f"    Broad segments with enough data: {_valid_segments}")
-
-    # Build summary: mean spend per month offset by segment × status
-    _filtered = segment_cohort_raw[segment_cohort_raw['segment'].isin(_valid_segments)]
-
-    segment_cohort_monthly = (
-        _filtered
-        .groupby(['segment', 'status'])[_offset_cols]
-        .mean()
-        .reset_index()
-    )
-
-    # Also compute account counts
-    segment_cohort_counts = (
-        _filtered
-        .groupby(['segment', 'status'])
-        .size()
-        .reset_index(name='n_accounts')
-    )
-
-    # Build window-level summary (3mo pre, 6mo pre, 3mo post, 6mo post, 12mo, 24mo, 36mo)
-    SUMMARY_WINDOWS = {
-        '3mo_pre': [o for o in _offset_vals if -3 <= o < 0],
-        '6mo_pre': [o for o in _offset_vals if -6 <= o < 0],
-        '3mo_post': [o for o in _offset_vals if 1 <= o <= 3],
-        '6mo_post': [o for o in _offset_vals if 1 <= o <= 6],
-        '12mo_post': [o for o in _offset_vals if 1 <= o <= 12],
-        '24mo_post': [o for o in _offset_vals if 1 <= o <= 24],
-        '36mo_post': [o for o in _offset_vals if 1 <= o <= 36],
-    }
-
-    _summary_rows = []
-    for seg in _valid_segments:
-        for stat in ['Responder', 'Non-Responder']:
-            _mask = (_filtered['segment'] == seg) & (_filtered['status'] == stat)
-            _data = _filtered[_mask]
-            if len(_data) == 0:
-                continue
-            row = {'segment': seg, 'status': stat, 'n_accounts': len(_data)}
-            for win_name, offsets in SUMMARY_WINDOWS.items():
-                if len(offsets) == 0:
-                    row[f'{win_name}_spend'] = None
-                    continue
-                cols = [f'm{o:+d}' for o in offsets if f'm{o:+d}' in _data.columns]
-                if len(cols) > 0:
-                    row[f'{win_name}_spend'] = _data[cols].mean(axis=1).mean()
-                else:
-                    row[f'{win_name}_spend'] = None
-            _summary_rows.append(row)
-
-    segment_cohort_summary = pd.DataFrame(_summary_rows)
+        print("    NOTE: Segments broadened to TH (All) / NU due to small group sizes.")
 
     # ------------------------------------------------------------------
-    # 5. Display summary table
+    # Output: wave overview table
     # ------------------------------------------------------------------
-    if len(segment_cohort_summary) > 0:
-        _disp = segment_cohort_summary.copy()
-        _disp_cols = ['segment', 'status', 'n_accounts']
-        _fmt = {'n_accounts': '{:,.0f}'}
-        for win in SUMMARY_WINDOWS:
-            col = f'{win}_spend'
-            if col in _disp.columns and _disp[col].notna().any():
-                _disp_cols.append(col)
-                _fmt[col] = '${:,.2f}'
+    _ov_df = pd.DataFrame(_overview)
+    _styled_ov = (
+        _ov_df.style
+        .hide(axis='index')
+        .format({'Mailed': '{:,}', 'Responders': '{:,}'})
+        .set_properties(**{
+            'font-size': '13px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF',
+            'padding': '7px 10px',
+        })
+        .set_table_styles([
+            {'selector': 'th', 'props': [
+                ('background-color', GEN_COLORS.get('info', '#457B9D')),
+                ('color', 'white'), ('font-size', '13px'),
+                ('font-weight', 'bold'), ('text-align', 'center'),
+                ('padding', '8px 10px'),
+            ]},
+            {'selector': 'caption', 'props': [
+                ('font-size', '20px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS.get('dark_text', '#1B2A4A')),
+                ('text-align', 'left'), ('padding-bottom', '10px'),
+            ]},
+        ])
+        .set_caption(f"Segment Cohort Data: Wave Overview  ({DATASET_LABEL})")
+    )
+    display(_styled_ov)
 
-        _disp = _disp[_disp_cols].copy()
-        _disp.columns = [c.replace('_spend', '').replace('_', ' ').title() for c in _disp_cols]
+    # Segment × Status cross-tab
+    _xtab_final = segment_cohort_raw.groupby(['segment', 'status']).size().unstack(fill_value=0)
+    _xtab_final['Total'] = _xtab_final.sum(axis=1)
+    _styled_xtab = (
+        _xtab_final.style
+        .format('{:,}')
+        .set_properties(**{
+            'font-size': '13px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF',
+            'padding': '7px 10px',
+        })
+        .set_table_styles([
+            {'selector': 'th', 'props': [
+                ('background-color', GEN_COLORS.get('success', '#2A9D8F')),
+                ('color', 'white'), ('font-size', '13px'),
+                ('font-weight', 'bold'), ('text-align', 'center'),
+                ('padding', '8px 10px'),
+            ]},
+            {'selector': 'caption', 'props': [
+                ('font-size', '20px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS.get('dark_text', '#1B2A4A')),
+                ('text-align', 'left'), ('padding-bottom', '10px'),
+            ]},
+        ])
+        .set_caption("Segment x Status: Account Counts (All Waves Pooled)")
+    )
+    display(_styled_xtab)
 
-        styled = (
-            _disp.style
-            .hide(axis='index')
-            .format({k.replace('_spend', '').replace('_', ' ').title(): v for k, v in _fmt.items()})
-            .set_properties(**{
-                'font-size': '13px', 'font-weight': 'bold',
-                'text-align': 'center', 'border': '1px solid #E9ECEF',
-                'padding': '7px 10px',
-            })
-            .set_table_styles([
-                {'selector': 'th', 'props': [
-                    ('background-color', GEN_COLORS.get('info', '#457B9D')),
-                    ('color', 'white'), ('font-size', '13px'),
-                    ('font-weight', 'bold'), ('text-align', 'center'),
-                    ('padding', '8px 10px'),
-                ]},
-                {'selector': 'caption', 'props': [
-                    ('font-size', '22px'), ('font-weight', 'bold'),
-                    ('color', GEN_COLORS.get('dark_text', '#1B2A4A')),
-                    ('text-align', 'left'), ('padding-bottom', '12px'),
-                ]},
-            ])
-            .set_caption(f"Segment-Level Cohort Summary: Avg Monthly Spend  ({DATASET_LABEL})")
-        )
-        display(styled)
-
-    # Print DID by segment
-    print(f"\n    Difference-in-Differences by Segment:")
-    for seg in _valid_segments:
-        _r = segment_cohort_summary[
-            (segment_cohort_summary['segment'] == seg) &
-            (segment_cohort_summary['status'] == 'Responder')
-        ]
-        _nr = segment_cohort_summary[
-            (segment_cohort_summary['segment'] == seg) &
-            (segment_cohort_summary['status'] == 'Non-Responder')
-        ]
-        if len(_r) > 0 and len(_nr) > 0:
-            for win in ['3mo_post', '6mo_post', '12mo_post']:
-                col = f'{win}_spend'
-                pre_col = '3mo_pre_spend'
-                if col in _r.columns and pre_col in _r.columns:
-                    r_pre = _r[pre_col].iloc[0]
-                    r_post = _r[col].iloc[0]
-                    nr_pre = _nr[pre_col].iloc[0]
-                    nr_post = _nr[col].iloc[0]
-                    if r_pre is not None and r_post is not None and nr_pre is not None and nr_post is not None:
-                        r_delta = r_post - r_pre
-                        nr_delta = nr_post - nr_pre
-                        did = r_delta - nr_delta
-                        print(f"      {seg} ({win}): DID = ${did:,.2f}/mo "
-                              f"(Resp: ${r_pre:,.2f}→${r_post:,.2f}, "
-                              f"NonResp: ${nr_pre:,.2f}→${nr_post:,.2f})")
-
-    print(f"\n    segment_cohort_raw: {len(segment_cohort_raw):,} account-wave rows")
-    print(f"    Available offsets: {_offset_vals[0]} to {_offset_vals[-1]} months")
+    _spend_cols = [c for c in segment_cohort_raw.columns if c.startswith('m') and ('+' in c or '-' in c)]
+    _swipe_cols = [c for c in segment_cohort_raw.columns if c.startswith('sw')]
+    print(f"\n    segment_cohort_raw: {len(segment_cohort_raw):,} rows  |  "
+          f"{len(_spend_cols)} spend months  |  {len(_swipe_cols)} swipe months")
 
 except (NameError, KeyError, ValueError) as e:
     print(f"    Segment cohort data not available: {e}")
     print("    Ensure cells 01 and 11 have been run first.")
     segment_cohort_raw = pd.DataFrame()
-    segment_cohort_monthly = pd.DataFrame()
-    segment_cohort_summary = pd.DataFrame()
-    segment_cohort_counts = pd.DataFrame()
