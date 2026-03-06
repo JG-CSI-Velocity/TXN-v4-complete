@@ -39,9 +39,9 @@ else:
     _chk_pct = _chk_spend / _total_spend * 100 if _total_spend > 0 else 0
 
     # Build figure
-    fig = plt.figure(figsize=(24, 12))
+    fig = plt.figure(figsize=(26, 14))
     gs = fig.add_gridspec(2, 1, height_ratios=[1, 0.8], hspace=0.25,
-                          top=0.85, bottom=0.08, left=0.05, right=0.95)
+                          top=0.86, bottom=0.06, left=0.04, right=0.96)
 
     # =================================================================
     # ROW 1: KPI Cards
@@ -94,14 +94,14 @@ else:
         ax.add_patch(card)
 
         ax.text(5, 7.0, kpi['label'],
-                ha='center', va='center', fontsize=14, fontweight='bold',
+                ha='center', va='center', fontsize=18, fontweight='bold',
                 color='white', alpha=0.85)
         ax.text(5, 4.5, kpi['value'],
-                ha='center', va='center', fontsize=38, fontweight='bold',
+                ha='center', va='center', fontsize=48, fontweight='bold',
                 color='white',
                 path_effects=[pe.withStroke(linewidth=2, foreground=kpi['color'])])
-        ax.text(5, 2.2, kpi['sub'],
-                ha='center', va='center', fontsize=11,
+        ax.text(5, 2.0, kpi['sub'],
+                ha='center', va='center', fontsize=14,
                 color='white', alpha=0.8, style='italic')
 
     # =================================================================
@@ -129,41 +129,42 @@ else:
         if _pct > 5:
             ax_bar.text(_left + _pct / 2, 0,
                         f'{t}\n{_fmt_vol(_spend)}\n({_pct:.1f}%)',
-                        ha='center', va='center', fontsize=13,
+                        ha='center', va='center', fontsize=18,
                         fontweight='bold', color='white')
         elif _pct > 2:
             ax_bar.text(_left + _pct / 2, 0,
                         f'{t}\n{_pct:.1f}%',
-                        ha='center', va='center', fontsize=10,
+                        ha='center', va='center', fontsize=14,
                         fontweight='bold', color='white')
 
         _left += _pct
 
     # Divider line between debit and non-debit
     ax_bar.axvline(_debit_pct, color=_DARK, linewidth=2, linestyle='--', alpha=0.6, zorder=5)
-    ax_bar.text(_debit_pct, 0.35, '  ARS scope', fontsize=10, fontweight='bold',
+    ax_bar.text(_debit_pct, 0.35, '  ARS scope', fontsize=14, fontweight='bold',
                 color=_DARK, va='bottom', ha='left')
-    ax_bar.text(_debit_pct, -0.35, '  Beyond ARS  ', fontsize=10, fontweight='bold',
+    ax_bar.text(_debit_pct, -0.35, '  Beyond ARS  ', fontsize=14, fontweight='bold',
                 color=_MUTED, va='top', ha='left')
 
     ax_bar.set_xlim(0, 100)
     ax_bar.set_ylim(-0.6, 0.6)
     ax_bar.set_yticks([])
-    ax_bar.set_xlabel('% of Total Payment Volume', fontsize=12, fontweight='bold', labelpad=8)
+    ax_bar.set_xlabel('% of Total Payment Volume', fontsize=15, fontweight='bold', labelpad=8)
     ax_bar.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.0f}%"))
+    ax_bar.tick_params(axis='x', labelsize=13)
     ax_bar.set_title('Payment Volume by Transaction Type',
-                     fontsize=16, fontweight='bold', color=_DARK, pad=10)
+                     fontsize=20, fontweight='bold', color=_DARK, pad=10)
     gen_clean_axes(ax_bar, keep_bottom=True)
 
-    ax_bar.legend(fontsize=11, framealpha=0.9, loc='upper right',
+    ax_bar.legend(fontsize=14, framealpha=0.9, loc='upper right',
                   title='Transaction Type',
-                  title_fontproperties={'weight': 'bold', 'size': 12})
+                  title_fontproperties={'weight': 'bold', 'size': 15})
 
     fig.suptitle('Beyond Debit: The Full Payment Picture',
-                 fontsize=22, fontweight='bold', color=_DARK, y=0.95)
-    fig.text(0.5, 0.905,
+                 fontsize=28, fontweight='bold', color=_DARK, y=0.96)
+    fig.text(0.5, 0.91,
              'ARS activates debit card usage, but debit is only part of total payment volume',
-             ha='center', fontsize=12, color=_MUTED, style='italic')
+             ha='center', fontsize=15, color=_MUTED, style='italic')
 
     plt.show()
 
