@@ -20,7 +20,7 @@ summary_data = competitor_txns.groupby(['competitor_category', 'competitor_match
     'competitor_match': 'competitor'
 }).sort_values('total_amount', ascending=False)
 
-# Build per-competitor dict used by all downstream visualization cells
+# Build per-competitor dict keyed by normalized name (merges variant groups)
 all_competitor_data = {
     name: group for name, group in competitor_txns.groupby('competitor_match')
 }
@@ -42,7 +42,7 @@ if len(competitor_txns) == 0:
 else:
     pct_comp_txns = len(competitor_txns) / len(combined_df) * 100
     pct_comp_accounts = comp_accounts / total_accounts * 100
-    unique_competitors = competitor_txns['merchant_consolidated'].nunique()
+    unique_competitors = competitor_txns['competitor_match'].nunique()
     n_categories = competitor_txns['competitor_category'].nunique()
     true_txns = len(competitor_txns[competitor_txns['competitor_category'].isin(TRUE_COMPETITORS)])
     eco_txns = len(competitor_txns[competitor_txns['competitor_category'].isin(PAYMENT_ECOSYSTEMS)])
@@ -139,9 +139,9 @@ else:
     plt.tight_layout()
     plt.show()
 
-    # --- Panel 3: Top 10 competitors table ---
+    # --- Panel 3: Top 10 competitors table (by normalized name) ---
     top10 = (
-        competitor_txns.groupby('merchant_consolidated')
+        competitor_txns.groupby('competitor_match')
         .agg(
             txns=('amount', 'count'),
             accounts=('primary_account_num', 'nunique'),
