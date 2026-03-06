@@ -48,12 +48,14 @@ ax.set_ylabel('', fontsize=1)
 ax.set_xticklabels(ax.get_xticklabels(), fontsize=15, fontweight='bold', rotation=0)
 ax.set_yticklabels(ax.get_yticklabels(), fontsize=14, fontweight='bold', rotation=0)
 
-fig.suptitle("Leakage Recency Heatmap",
-             fontsize=26, fontweight='bold', color=GEN_COLORS['dark_text'], y=0.97)
-fig.text(0.02, 0.93, "Hot zones = active leakage you can still intercept",
-         fontsize=15, color=GEN_COLORS['muted'], style='italic')
+ax.set_title("Leakage Recency Heatmap",
+             fontsize=26, fontweight='bold', color=GEN_COLORS['dark_text'],
+             pad=35, loc='left')
+ax.text(0.0, 1.02, "Hot zones = active leakage you can still intercept",
+        transform=ax.transAxes, fontsize=15, color=GEN_COLORS['muted'], style='italic')
 
-plt.tight_layout(rect=[0, 0, 1, 0.91])
+plt.tight_layout()
+plt.subplots_adjust(top=0.88)
 plt.show()
 
 # Opportunity callout
