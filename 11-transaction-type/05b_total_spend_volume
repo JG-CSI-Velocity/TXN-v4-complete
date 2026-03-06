@@ -1,15 +1,12 @@
 # ===========================================================================
 # TOTAL SPEND VOLUME: Is Portfolio Spend Actually Down?
 # ===========================================================================
-# Single hero chart answering the client's claim that "spend is down."
-# Shows total monthly spend across all transaction types with trend line,
-# first/last comparison, and annualized figures.
+# Presentation-ready single slide answering the client's claim.
+#
+# Row 1: 4 KPI cards (First Month, Last Month, Change %, Monthly Trend)
+# Row 2: Full-width line chart with trend + per-type mini bars
 #
 # Depends on: tt_monthly (cell 01)
-
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(24, 8),
-                                gridspec_kw={'width_ratios': [2.2, 1]})
-fig.subplots_adjust(wspace=0.25, top=0.85, bottom=0.15)
 
 _DARK = GEN_COLORS.get('dark_text', '#1B2A4A')
 _MUTED = GEN_COLORS.get('muted', '#6C757D')
@@ -17,8 +14,25 @@ _GRID = GEN_COLORS.get('grid', '#E0E0E0')
 _SUCCESS = GEN_COLORS.get('success', '#2A9D8F')
 _ACCENT = GEN_COLORS.get('accent', '#E63946')
 _INFO = GEN_COLORS.get('info', '#457B9D')
+_WARNING = GEN_COLORS.get('warning', '#E9C46A')
 
+_type_colors = {
+    'SIG': _WARNING,
+    'PIN': _SUCCESS,
+    'ACH': _INFO,
+    'CHK': _ACCENT,
+}
+
+def _fmt_spend(v):
+    if abs(v) >= 1e6:
+        return f"${v/1e6:,.2f}M"
+    if abs(v) >= 1e3:
+        return f"${v/1e3:,.0f}K"
+    return f"${v:,.0f}"
+
+# ---------------------------------------------------------------------------
 # Aggregate total spend per month (all types combined)
+# ---------------------------------------------------------------------------
 _monthly_total = tt_monthly.groupby('year_month').agg(
     total_spend=('total_spend', 'sum'),
     txn_count=('txn_count', 'sum'),
@@ -26,144 +40,240 @@ _monthly_total = tt_monthly.groupby('year_month').agg(
 
 dates = _monthly_total.index.to_timestamp()
 spend = _monthly_total['total_spend'].values
-txns = _monthly_total['txn_count'].values
+_n_months = len(spend)
 
 # Trend line (linear regression)
-x_numeric = np.arange(len(dates))
+x_numeric = np.arange(_n_months)
 _coeffs = np.polyfit(x_numeric, spend, 1)
-_trend = np.poly1d(_coeffs)
-_trend_vals = _trend(x_numeric)
-_monthly_change = _coeffs[0]  # slope = $ change per month
+_trend_vals = np.poly1d(_coeffs)(x_numeric)
+_monthly_slope = _coeffs[0]
 
-# Direction
+# Direction and change
 _is_up = spend[-1] > spend[0]
 _pct_change = (spend[-1] / spend[0] - 1) * 100
 _hero_color = _SUCCESS if _is_up else _ACCENT
-
-# =================================================================
-# LEFT: Total Monthly Spend Line Chart with Trend
-# =================================================================
-# Shaded area under the line
-ax1.fill_between(dates, spend, alpha=0.15, color=_INFO)
-ax1.plot(dates, spend, color=_INFO, linewidth=3, marker='o',
-         markersize=6, markeredgecolor='white', markeredgewidth=1.5,
-         zorder=4, label='Monthly Spend')
-
-# Trend line
-ax1.plot(dates, _trend_vals, color=_hero_color, linewidth=2.5,
-         linestyle='--', alpha=0.8, zorder=3,
-         label=f'Trend ({_pct_change:+.1f}% overall)')
-
-# First and last month markers
-ax1.plot(dates[0], spend[0], marker='D', markersize=12, color=_MUTED,
-         markeredgecolor='white', markeredgewidth=2, zorder=6)
-ax1.plot(dates[-1], spend[-1], marker='D', markersize=12, color=_hero_color,
-         markeredgecolor='white', markeredgewidth=2, zorder=6)
-
-# Labels on first and last
-_fmt_first = f"${spend[0]/1e6:,.2f}M" if spend[0] >= 1e6 else f"${spend[0]/1e3:,.0f}K"
-_fmt_last = f"${spend[-1]/1e6:,.2f}M" if spend[-1] >= 1e6 else f"${spend[-1]/1e3:,.0f}K"
-
-ax1.annotate(_fmt_first, xy=(dates[0], spend[0]),
-             xytext=(-10, -25), textcoords='offset points',
-             fontsize=13, fontweight='bold', color=_MUTED,
-             ha='center',
-             arrowprops=dict(arrowstyle='->', color=_MUTED, lw=1.5))
-
-ax1.annotate(_fmt_last, xy=(dates[-1], spend[-1]),
-             xytext=(10, 20), textcoords='offset points',
-             fontsize=14, fontweight='bold', color=_hero_color,
-             ha='center',
-             arrowprops=dict(arrowstyle='->', color=_hero_color, lw=1.5))
-
-# Avg line
+_direction = "UP" if _is_up else "DOWN"
 _avg_spend = spend.mean()
-ax1.axhline(_avg_spend, color=_MUTED, linewidth=1, linestyle=':', alpha=0.6)
-_avg_fmt = f"${_avg_spend/1e6:,.2f}M" if _avg_spend >= 1e6 else f"${_avg_spend/1e3:,.0f}K"
-ax1.text(dates[len(dates)//2], _avg_spend, f'  Avg: {_avg_fmt}',
-         fontsize=10, color=_MUTED, va='bottom', fontweight='bold')
 
-ax1.set_ylabel('Total Monthly Spend', fontsize=13, fontweight='bold', labelpad=8)
-ax1.yaxis.set_major_formatter(plt.FuncFormatter(
-    lambda v, _: f"${v/1e6:,.1f}M" if v >= 1e6 else f"${v/1e3:,.0f}K"))
-ax1.xaxis.set_major_formatter(mdates.DateFormatter('%b\n%Y'))
-ax1.tick_params(axis='x', rotation=0, labelsize=10)
-ax1.legend(fontsize=11, framealpha=0.9, loc='upper left')
-ax1.set_title('Total Portfolio Spend Over Time',
-              fontsize=16, fontweight='bold', color=_DARK, pad=10)
-gen_clean_axes(ax1, keep_left=True, keep_bottom=True)
-ax1.yaxis.grid(True, color=_GRID, linewidth=0.5, alpha=0.5)
-ax1.set_axisbelow(True)
+# Per-type first vs last
+_type_changes = []
+for t in tt_monthly['transaction_type'].unique():
+    _td = tt_monthly[tt_monthly['transaction_type'] == t].sort_values('year_month')
+    if len(_td) >= 2:
+        _tf = _td.iloc[0]['total_spend']
+        _tl = _td.iloc[-1]['total_spend']
+        if _tf > 0:
+            _type_changes.append((t, _tf, _tl, (_tl / _tf - 1) * 100))
+_type_changes.sort(key=lambda x: abs(x[1] + x[2]), reverse=True)
+
+# ---------------------------------------------------------------------------
+# Build figure: KPI row + chart row + type breakdown row
+# ---------------------------------------------------------------------------
+fig = plt.figure(figsize=(26, 14))
+gs = fig.add_gridspec(3, 1, height_ratios=[0.7, 1.8, 0.8],
+                      hspace=0.25, top=0.88, bottom=0.05, left=0.05, right=0.95)
 
 # =================================================================
-# RIGHT: Key Metrics Panel
+# ROW 1: KPI Cards
 # =================================================================
-ax2.axis('off')
+gs_cards = gs[0].subgridspec(1, 4, wspace=0.12)
 
 _first_mo = _monthly_total.index[0]
 _last_mo = _monthly_total.index[-1]
-_n_months = len(_monthly_total)
-_total_spend_all = spend.sum()
 
-# Per-type changes
-_type_changes = []
-for t in tt_monthly['transaction_type'].unique():
-    _t_data = tt_monthly[tt_monthly['transaction_type'] == t].sort_values('year_month')
-    if len(_t_data) >= 2:
-        _t_first = _t_data.iloc[0]['total_spend']
-        _t_last = _t_data.iloc[-1]['total_spend']
-        if _t_first > 0:
-            _t_pct = (_t_last / _t_first - 1) * 100
-            _type_changes.append((t, _t_first, _t_last, _t_pct))
-
-_type_changes.sort(key=lambda x: x[3], reverse=True)
-
-_direction = "UP" if _is_up else "DOWN"
-_arrow = "^" if _is_up else "v"
-
-_stats = [
-    ('Period', f'{_first_mo} to {_last_mo}', _MUTED, 13),
-    ('Months', f'{_n_months}', _MUTED, 13),
-    ('', '', '', 0),
-    ('First Month', _fmt_first, _DARK, 14),
-    ('Last Month', _fmt_last, _hero_color, 14),
-    (f'Change', f'{_pct_change:+.1f}% ({_direction})', _hero_color, 16),
-    ('', '', '', 0),
-    ('Monthly Trend', f'${_monthly_change:+,.0f}/mo', _hero_color, 14),
-    ('Avg Monthly', _avg_fmt, _DARK, 13),
-    ('Total Period', f'${_total_spend_all/1e6:,.2f}M' if _total_spend_all >= 1e6 else f'${_total_spend_all/1e3:,.0f}K', _DARK, 13),
-    ('', '', '', 0),
+kpi_data = [
+    {
+        'label': f'First Month ({_first_mo})',
+        'value': _fmt_spend(spend[0]),
+        'sub': 'starting point',
+        'color': _MUTED,
+    },
+    {
+        'label': f'Last Month ({_last_mo})',
+        'value': _fmt_spend(spend[-1]),
+        'sub': 'most recent',
+        'color': _hero_color,
+    },
+    {
+        'label': f'Overall Change',
+        'value': f'{_pct_change:+.1f}%',
+        'sub': f'spend is {_direction}',
+        'color': _hero_color,
+    },
+    {
+        'label': 'Monthly Trend',
+        'value': f'{_fmt_spend(abs(_monthly_slope))}/mo',
+        'sub': f'{"gaining" if _is_up else "losing"} per month',
+        'color': _hero_color,
+    },
 ]
 
-# Add per-type changes
-if _type_changes:
-    _stats.append(('By Type:', '', _DARK, 13))
-    for t, _tf, _tl, _tp in _type_changes:
-        _tc = _SUCCESS if _tp >= 0 else _ACCENT
-        _tf_fmt = f"${_tf/1e6:,.2f}M" if _tf >= 1e6 else f"${_tf/1e3:,.0f}K"
-        _tl_fmt = f"${_tl/1e6:,.2f}M" if _tl >= 1e6 else f"${_tl/1e3:,.0f}K"
-        _stats.append((f'  {t}', f'{_tf_fmt} > {_tl_fmt}  ({_tp:+.1f}%)', _tc, 12))
+for idx, kpi in enumerate(kpi_data):
+    ax = fig.add_subplot(gs_cards[idx])
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 10)
+    ax.axis('off')
 
-_y = 0.95
-ax2.set_title('Spend Summary', fontsize=16, fontweight='bold',
-              color=_DARK, pad=10)
+    card = FancyBboxPatch(
+        (0.3, 0.3), 9.4, 9.4,
+        boxstyle="round,pad=0.3",
+        facecolor=kpi['color'], edgecolor='white', linewidth=3
+    )
+    ax.add_patch(card)
 
-for label, val, color, size in _stats:
-    if label == '' and val == '':
-        _y -= 0.03
-        continue
-    if size == 0:
-        _y -= 0.03
-        continue
-    ax2.text(0.05, _y, label, fontsize=12, fontweight='bold',
-             color=_MUTED, transform=ax2.transAxes, va='top')
-    ax2.text(0.95, _y, val, fontsize=size, fontweight='bold',
-             color=color, transform=ax2.transAxes, va='top', ha='right')
-    _y -= 0.07
+    ax.text(5, 7.2, kpi['label'],
+            ha='center', va='center', fontsize=12, fontweight='bold',
+            color='white', alpha=0.85)
+    ax.text(5, 4.5, kpi['value'],
+            ha='center', va='center', fontsize=36, fontweight='bold',
+            color='white',
+            path_effects=[pe.withStroke(linewidth=2, foreground=kpi['color'])])
+    ax.text(5, 2.0, kpi['sub'],
+            ha='center', va='center', fontsize=11,
+            color='white', alpha=0.8, style='italic')
+
+# =================================================================
+# ROW 2: Full-Width Line Chart
+# =================================================================
+ax_chart = fig.add_subplot(gs[1])
+
+# Shaded area
+ax_chart.fill_between(dates, spend, alpha=0.12, color=_INFO)
+
+# Main line
+ax_chart.plot(dates, spend, color=_INFO, linewidth=3.5, marker='o',
+              markersize=7, markeredgecolor='white', markeredgewidth=2,
+              zorder=4, label='Monthly Spend')
+
+# Trend line
+ax_chart.plot(dates, _trend_vals, color=_hero_color, linewidth=2.5,
+              linestyle='--', alpha=0.8, zorder=3,
+              label=f'Trend ({_pct_change:+.1f}%)')
+
+# Start diamond
+ax_chart.plot(dates[0], spend[0], marker='D', markersize=14, color=_MUTED,
+              markeredgecolor='white', markeredgewidth=2.5, zorder=6)
+ax_chart.annotate(_fmt_spend(spend[0]),
+                  xy=(dates[0], spend[0]),
+                  xytext=(15, -30), textcoords='offset points',
+                  fontsize=14, fontweight='bold', color=_MUTED, ha='left',
+                  arrowprops=dict(arrowstyle='->', color=_MUTED, lw=2))
+
+# End diamond
+ax_chart.plot(dates[-1], spend[-1], marker='D', markersize=14, color=_hero_color,
+              markeredgecolor='white', markeredgewidth=2.5, zorder=6)
+ax_chart.annotate(f'{_fmt_spend(spend[-1])}  ({_pct_change:+.1f}%)',
+                  xy=(dates[-1], spend[-1]),
+                  xytext=(-15, 25), textcoords='offset points',
+                  fontsize=14, fontweight='bold', color=_hero_color, ha='right',
+                  arrowprops=dict(arrowstyle='->', color=_hero_color, lw=2))
+
+# Min/Max callouts
+_min_idx = np.argmin(spend)
+_max_idx = np.argmax(spend)
+if _min_idx not in [0, len(spend) - 1]:
+    ax_chart.plot(dates[_min_idx], spend[_min_idx], marker='v', markersize=10,
+                  color=_ACCENT, markeredgecolor='white', markeredgewidth=1.5, zorder=5)
+    ax_chart.annotate(f'Low: {_fmt_spend(spend[_min_idx])}',
+                      xy=(dates[_min_idx], spend[_min_idx]),
+                      xytext=(0, -22), textcoords='offset points',
+                      fontsize=10, fontweight='bold', color=_ACCENT, ha='center')
+
+if _max_idx not in [0, len(spend) - 1]:
+    ax_chart.plot(dates[_max_idx], spend[_max_idx], marker='^', markersize=10,
+                  color=_SUCCESS, markeredgecolor='white', markeredgewidth=1.5, zorder=5)
+    ax_chart.annotate(f'High: {_fmt_spend(spend[_max_idx])}',
+                      xy=(dates[_max_idx], spend[_max_idx]),
+                      xytext=(0, 18), textcoords='offset points',
+                      fontsize=10, fontweight='bold', color=_SUCCESS, ha='center')
+
+# Average line
+ax_chart.axhline(_avg_spend, color=_MUTED, linewidth=1.2, linestyle=':', alpha=0.5)
+ax_chart.text(dates[_n_months // 2], _avg_spend,
+              f'  Avg: {_fmt_spend(_avg_spend)}',
+              fontsize=10, color=_MUTED, va='bottom', fontweight='bold')
+
+ax_chart.set_ylabel('Total Monthly Spend', fontsize=13, fontweight='bold', labelpad=8)
+ax_chart.yaxis.set_major_formatter(plt.FuncFormatter(
+    lambda v, _: f"${v/1e6:,.1f}M" if v >= 1e6 else f"${v/1e3:,.0f}K"))
+ax_chart.xaxis.set_major_formatter(mdates.DateFormatter('%b\n%Y'))
+ax_chart.tick_params(axis='x', rotation=0, labelsize=10)
+ax_chart.legend(fontsize=11, framealpha=0.9, loc='upper left')
+gen_clean_axes(ax_chart, keep_left=True, keep_bottom=True)
+ax_chart.yaxis.grid(True, color=_GRID, linewidth=0.5, alpha=0.5)
+ax_chart.set_axisbelow(True)
+
+# =================================================================
+# ROW 3: Per-Type Change Bars (horizontal, first vs last month)
+# =================================================================
+if len(_type_changes) > 0:
+    gs_bottom = gs[2].subgridspec(1, 2, wspace=0.25, width_ratios=[1.5, 1])
+    ax_types = fig.add_subplot(gs_bottom[0])
+    ax_verdict = fig.add_subplot(gs_bottom[1])
+
+    _tc_types = [tc[0] for tc in _type_changes]
+    _tc_pcts = [tc[3] for tc in _type_changes]
+    _tc_colors = [_SUCCESS if p >= 0 else _ACCENT for p in _tc_pcts]
+    _y_pos = np.arange(len(_tc_types))
+
+    bars = ax_types.barh(_y_pos, _tc_pcts, height=0.5,
+                         color=_tc_colors, edgecolor='white', linewidth=1, alpha=0.85)
+
+    for i, (bar, tc) in enumerate(zip(bars, _type_changes)):
+        t, _tf, _tl, _tp = tc
+        _sign = '+' if _tp >= 0 else ''
+        ax_types.text(bar.get_width() + (1 if _tp >= 0 else -1),
+                      bar.get_y() + bar.get_height() / 2,
+                      f'{_sign}{_tp:.1f}%  ({_fmt_spend(_tf)} > {_fmt_spend(_tl)})',
+                      va='center', ha='left' if _tp >= 0 else 'right',
+                      fontsize=11, fontweight='bold',
+                      color=_tc_colors[i])
+
+    ax_types.axvline(0, color=_DARK, linewidth=1, alpha=0.3)
+    ax_types.set_yticks(_y_pos)
+    ax_types.set_yticklabels(_tc_types, fontsize=13, fontweight='bold')
+    ax_types.set_xlabel('% Change (First to Last Month)', fontsize=11, fontweight='bold')
+    ax_types.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:+.0f}%"))
+    ax_types.set_title('Change by Transaction Type',
+                       fontsize=14, fontweight='bold', color=_DARK, pad=8)
+    gen_clean_axes(ax_types, keep_left=True, keep_bottom=True)
+    ax_types.xaxis.grid(True, color=_GRID, linewidth=0.5, alpha=0.5)
+    ax_types.set_axisbelow(True)
+
+    # Verdict card
+    ax_verdict.axis('off')
+
+    _verdict_card = FancyBboxPatch(
+        (0.02, 0.05), 0.96, 0.90,
+        boxstyle="round,pad=0.04",
+        facecolor=_hero_color, edgecolor='white', linewidth=3,
+        alpha=0.15, transform=ax_verdict.transAxes
+    )
+    ax_verdict.add_patch(_verdict_card)
+
+    ax_verdict.text(0.50, 0.78, 'THE VERDICT',
+                    fontsize=13, fontweight='bold', color=_MUTED,
+                    transform=ax_verdict.transAxes, ha='center', va='center')
+
+    ax_verdict.text(0.50, 0.52,
+                    f'Spend is {_direction}',
+                    fontsize=28, fontweight='bold', color=_hero_color,
+                    transform=ax_verdict.transAxes, ha='center', va='center',
+                    path_effects=[pe.withStroke(linewidth=2, foreground='white')])
+
+    ax_verdict.text(0.50, 0.28,
+                    f'{_fmt_spend(spend[0])} > {_fmt_spend(spend[-1])}',
+                    fontsize=16, fontweight='bold', color=_DARK,
+                    transform=ax_verdict.transAxes, ha='center', va='center')
+
+    ax_verdict.text(0.50, 0.12,
+                    f'{_pct_change:+.1f}% over {_n_months} months',
+                    fontsize=12, fontweight='bold', color=_MUTED,
+                    transform=ax_verdict.transAxes, ha='center', va='center')
 
 fig.suptitle('Total Spend Volume: Is Spend Actually Down?',
-             fontsize=22, fontweight='bold', color=_DARK, y=0.95)
-fig.text(0.5, 0.905, DATASET_LABEL,
+             fontsize=24, fontweight='bold', color=_DARK, y=0.96)
+fig.text(0.5, 0.92, DATASET_LABEL,
          ha='center', fontsize=12, color=_MUTED, style='italic')
 
 plt.show()
@@ -172,12 +282,10 @@ plt.show()
 print(f"\n    TOTAL SPEND VOLUME ANALYSIS")
 print(f"    {'='*50}")
 print(f"    Period: {_first_mo} to {_last_mo} ({_n_months} months)")
-print(f"    First month:  {_fmt_first}")
-print(f"    Last month:   {_fmt_last}")
-print(f"    Change:       {_pct_change:+.1f}% ({'UP' if _is_up else 'DOWN'})")
-print(f"    Trend:        ${_monthly_change:+,.0f}/mo")
-print(f"    Avg monthly:  {_avg_fmt}")
+print(f"    First month:  {_fmt_spend(spend[0])}")
+print(f"    Last month:   {_fmt_spend(spend[-1])}")
+print(f"    Change:       {_pct_change:+.1f}% ({_direction})")
+print(f"    Trend:        {_fmt_spend(abs(_monthly_slope))}/mo {'gain' if _is_up else 'loss'}")
+print(f"    Avg monthly:  {_fmt_spend(_avg_spend)}")
 for t, _tf, _tl, _tp in _type_changes:
-    _tf_fmt = f"${_tf/1e6:,.2f}M" if _tf >= 1e6 else f"${_tf/1e3:,.0f}K"
-    _tl_fmt = f"${_tl/1e6:,.2f}M" if _tl >= 1e6 else f"${_tl/1e3:,.0f}K"
-    print(f"      {t}: {_tf_fmt} > {_tl_fmt}  ({_tp:+.1f}%)")
+    print(f"      {t}: {_fmt_spend(_tf)} > {_fmt_spend(_tl)}  ({_tp:+.1f}%)")
