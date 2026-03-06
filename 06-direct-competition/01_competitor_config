@@ -406,6 +406,12 @@ CLIENT_CONFIGS = {
             'BAY COMMERCIAL FINANCE',
         ],
         'custom': [],
+        'rollups': {
+            'SESLOC CU':        'SESLOC CREDIT UNION',
+            'SLO CU':           'SLO CREDIT UNION',
+            'NAVY FEDERAL CU':  'NAVY FEDERAL CREDIT UNION',
+            'GOLDEN 1 CU':      'GOLDEN 1 CREDIT UNION',
+        },
     },
     '1615': {  # Cape & Coast Bank (Cape Cod, MA)
         'fed_district': '1',
@@ -425,6 +431,15 @@ CLIENT_CONFIGS = {
             'MV BANK',
         ],
         'custom': [],
+        'rollups': {
+            'CAPE COD 5':               'CAPE COD FIVE',
+            'CAPE COD FIVE CENTS':      'CAPE COD FIVE',
+            'SEAMENS BANK':             "SEAMEN'S BANK",
+            'MARTHAS VINEYARD SAVINGS': "MARTHA'S VINEYARD SAVINGS BANK",
+            'MV BANK':                  "MARTHA'S VINEYARD SAVINGS BANK",
+            "FIRST CITIZENS' FEDERAL CREDIT UNION": 'FIRST CITIZENS FEDERAL CREDIT UNION',
+            'NAVY FEDERAL CU':          'NAVY FEDERAL CREDIT UNION',
+        },
     },
 
     # Template for new clients -- copy and fill in:
@@ -433,6 +448,10 @@ CLIENT_CONFIGS = {
     #     'credit_unions': [],
     #     'local_banks': [],
     #     'custom': [],
+    #     'rollups': {
+    #         # Map variant patterns to canonical name:
+    #         # 'SOME CU': 'SOME CREDIT UNION',
+    #     },
     # },
 }
 
@@ -592,12 +611,14 @@ def discover_unmatched_financial(df, merchant_col='merchant_consolidated', top_n
 # Manual overrides: multiple patterns that should collapse to one name.
 # These take priority over auto-matching from COMPETITOR_MERCHANTS.
 _MANUAL_ROLLUPS = {
+    # Big Nationals
     'JPMORGAN':         'CHASE',
     'BOFA':             'BANK OF AMERICA',
     'B OF A':           'BANK OF AMERICA',
     'U.S. BANK':        'US BANK',
     'CITI CARD':        'CITIBANK',
     'PNC FINANCIAL':    'PNC BANK',
+    # Digital Banks
     'ALLY FINANCIAL':   'ALLY BANK',
     'DISCOVER BANK':    'DISCOVER',
     'DISCOVER SAVINGS': 'DISCOVER',
@@ -606,11 +627,49 @@ _MANUAL_ROLLUPS = {
     'CURRENT BANK':     'CURRENT',
     'MARCUS BY':        'MARCUS (GOLDMAN SACHS)',
     'MARCUS BANK':      'MARCUS (GOLDMAN SACHS)',
+    # Ecosystems
     'SQUARE CASH':      'CASH APP',
     'GOOGLE WALLET':    'GOOGLE PAY',
+    # CU abbreviations
     'GOLDEN 1 CU':      'GOLDEN 1 CREDIT UNION',
     'GOLDEN 1':         'GOLDEN 1 CREDIT UNION',
+    # Fed District variant patterns (same institution, different name form)
+    'CITIZENS FINANCIAL':       'CITIZENS BANK',
+    'PEOPLES UNITED':           "PEOPLE'S UNITED",
+    'M AND T BANK':             'M&T BANK',
+    'NYCB':                     'NEW YORK COMMUNITY BANK',
+    'FULTON FINANCIAL':         'FULTON BANK',
+    'WSFS FINANCIAL':           'WSFS BANK',
+    'NORTHWEST SAVINGS':        'NORTHWEST BANK',
+    'KEY BANK':                 'KEYBANK',
+    'HUNTINGTON NATIONAL':      'HUNTINGTON BANK',
+    'FIFTH THIRD':              'FIFTH THIRD BANK',
+    'UNITED BANKSHARES':        'UNITED BANK',
+    'FNB CORP':                 'FNB BANK',
+    'REGIONS FINANCIAL':        'REGIONS BANK',
+    'SYNOVUS BANK':             'SYNOVUS',
+    'AMERIS BANCORP':           'AMERIS BANK',
+    'TRUSTMARK NATIONAL':       'TRUSTMARK BANK',
+    'SEACOAST BANKING':         'SEACOAST BANK',
+    'BMO HARRIS':               'BMO BANK',
+    'WINTRUST BANK':            'WINTRUST',
+    'COMMERCE BANCSHARES':      'COMMERCE BANK',
+    'SIMMONS FINANCIAL':        'SIMMONS BANK',
+    'BREMER FINANCIAL':         'BREMER BANK',
+    'ALERUS BANK':              'ALERUS FINANCIAL',
+    'GLACIER BANCGROUP':        'GLACIER BANK',
+    'STARION BANK':             'STARION FINANCIAL',
+    'BANK OF OKLAHOMA':         'BOK FINANCIAL',
+    'UMB FINANCIAL':            'UMB BANK',
+    'PROSPERITY BANCSHARES':    'PROSPERITY BANK',
+    'VERITEX COMMUNITY':        'VERITEX BANK',
+    'COLUMBIA BANKING':         'COLUMBIA BANK',
+    'ZIONS BANCORP':            'ZIONS BANK',
 }
+
+# Merge client-specific rollups (abbreviation variants like "CAPE COD 5" -> "CAPE COD FIVE")
+for _pattern, _canonical in _client_cfg.get('rollups', {}).items():
+    _MANUAL_ROLLUPS[_pattern.upper().strip()] = _canonical
 
 # Build auto-match lookup from COMPETITOR_MERCHANTS config.
 # Every starts_with pattern becomes a rollup entry mapping to itself.
@@ -622,6 +681,20 @@ for _cat, _pats in COMPETITOR_MERCHANTS.items():
         if _p_upper:
             _AUTO_ROLLUPS.append((_p_upper, _p.strip()))
 _AUTO_ROLLUPS.sort(key=lambda x: len(x[0]), reverse=True)
+
+# Prefix-based dedup: if one canonical name starts with another, collapse
+# to the shorter one. E.g., "SANTANDER BANK" -> "SANTANDER" because both
+# are patterns and "SANTANDER BANK" starts with "SANTANDER".
+_auto_canonicals = sorted(set(name for _, name in _AUTO_ROLLUPS), key=len)
+_prefix_collapse = {}
+for _i, _short in enumerate(_auto_canonicals):
+    _short_u = _short.upper()
+    for _long in _auto_canonicals[_i + 1:]:
+        if _long.upper().startswith(_short_u) and _long not in _prefix_collapse:
+            _prefix_collapse[_long] = _short
+_AUTO_ROLLUPS = [
+    (prefix, _prefix_collapse.get(name, name)) for prefix, name in _AUTO_ROLLUPS
+]
 
 
 def normalize_competitor_name(bank_name: str) -> str:
