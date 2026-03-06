@@ -38,15 +38,10 @@ ax.set_title("External Product Depth per Account Holder",
 ax.text(0.0, 0.97, "More categories = deeper external relationships = higher priority",
         transform=ax.transAxes, fontsize=16, color=GEN_COLORS['muted'], style='italic')
 
-# Callout box
-multi_2plus = multi_dist[multi_dist.index >= 2].sum()
-multi_3plus = multi_dist[multi_dist.index >= 3].sum()
-callout = f"2+ categories: {multi_2plus:,} accounts\n3+ categories: {multi_3plus:,} accounts\n(HIGHEST PRIORITY)"
-ax.text(0.97, 0.05, callout, transform=ax.transAxes,
-        fontsize=15, fontweight='bold', color=GEN_COLORS['accent'],
-        ha='right', va='bottom',
-        bbox=dict(boxstyle='round,pad=0.5', facecolor='white',
-                  edgecolor=GEN_COLORS['accent'], alpha=0.9))
-
 plt.tight_layout()
 plt.show()
+
+# Callout below chart
+multi_2plus = multi_dist[multi_dist.index >= 2].sum()
+multi_3plus = multi_dist[multi_dist.index >= 3].sum()
+print(f"\n    2+ categories: {multi_2plus:,} accounts  |  3+ categories: {multi_3plus:,} accounts (highest priority)")
