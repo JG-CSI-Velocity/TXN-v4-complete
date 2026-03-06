@@ -24,7 +24,7 @@ age_bracket_ct = age_bracket_ct[[b for b in BRACKET_LABELS if b in age_bracket_c
 # Ensure row order matches AGE_ORDER
 age_bracket_ct = age_bracket_ct.reindex([b for b in AGE_ORDER if b in age_bracket_ct.index])
 
-fig, ax = plt.subplots(figsize=(14, 7))
+fig, ax = plt.subplots(figsize=(16, 8))
 
 x = np.arange(len(age_bracket_ct))
 bar_width = 0.65
@@ -41,29 +41,29 @@ for i, bracket in enumerate(age_bracket_ct.columns):
     for j, v in enumerate(vals):
         if v > 8:
             ax.text(x[j], bottom[j] + v / 2, f"{v:.0f}%",
-                    ha='center', va='center', fontsize=11,
+                    ha='center', va='center', fontsize=14,
                     fontweight='bold', color='white',
                     path_effects=[pe.withStroke(linewidth=2, foreground='#333333')])
     bottom += vals
 
 ax.set_xticks(x)
-ax.set_xticklabels(age_bracket_ct.index, fontsize=14, fontweight='bold')
-ax.set_ylabel("% of Transactions", fontsize=16, fontweight='bold', labelpad=10)
+ax.set_xticklabels(age_bracket_ct.index, fontsize=16, fontweight='bold')
+ax.set_ylabel("% of Transactions", fontsize=18, fontweight='bold', labelpad=10)
 ax.yaxis.set_major_formatter(plt.FuncFormatter(gen_fmt_pct))
 
 gen_clean_axes(ax, keep_left=True, keep_bottom=True)
 
 ax.set_title("Spending Bracket Mix by Age Group",
-             fontsize=26, fontweight='bold',
+             fontsize=28, fontweight='bold',
              color=GEN_COLORS['dark_text'], pad=35, loc='left')
-ax.text(0.0, 1.02, "Do younger members skew smaller? Do older members skew larger?",
-        transform=ax.transAxes, fontsize=15,
+ax.text(0.0, 1.02, "Do younger account holders skew smaller? Do older account holders skew larger?",
+        transform=ax.transAxes, fontsize=16,
         color=GEN_COLORS['muted'], style='italic')
 
 ax.legend(
     loc='upper center', bbox_to_anchor=(0.5, -0.08),
-    ncol=4, fontsize=12, frameon=False, title='Spending Bracket',
-    title_fontproperties={'weight': 'bold', 'size': 13}
+    ncol=4, fontsize=15, frameon=False, title='Spending Bracket',
+    title_fontproperties={'weight': 'bold', 'size': 16}
 )
 
 plt.tight_layout()

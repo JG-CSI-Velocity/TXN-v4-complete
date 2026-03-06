@@ -26,7 +26,7 @@ if len(new_accts) > 0:
         columns=[t for t in STACK_ORDER if t in tier_ct.columns]
     ).fillna(0)
 
-    fig, ax = plt.subplots(figsize=(8, 7))
+    fig, ax = plt.subplots(figsize=(10, 8))
 
     x = np.arange(len(tier_ct))
     bar_width = 0.55
@@ -45,29 +45,29 @@ if len(new_accts) > 0:
         for j, v in enumerate(vals):
             if v > 10:
                 ax.text(x[j], bottom[j] + v / 2, f"{v:.0f}%",
-                        ha='center', va='center', fontsize=13,
+                        ha='center', va='center', fontsize=15,
                         fontweight='bold', color='white',
                         path_effects=[pe.withStroke(linewidth=2, foreground='#333333')])
         bottom += vals
 
     ax.set_xticks(x)
-    ax.set_xticklabels(tier_ct.index, fontsize=14, fontweight='bold')
-    ax.set_ylabel("% of Accounts", fontsize=16, fontweight='bold', labelpad=10)
+    ax.set_xticklabels(tier_ct.index, fontsize=16, fontweight='bold')
+    ax.set_ylabel("% of Accounts", fontsize=18, fontweight='bold', labelpad=10)
     ax.yaxis.set_major_formatter(plt.FuncFormatter(gen_fmt_pct))
 
     gen_clean_axes(ax, keep_left=True, keep_bottom=True)
 
     ax.set_title("New Account Spend Profile",
-                 fontsize=22, fontweight='bold',
+                 fontsize=26, fontweight='bold',
                  color=GEN_COLORS['dark_text'], pad=35, loc='left')
     ax.text(0.0, 1.02, "How many new accounts reach healthy spend levels?",
-            transform=ax.transAxes, fontsize=14,
+            transform=ax.transAxes, fontsize=16,
             color=GEN_COLORS['muted'], style='italic')
 
     ax.legend(
         loc='upper center', bbox_to_anchor=(0.5, -0.08),
-        ncol=2, fontsize=11, frameon=False, title='Spend Tier (ODDD Total Spend)',
-        title_fontproperties={'weight': 'bold', 'size': 12}
+        ncol=2, fontsize=14, frameon=False, title='Spend Tier (ODDD Total Spend)',
+        title_fontproperties={'weight': 'bold', 'size': 15}
     )
 
     plt.tight_layout()

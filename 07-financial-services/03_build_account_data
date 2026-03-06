@@ -22,9 +22,9 @@ for category, data in financial_services_data.items():
     ]
     account_summary = account_summary.sort_values('Transaction Count', ascending=False)
 
-    # Recency
+    # Recency (anchored to dataset end date, not today)
     account_summary['Recency_Days'] = (
-        pd.Timestamp.now() - account_summary['Last Transaction']
+        DATASET_END - account_summary['Last Transaction']
     ).dt.days
 
     # Recency tier

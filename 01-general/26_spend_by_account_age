@@ -9,7 +9,7 @@ plot_data['acct_age_band'] = pd.Categorical(
 )
 plot_data = plot_data.sort_values('acct_age_band')
 
-fig, ax1 = plt.subplots(figsize=(14, 7))
+fig, ax1 = plt.subplots(figsize=(16, 8))
 
 x_pos = np.arange(len(plot_data))
 colors = [ACCT_AGE_PALETTE.get(b, GEN_COLORS['muted']) for b in plot_data['acct_age_band']]
@@ -22,8 +22,8 @@ ax1.bar(
 )
 
 ax1.set_xticks(x_pos)
-ax1.set_xticklabels(plot_data['acct_age_band'], fontsize=12, fontweight='bold', rotation=45, ha='right')
-ax1.set_ylabel("Avg ODDD Trailing 12mo Spend ($)", fontsize=16, fontweight='bold',
+ax1.set_xticklabels(plot_data['acct_age_band'], fontsize=15, fontweight='bold', rotation=45, ha='right')
+ax1.set_ylabel("Avg ODDD Trailing 12mo Spend ($)", fontsize=18, fontweight='bold',
                 color=GEN_COLORS['info'], labelpad=10)
 ax1.tick_params(axis='y', colors=GEN_COLORS['info'])
 
@@ -32,16 +32,16 @@ for i, (x, val) in enumerate(zip(x_pos, plot_data['avg_oddd_12mo'])):
     if pd.notna(val) and val > 0:
         ax1.text(x, val + (plot_data['avg_oddd_12mo'].max() * 0.02),
                  f"${val:,.0f}", ha='center', va='bottom',
-                 fontsize=10, fontweight='bold', color=GEN_COLORS['dark_text'])
+                 fontsize=13, fontweight='bold', color=GEN_COLORS['dark_text'])
 
 # Txns/month line on secondary axis
 ax2 = ax1.twinx()
 ax2.plot(
     x_pos, plot_data['avg_txns_per_month'],
     color=GEN_COLORS['accent'], linewidth=3,
-    marker='o', markersize=8, zorder=5
+    marker='o', markersize=10, zorder=5
 )
-ax2.set_ylabel("Avg Txns / Month", fontsize=16, fontweight='bold',
+ax2.set_ylabel("Avg Txns / Month", fontsize=18, fontweight='bold',
                 color=GEN_COLORS['accent'], labelpad=10)
 ax2.tick_params(axis='y', colors=GEN_COLORS['accent'])
 
@@ -54,10 +54,10 @@ ax1.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
 ax1.set_axisbelow(True)
 
 ax1.set_title("Spend Ramp-Up by Account Age",
-              fontsize=26, fontweight='bold',
+              fontsize=28, fontweight='bold',
               color=GEN_COLORS['dark_text'], pad=35, loc='left')
 ax1.text(0.0, 1.02, "Do accounts spend more as they mature? (ODDD trailing 12-month spend)",
-         transform=ax1.transAxes, fontsize=15,
+         transform=ax1.transAxes, fontsize=16,
          color=GEN_COLORS['muted'], style='italic')
 
 # Legend
@@ -70,7 +70,7 @@ legend_elements = [
 ax1.legend(
     handles=legend_elements,
     loc='upper center', bbox_to_anchor=(0.5, -0.18),
-    ncol=2, fontsize=13, frameon=False
+    ncol=2, fontsize=15, frameon=False
 )
 
 plt.tight_layout()

@@ -29,7 +29,7 @@ else:
     mcc_order = [m for m in mcc_order if m in crosstab.index]
     crosstab = crosstab.reindex(mcc_order)
 
-    fig, ax = plt.subplots(figsize=(14, 8))
+    fig, ax = plt.subplots(figsize=(16, 9))
 
     n_bands = len(crosstab.columns)
     n_mcc = len(crosstab)
@@ -45,8 +45,8 @@ else:
         )
 
     ax.set_yticks(y_base)
-    ax.set_yticklabels(crosstab.index, fontsize=13, fontweight='bold')
-    ax.set_xlabel("% of Age Band's Transactions", fontsize=16, fontweight='bold', labelpad=10)
+    ax.set_yticklabels(crosstab.index, fontsize=15, fontweight='bold')
+    ax.set_xlabel("% of Age Band's Transactions", fontsize=18, fontweight='bold', labelpad=10)
     ax.xaxis.set_major_formatter(plt.FuncFormatter(gen_fmt_pct))
 
     gen_clean_axes(ax, keep_left=True, keep_bottom=True)
@@ -54,16 +54,16 @@ else:
     ax.set_axisbelow(True)
 
     ax.set_title("Where Each Generation Spends",
-                 fontsize=26, fontweight='bold',
+                 fontsize=28, fontweight='bold',
                  color=GEN_COLORS['dark_text'], pad=35, loc='left')
     ax.text(0.0, 1.02, "Top 10 merchant categories by age band share",
-            transform=ax.transAxes, fontsize=15,
+            transform=ax.transAxes, fontsize=16,
             color=GEN_COLORS['muted'], style='italic')
 
     ax.legend(
         loc='upper center', bbox_to_anchor=(0.5, -0.08),
-        ncol=6, fontsize=12, frameon=False, title='Age Band',
-        title_fontproperties={'weight': 'bold', 'size': 13}
+        ncol=6, fontsize=15, frameon=False, title='Age Band',
+        title_fontproperties={'weight': 'bold', 'size': 16}
     )
 
     plt.tight_layout()

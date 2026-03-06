@@ -16,7 +16,7 @@ for category, acct_df in all_financial_accounts.items():
     rec_count = 0
     for account in acct_df.index:
         first_txn = acct_df.loc[account, 'First Transaction']
-        days_since = (pd.Timestamp.now() - first_txn).days
+        days_since = (DATASET_END - first_txn).days
         if days_since <= 90:
             new_count += 1
         else:

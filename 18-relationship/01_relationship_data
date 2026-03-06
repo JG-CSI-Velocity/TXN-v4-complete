@@ -100,7 +100,7 @@ try:
     # ------------------------------------------------------------------
     # Determine if active in last 3 months
     if 'last_txn_date' in rel_df.columns:
-        cutoff_3mo = pd.Timestamp.now() - pd.DateOffset(months=3)
+        cutoff_3mo = DATASET_END - pd.DateOffset(months=3)
         rel_df['active_last_3mo'] = (
             pd.to_datetime(rel_df['last_txn_date'], errors='coerce') >= cutoff_3mo
         ).fillna(False).astype(int)

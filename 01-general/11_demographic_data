@@ -85,7 +85,7 @@ styled = (
         'Txns/Account': '{:.1f}',
     })
     .set_properties(**{
-        'font-size': '15px',
+        'font-size': '16px',
         'font-weight': 'bold',
         'text-align': 'center',
         'border': '1px solid #E9ECEF',
@@ -95,13 +95,13 @@ styled = (
         {'selector': 'th', 'props': [
             ('background-color', GEN_COLORS['primary']),
             ('color', 'white'),
-            ('font-size', '16px'),
+            ('font-size', '17px'),
             ('font-weight', 'bold'),
             ('text-align', 'center'),
             ('padding', '10px 14px'),
         ]},
         {'selector': 'caption', 'props': [
-            ('font-size', '22px'),
+            ('font-size', '24px'),
             ('font-weight', 'bold'),
             ('color', GEN_COLORS['dark_text']),
             ('text-align', 'left'),

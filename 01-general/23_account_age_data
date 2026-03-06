@@ -47,8 +47,9 @@ lifecycle_df = acct_subset.merge(
 # ---------------------------------------------------------------------------
 # Account age bands (9 bands, days-based from Date Opened)
 # ---------------------------------------------------------------------------
-today = pd.Timestamp.now().normalize()
-lifecycle_df['days_since_opened'] = (today - lifecycle_df['date_opened']).dt.days
+# Use dataset end date (not today) so account age is relative to the data
+_acct_age_ref = DATASET_END.normalize()
+lifecycle_df['days_since_opened'] = (_acct_age_ref - lifecycle_df['date_opened']).dt.days
 
 ACCT_AGE_BINS = [0, 91, 181, 366, 731, 1096, 1826, 3651, 7301, 999999]
 ACCT_AGE_LABELS = ['1-90d', '91-180d', '181-365d', '1-2yr', '2-3yr',
@@ -151,23 +152,23 @@ styled = (
         '% Activated <30d (TTM)': '{:.0f}%',
     }, na_rep='--')
     .set_properties(**{
-        'font-size': '14px',
+        'font-size': '16px',
         'font-weight': 'bold',
         'text-align': 'center',
         'border': '1px solid #E9ECEF',
-        'padding': '8px 12px',
+        'padding': '10px 14px',
     })
     .set_table_styles([
         {'selector': 'th', 'props': [
             ('background-color', GEN_COLORS['primary']),
             ('color', 'white'),
-            ('font-size', '15px'),
+            ('font-size', '17px'),
             ('font-weight', 'bold'),
             ('text-align', 'center'),
             ('padding', '10px 12px'),
         ]},
         {'selector': 'caption', 'props': [
-            ('font-size', '22px'),
+            ('font-size', '24px'),
             ('font-weight', 'bold'),
             ('color', GEN_COLORS['dark_text']),
             ('text-align', 'left'),

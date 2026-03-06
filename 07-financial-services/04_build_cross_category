@@ -36,9 +36,9 @@ multi_product_df = pd.DataFrame.from_dict(account_category_map, orient='index')
 multi_product_df.index.name = 'account'
 multi_product_df = multi_product_df.sort_values('category_count', ascending=False)
 
-# Recency in days
-multi_product_df['recency_days'] = (pd.Timestamp.now() - multi_product_df['most_recent']).dt.days
-multi_product_df['tenure_days'] = (pd.Timestamp.now() - multi_product_df['first_seen']).dt.days
+# Recency in days (anchored to dataset end date, not today)
+multi_product_df['recency_days'] = (DATASET_END - multi_product_df['most_recent']).dt.days
+multi_product_df['tenure_days'] = (DATASET_END - multi_product_df['first_seen']).dt.days
 
 # --- Leakage intensity score (0-100) ---
 # Breadth: category count normalized

@@ -22,7 +22,7 @@ if len(all_competitor_data) > 0:
         .round(2)
     )
     _bulk['days_active'] = (_bulk['last_txn'] - _bulk['first_txn']).dt.days
-    _bulk['recency_days'] = (pd.Timestamp.now() - _bulk['last_txn']).dt.days
+    _bulk['recency_days'] = (DATASET_END - _bulk['last_txn']).dt.days
 
     # Split into dict (trivial -- no computation, just index slicing)
     all_account_summaries = {
