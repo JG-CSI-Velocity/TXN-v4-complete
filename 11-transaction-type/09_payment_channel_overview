@@ -101,7 +101,7 @@ else:
                 color='white',
                 path_effects=[pe.withStroke(linewidth=2, foreground=kpi['color'])])
         ax.text(5, 2.0, kpi['sub'],
-                ha='center', va='center', fontsize=14,
+                ha='center', va='center', fontsize=16,
                 color='white', alpha=0.8, style='italic')
 
     # =================================================================
@@ -129,42 +129,42 @@ else:
         if _pct > 5:
             ax_bar.text(_left + _pct / 2, 0,
                         f'{t}\n{_fmt_vol(_spend)}\n({_pct:.1f}%)',
-                        ha='center', va='center', fontsize=18,
+                        ha='center', va='center', fontsize=24,
                         fontweight='bold', color='white')
         elif _pct > 2:
             ax_bar.text(_left + _pct / 2, 0,
                         f'{t}\n{_pct:.1f}%',
-                        ha='center', va='center', fontsize=14,
+                        ha='center', va='center', fontsize=18,
                         fontweight='bold', color='white')
 
         _left += _pct
 
     # Divider line between debit and non-debit
     ax_bar.axvline(_debit_pct, color=_DARK, linewidth=2, linestyle='--', alpha=0.6, zorder=5)
-    ax_bar.text(_debit_pct, 0.35, '  ARS scope', fontsize=14, fontweight='bold',
+    ax_bar.text(_debit_pct, 0.35, '  ARS scope', fontsize=18, fontweight='bold',
                 color=_DARK, va='bottom', ha='left')
-    ax_bar.text(_debit_pct, -0.35, '  Beyond ARS  ', fontsize=14, fontweight='bold',
+    ax_bar.text(_debit_pct, -0.35, '  Beyond ARS  ', fontsize=18, fontweight='bold',
                 color=_MUTED, va='top', ha='left')
 
     ax_bar.set_xlim(0, 100)
     ax_bar.set_ylim(-0.6, 0.6)
     ax_bar.set_yticks([])
-    ax_bar.set_xlabel('% of Total Payment Volume', fontsize=15, fontweight='bold', labelpad=8)
+    ax_bar.set_xlabel('% of Total Payment Volume', fontsize=20, fontweight='bold', labelpad=8)
     ax_bar.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.0f}%"))
-    ax_bar.tick_params(axis='x', labelsize=13)
+    ax_bar.tick_params(axis='x', labelsize=16)
     ax_bar.set_title('Payment Volume by Transaction Type',
-                     fontsize=20, fontweight='bold', color=_DARK, pad=10)
+                     fontsize=24, fontweight='bold', color=_DARK, pad=10)
     gen_clean_axes(ax_bar, keep_bottom=True)
 
-    ax_bar.legend(fontsize=14, framealpha=0.9, loc='upper right',
+    ax_bar.legend(fontsize=16, framealpha=0.9, loc='upper right',
                   title='Transaction Type',
-                  title_fontproperties={'weight': 'bold', 'size': 15})
+                  title_fontproperties={'weight': 'bold', 'size': 18})
 
     fig.suptitle('Beyond Debit: The Full Payment Picture',
-                 fontsize=28, fontweight='bold', color=_DARK, y=0.96)
+                 fontsize=32, fontweight='bold', color=_DARK, y=0.96)
     fig.text(0.5, 0.91,
              'ARS activates debit card usage, but debit is only part of total payment volume',
-             ha='center', fontsize=15, color=_MUTED, style='italic')
+             ha='center', fontsize=18, color=_MUTED, style='italic')
 
     plt.show()
 
