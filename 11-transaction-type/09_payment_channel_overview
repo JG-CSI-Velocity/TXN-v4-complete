@@ -40,7 +40,7 @@ else:
 
     # Build figure
     fig = plt.figure(figsize=(26, 14))
-    gs = fig.add_gridspec(2, 1, height_ratios=[1, 0.8], hspace=0.25,
+    gs = fig.add_gridspec(2, 1, height_ratios=[0.7, 1.2], hspace=0.25,
                           top=0.86, bottom=0.06, left=0.04, right=0.96)
 
     # =================================================================
@@ -93,16 +93,19 @@ else:
         )
         ax.add_patch(card)
 
-        ax.text(5, 7.0, kpi['label'],
-                ha='center', va='center', fontsize=18, fontweight='bold',
+        ax.text(5, 7.5, kpi['label'],
+                ha='center', va='center', fontsize=20, fontweight='bold',
                 color='white', alpha=0.85)
-        ax.text(5, 4.5, kpi['value'],
-                ha='center', va='center', fontsize=48, fontweight='bold',
+        ax.text(5, 5.0, kpi['value'],
+                ha='center', va='center', fontsize=52, fontweight='bold',
                 color='white',
                 path_effects=[pe.withStroke(linewidth=2, foreground=kpi['color'])])
-        ax.text(5, 2.0, kpi['sub'],
+        ax.text(5, 2.5, kpi['sub'],
                 ha='center', va='center', fontsize=16,
                 color='white', alpha=0.8, style='italic')
+        ax.text(5, 1.2, DATASET_LABEL,
+                ha='center', va='center', fontsize=14,
+                color='white', alpha=0.6)
 
     # =================================================================
     # ROW 2: Horizontal Stacked Bar (100% of spend)
