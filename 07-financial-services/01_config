@@ -83,6 +83,97 @@ FINANCIAL_SERVICES_PATTERNS = {
         'ONDECK CAPITAL'
     ],
 
+    'Insurance': [
+        'STATE FARM', 'STATEFARM',
+        'GEICO', 'GEICO INSURANCE',
+        'PROGRESSIVE INSURANCE', 'PROGRESSIVE CASUALTY',
+        'ALLSTATE INSURANCE', 'ALLSTATE PAYMENT',
+        'USAA INSURANCE', 'USAA PROPERTY',
+        'FARMERS INSURANCE', 'FARMERS GROUP',
+        'LIBERTY MUTUAL', 'LIBERTY INSURANCE',
+        'NATIONWIDE INSURANCE', 'NATIONWIDE MUTUAL',
+        'TRAVELERS INSURANCE', 'TRAVELERS INDEMNITY',
+        'AMERICAN FAMILY INSURANCE', 'AMFAM',
+        'ERIE INSURANCE', 'ERIE INDEMNITY',
+        'METLIFE INSURANCE', 'METLIFE PAYMENT',
+        'PRUDENTIAL INSURANCE', 'PRUDENTIAL FINANCIAL',
+        'NEW YORK LIFE', 'NEW YORK LIFE INSURANCE',
+        'NORTHWESTERN MUTUAL', 'NORTHWESTERN MUTUAL LIFE',
+        'LINCOLN FINANCIAL', 'LINCOLN NATIONAL',
+        'GUARDIAN LIFE', 'GUARDIAN INSURANCE',
+        'PRINCIPAL FINANCIAL', 'PRINCIPAL LIFE',
+        'AFLAC', 'AFLAC INSURANCE',
+        'LEMONADE INSURANCE', 'LEMONADE INC',
+        'ROOT INSURANCE', 'HIPPO INSURANCE',
+    ],
+
+    'BNPL/Pay Later': [
+        'AFFIRM PAYMENT', 'AFFIRM INC', 'AFFIRM LOAN',
+        'KLARNA', 'KLARNA PAYMENT',
+        'AFTERPAY', 'AFTERPAY US',
+        'SEZZLE', 'SEZZLE INC',
+        'ZIP PAY', 'QUADPAY', 'ZIP CO',
+        'SPLITIT', 'SPLITIT PAYMENT',
+        'BREAD FINANCIAL', 'BREAD PAY',
+    ],
+
+    'Crypto/Digital Assets': [
+        'COINBASE', 'COINBASE INC', 'COINBASE PRO',
+        'CRYPTO.COM', 'CRYPTO COM',
+        'BINANCE', 'BINANCE US',
+        'KRAKEN', 'PAYWARD INC',
+        'GEMINI EXCHANGE', 'GEMINI TRUST',
+        'BITPAY', 'BLOCKCHAIN COM',
+        'CASHAPP BITCOIN', 'CASH APP BTC',
+        'ROBINHOOD CRYPTO',
+    ],
+
+    'Tax & Accounting': [
+        'TURBOTAX', 'INTUIT TURBOTAX', 'INTUIT TAX',
+        'H&R BLOCK', 'H R BLOCK', 'HRB TAX',
+        'JACKSON HEWITT', 'JACKSON HEWITT TAX',
+        'LIBERTY TAX', 'TAX ACT', 'TAXACT',
+        'TAXSLAYER', 'FREETAXUSA',
+        'QUICKBOOKS', 'INTUIT QUICKBOOKS',
+    ],
+
+    'Financial Advisory': [
+        'EDWARD JONES', 'EDWARD D JONES',
+        'PRIMERICA', 'PRIMERICA FINANCIAL',
+        'AMERIPRISE', 'AMERIPRISE FINANCIAL',
+        'TRANSAMERICA', 'TRANSAMERICA LIFE',
+        'MASS MUTUAL', 'MASSMUTUAL',
+        'TIAA', 'TIAA-CREF', 'TIAA CREF',
+        'JOHN HANCOCK', 'JOHN HANCOCK LIFE',
+        'EMPOWER RETIREMENT', 'GREAT-WEST LIFE',
+    ],
+
+    'Debt Services': [
+        'NATIONAL DEBT RELIEF', 'FREEDOM DEBT RELIEF',
+        'CREDIT COUNSELING', 'GREENPATH FINANCIAL',
+        'MONEY MANAGEMENT INTL', 'NFCC',
+        'DEBT.COM', 'CONSOLIDATED CREDIT',
+        'ACCREDITED DEBT RELIEF', 'NEW ERA DEBT',
+    ],
+
+    'Credit Monitoring': [
+        'EXPERIAN', 'EXPERIAN CREDIT',
+        'TRANSUNION', 'TRANSUNION CREDIT',
+        'EQUIFAX', 'EQUIFAX CREDIT',
+        'CREDIT KARMA', 'CREDITKARMA',
+        'IDENTITY GUARD', 'LIFELOCK',
+        'MYFICO', 'FICO SCORE',
+    ],
+
+    'Digital Wallets/P2P': [
+        'PAYPAL', 'PAYPAL PAYMENT', 'PAYPAL TRANSFER',
+        'VENMO', 'VENMO PAYMENT',
+        'CASH APP', 'SQUARE CASH', 'CASHAPP',
+        'ZELLE', 'ZELLE PAYMENT',
+        'APPLE CASH', 'APPLE PAY CASH',
+        'GOOGLE PAY TRANSFER',
+    ],
+
     # 'Other Banks' is built dynamically below from COMPETITOR_MERCHANTS
 }
 
@@ -92,7 +183,7 @@ FINANCIAL_SERVICES_PATTERNS = {
 # Only uses big_nationals + digital_banks (not every competitor category)
 # to keep pattern count reasonable for regex matching in cell 02.
 # ---------------------------------------------------------------------------
-_OTHER_BANK_CATS = ('big_nationals', 'digital_banks')  # dropped top_25_fed_district to cut noise
+_OTHER_BANK_CATS = ('big_nationals', 'digital_banks', 'top_25_fed_district')
 _OTHER_BANK_SUFFIXES = ['PAYMENT', 'TRANSFER']
 
 _other_banks = []
