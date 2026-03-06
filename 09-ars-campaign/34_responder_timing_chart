@@ -52,10 +52,10 @@ else:
     ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.1f}%"))
     ax1.legend(fontsize=12, framealpha=0.9)
     ax1.set_title('When in the Month Do Responders Swipe?',
-                   fontsize=22, fontweight='bold', color=_DARK, pad=25, loc='left')
-    ax1.text(0.0, 1.02,
-             f'Transaction distribution by day of month, post-mail period  (Post-Mail Transactions)',
-             transform=ax1.transAxes, fontsize=13, color=_MUTED, style='italic')
+                   fontsize=20, fontweight='bold', color=_DARK, pad=20, loc='left')
+    ax1.text(0.0, 1.01,
+             'Transaction distribution by day of month, post-mail period',
+             transform=ax1.transAxes, fontsize=11, color=_MUTED, style='italic')
     gen_clean_axes(ax1, keep_left=True, keep_bottom=True)
     ax1.yaxis.grid(True, color=_GRID, linewidth=0.5, alpha=0.5)
     ax1.set_axisbelow(True)
@@ -105,10 +105,10 @@ else:
     ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.1f}%"))
     ax2.legend(fontsize=12, framealpha=0.9)
     ax2.set_title('Day-of-Week Swipe Pattern',
-                   fontsize=22, fontweight='bold', color=_DARK, pad=25, loc='left')
-    ax2.text(0.0, 1.02,
-             f'Do responders favor certain days?  (Post-Mail Transactions)',
-             transform=ax2.transAxes, fontsize=13, color=_MUTED, style='italic')
+                   fontsize=20, fontweight='bold', color=_DARK, pad=20, loc='left')
+    ax2.text(0.0, 1.01,
+             'Do responders favor certain days?  Post-mail period',
+             transform=ax2.transAxes, fontsize=11, color=_MUTED, style='italic')
     gen_clean_axes(ax2, keep_left=True, keep_bottom=True)
     ax2.yaxis.grid(True, color=_GRID, linewidth=0.5, alpha=0.5)
     ax2.set_axisbelow(True)
@@ -156,10 +156,10 @@ else:
     ax3.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.0f}%"))
     ax3.legend(fontsize=12, framealpha=0.9, loc='upper right')
     ax3.set_title('Month-Part Activity: Do Responders Front-Load?',
-                   fontsize=22, fontweight='bold', color=_DARK, pad=25, loc='left')
-    ax3.text(0.0, 1.02,
-             f'Early = days 1-10, Mid = 11-20, Late = 21-31  (Post-Mail Transactions)',
-             transform=ax3.transAxes, fontsize=13, color=_MUTED, style='italic')
+                   fontsize=20, fontweight='bold', color=_DARK, pad=20, loc='left')
+    ax3.text(0.0, 1.01,
+             'Early = days 1-10, Mid = 11-20, Late = 21-31  |  Post-mail period',
+             transform=ax3.transAxes, fontsize=11, color=_MUTED, style='italic')
     gen_clean_axes(ax3, keep_left=True, keep_bottom=True)
 
     plt.tight_layout()

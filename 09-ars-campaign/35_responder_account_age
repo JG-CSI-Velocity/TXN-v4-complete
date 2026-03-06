@@ -168,7 +168,7 @@ else:
                         ('text-align', 'left'), ('padding-bottom', '10px'),
                     ]},
                 ])
-                .set_caption("Response Rate by Account Age at Time of Mail  (All Waves Pooled)")
+                .set_caption("Response Rate by Account Age at Time of Mail  (All Mailers Pooled)")
             )
             display(_styled)
 

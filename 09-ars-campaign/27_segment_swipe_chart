@@ -175,7 +175,7 @@ else:
             # ------------------------------------------------------------------
             # Summary: DID across all waves by segment (swipes)
             # ------------------------------------------------------------------
-            print(f"\n    DID Summary - Swipes (3mo pre vs 3mo post, all waves pooled):")
+            print(f"\n    DID Summary - Swipes (3mo pre vs 3mo post, all mailers pooled):")
             for seg in _all_segs:
                 _sd = segment_cohort_raw[segment_cohort_raw['segment'] == seg]
                 _r = _sd[_sd['status'] == 'Responder']

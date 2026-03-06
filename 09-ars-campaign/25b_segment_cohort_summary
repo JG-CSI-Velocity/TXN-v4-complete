@@ -105,7 +105,7 @@ else:
                     ('text-align', 'left'), ('padding-bottom', '10px'),
                 ]},
             ])
-            .set_caption("Avg Monthly Spend by Segment x Status  (All Waves Pooled)")
+            .set_caption("Avg Monthly Spend by Segment x Status  (All Mailers Pooled)")
         )
         display(_styled_spend)
 
@@ -144,7 +144,7 @@ else:
                         ('text-align', 'left'), ('padding-bottom', '10px'),
                     ]},
                 ])
-                .set_caption("Avg Monthly Swipes by Segment x Status  (All Waves Pooled)")
+                .set_caption("Avg Monthly Swipes by Segment x Status  (All Mailers Pooled)")
             )
             display(_styled_swipe)
 
@@ -221,6 +221,6 @@ else:
                         ('text-align', 'left'), ('padding-bottom', '10px'),
                     ]},
                 ])
-                .set_caption("Difference-in-Differences: Spend Lift by Segment  (All Waves Pooled)")
+                .set_caption("Difference-in-Differences: Spend Lift by Segment  (All Mailers Pooled)")
             )
             display(_styled_did)

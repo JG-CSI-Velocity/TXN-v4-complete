@@ -202,7 +202,7 @@ try:
                 ('text-align', 'left'), ('padding-bottom', '10px'),
             ]},
         ])
-        .set_caption("Segment x Status: Account Counts (All Waves Pooled)")
+        .set_caption("Segment x Status: Account Counts (All Mailers Pooled)")
     )
     display(_styled_xtab)
 

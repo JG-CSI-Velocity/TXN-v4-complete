@@ -132,9 +132,9 @@ else:
     ax4.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"${v:,.0f}"))
     ax4.legend(fontsize=12, framealpha=0.9)
     ax4.set_title('Ticket Size Distribution: Responders Skew Higher',
-                   fontsize=22, fontweight='bold', color=_DARK, pad=25, loc='left')
-    ax4.text(0.0, 1.02, 'Per-account avg ticket, post-mail transactions',
-             transform=ax4.transAxes, fontsize=13, color=_MUTED, style='italic')
+                   fontsize=20, fontweight='bold', color=_DARK, pad=20, loc='left')
+    ax4.text(0.0, 1.01, 'Per-account avg ticket, post-mail period',
+             transform=ax4.transAxes, fontsize=11, color=_MUTED, style='italic')
     gen_clean_axes(ax4, keep_left=True, keep_bottom=True)
     ax4.yaxis.grid(True, color=_GRID, linewidth=0.5, alpha=0.5)
     ax4.set_axisbelow(True)
@@ -182,8 +182,8 @@ else:
             ax5.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"${v:,.0f}"))
             ax5.legend(fontsize=12, framealpha=0.9)
             ax5.set_title('Average Ticket Size by Challenge Segment',
-                           fontsize=22, fontweight='bold', color=_DARK, pad=25, loc='left')
-            ax5.text(0.0, 1.02,
+                           fontsize=20, fontweight='bold', color=_DARK, pad=20, loc='left')
+            ax5.text(0.0, 1.01,
                      'Do higher-challenge responders also spend more per swipe?',
                      transform=ax5.transAxes, fontsize=13, color=_MUTED, style='italic')
             gen_clean_axes(ax5, keep_left=True, keep_bottom=True)
