@@ -67,15 +67,15 @@ for bar, count, pct in zip(bars1, channel_summary['acct_count'],
                             channel_summary['acct_count'] / channel_summary['acct_count'].sum() * 100):
     ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + bar.get_height() * 0.02,
              f'{count:,}\n({pct:.0f}%)', ha='center', va='bottom',
-             fontsize=11, fontweight='bold', color=_DARK)
+             fontsize=15, fontweight='bold', color=_DARK)
 
 ax1.set_xticks(_x_pos)
 ax1.set_xticklabels([f'{c} type{"s" if c > 1 else ""}' for c in _x],
-                    fontsize=11, fontweight='bold')
-ax1.set_ylabel('Number of Accounts', fontsize=12, fontweight='bold', labelpad=8)
+                    fontsize=15, fontweight='bold')
+ax1.set_ylabel('Number of Accounts', fontsize=16, fontweight='bold', labelpad=8)
 ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v/1e3:,.0f}K" if v >= 1e3 else f"{v:,.0f}"))
 ax1.set_title('Accounts by Channel Diversity',
-              fontsize=15, fontweight='bold', color=_DARK, pad=10)
+              fontsize=18, fontweight='bold', color=_DARK, pad=10)
 gen_clean_axes(ax1, keep_left=True, keep_bottom=True)
 ax1.yaxis.grid(True, color=_GRID, linewidth=0.5, alpha=0.5)
 ax1.set_axisbelow(True)
@@ -90,7 +90,7 @@ for bar, val in zip(bars2, channel_summary['avg_monthly_spend']):
     _fmt = f"${val:,.0f}"
     ax2.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + bar.get_height() * 0.02,
              _fmt, ha='center', va='bottom',
-             fontsize=13, fontweight='bold', color=_DARK)
+             fontsize=16, fontweight='bold', color=_DARK)
 
 # Multiplier annotation: how much more do multi-channel users spend?
 _single = channel_summary[channel_summary['channel_count'] == 1]['avg_monthly_spend'].values
@@ -101,15 +101,15 @@ if len(_single) > 0 and _single[0] > 0:
             _mult = channel_summary[channel_summary['channel_count'] == ch_count]['avg_monthly_spend'].values[0] / _base
             ax2.text(bar.get_x() + bar.get_width() / 2, bar.get_height() / 2,
                      f'{_mult:.1f}x', ha='center', va='center',
-                     fontsize=14, fontweight='bold', color='white')
+                     fontsize=16, fontweight='bold', color='white')
 
 ax2.set_xticks(_x_pos)
 ax2.set_xticklabels([f'{c} type{"s" if c > 1 else ""}' for c in _x],
-                    fontsize=11, fontweight='bold')
-ax2.set_ylabel('Avg Monthly Spend per Account', fontsize=12, fontweight='bold', labelpad=8)
+                    fontsize=15, fontweight='bold')
+ax2.set_ylabel('Avg Monthly Spend per Account', fontsize=16, fontweight='bold', labelpad=8)
 ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"${v:,.0f}"))
 ax2.set_title('Spend Increases with Channel Diversity',
-              fontsize=15, fontweight='bold', color=_DARK, pad=10)
+              fontsize=18, fontweight='bold', color=_DARK, pad=10)
 gen_clean_axes(ax2, keep_left=True, keep_bottom=True)
 ax2.yaxis.grid(True, color=_GRID, linewidth=0.5, alpha=0.5)
 ax2.set_axisbelow(True)
@@ -123,28 +123,28 @@ bars3 = ax3.bar(_x_pos, channel_summary['avg_active_months'], width=0.55,
 for bar, val in zip(bars3, channel_summary['avg_active_months']):
     ax3.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + bar.get_height() * 0.02,
              f'{val:.1f}', ha='center', va='bottom',
-             fontsize=13, fontweight='bold', color=_DARK)
+             fontsize=16, fontweight='bold', color=_DARK)
 
 # Reference: max possible months
 ax3.axhline(_n_months, color=_MUTED, linewidth=1, linestyle=':', alpha=0.5)
 ax3.text(len(_x_pos) - 0.5, _n_months + 0.2, f'Max: {_n_months} months',
-         fontsize=9, color=_MUTED, ha='right', fontweight='bold')
+         fontsize=14, color=_MUTED, ha='right', fontweight='bold')
 
 ax3.set_xticks(_x_pos)
 ax3.set_xticklabels([f'{c} type{"s" if c > 1 else ""}' for c in _x],
-                    fontsize=11, fontweight='bold')
-ax3.set_ylabel('Avg Active Months', fontsize=12, fontweight='bold', labelpad=8)
+                    fontsize=15, fontweight='bold')
+ax3.set_ylabel('Avg Active Months', fontsize=16, fontweight='bold', labelpad=8)
 ax3.set_title('Engagement Consistency',
-              fontsize=15, fontweight='bold', color=_DARK, pad=10)
+              fontsize=18, fontweight='bold', color=_DARK, pad=10)
 gen_clean_axes(ax3, keep_left=True, keep_bottom=True)
 ax3.yaxis.grid(True, color=_GRID, linewidth=0.5, alpha=0.5)
 ax3.set_axisbelow(True)
 
 fig.suptitle('Multi-Channel Engagement = Higher Value',
-             fontsize=22, fontweight='bold', color=_DARK, y=0.95)
+             fontsize=28, fontweight='bold', color=_DARK, y=0.95)
 fig.text(0.5, 0.905,
          'Accounts using more payment channels spend more and stay engaged longer',
-         ha='center', fontsize=12, color=_MUTED, style='italic')
+         ha='center', fontsize=16, color=_MUTED, style='italic')
 
 plt.show()
 

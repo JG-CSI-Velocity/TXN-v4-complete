@@ -87,15 +87,15 @@ else:
                     if val > 3:
                         ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 1,
                                  f'{val:.0f}%', ha='center', va='bottom',
-                                 fontsize=8, fontweight='bold', color=color)
+                                 fontsize=14, fontweight='bold', color=color)
 
             ax1.set_xticks(_x)
-            ax1.set_xticklabels(_available_groups, fontsize=12, fontweight='bold')
-            ax1.set_ylabel('% of Accounts with Activity', fontsize=12, fontweight='bold', labelpad=8)
+            ax1.set_xticklabels(_available_groups, fontsize=16, fontweight='bold')
+            ax1.set_ylabel('% of Accounts with Activity', fontsize=18, fontweight='bold', labelpad=8)
             ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.0f}%"))
-            ax1.legend(fontsize=10, framealpha=0.9, ncol=4, loc='upper right')
+            ax1.legend(fontsize=14, framealpha=0.9, ncol=4, loc='upper right')
             ax1.set_title('Channel Usage by Campaign Status',
-                          fontsize=15, fontweight='bold', color=_DARK, pad=10)
+                          fontsize=20, fontweight='bold', color=_DARK, pad=10)
             gen_clean_axes(ax1, keep_left=True, keep_bottom=True)
             ax1.yaxis.grid(True, color=_GRID, linewidth=0.5, alpha=0.5)
             ax1.set_axisbelow(True)
@@ -104,7 +104,7 @@ else:
             for i, grp in enumerate(_available_groups):
                 _avg_ch = camp_channel_rates.loc[grp, 'avg_channels']
                 ax1.text(i, -0.06, f'Avg: {_avg_ch:.1f} channels',
-                         ha='center', va='top', fontsize=10, fontweight='bold',
+                         ha='center', va='top', fontsize=14, fontweight='bold',
                          color=_DARK, transform=ax1.get_xaxis_transform())
 
             # =================================================================
@@ -144,7 +144,7 @@ else:
                     if val / _total_bar > 0.08:
                         _fmt = f"${val:,.0f}"
                         ax2.text(_x2[j], bot + val / 2, _fmt,
-                                 ha='center', va='center', fontsize=9,
+                                 ha='center', va='center', fontsize=14,
                                  fontweight='bold', color='white')
 
                 _bottom += vals
@@ -154,25 +154,25 @@ else:
                 _total = _vol_per_acct.loc[grp].sum()
                 ax2.text(_x2[j], _total + _total * 0.02,
                          f'${_total:,.0f}/acct',
-                         ha='center', va='bottom', fontsize=12,
+                         ha='center', va='bottom', fontsize=16,
                          fontweight='bold', color=_DARK)
 
             ax2.set_xticks(_x2)
-            ax2.set_xticklabels(_available_groups, fontsize=12, fontweight='bold')
-            ax2.set_ylabel('Total Volume per Account', fontsize=12, fontweight='bold', labelpad=8)
+            ax2.set_xticklabels(_available_groups, fontsize=16, fontweight='bold')
+            ax2.set_ylabel('Total Volume per Account', fontsize=18, fontweight='bold', labelpad=8)
             ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"${v:,.0f}"))
-            ax2.legend(fontsize=10, framealpha=0.9, loc='upper right')
+            ax2.legend(fontsize=14, framealpha=0.9, loc='upper right')
             ax2.set_title('Total Payment Volume per Account by Type',
-                          fontsize=15, fontweight='bold', color=_DARK, pad=10)
+                          fontsize=20, fontweight='bold', color=_DARK, pad=10)
             gen_clean_axes(ax2, keep_left=True, keep_bottom=True)
             ax2.yaxis.grid(True, color=_GRID, linewidth=0.5, alpha=0.5)
             ax2.set_axisbelow(True)
 
             fig.suptitle('ARS Responders: The Full Payment Relationship',
-                         fontsize=22, fontweight='bold', color=_DARK, y=0.95)
+                         fontsize=28, fontweight='bold', color=_DARK, y=0.95)
             fig.text(0.5, 0.905,
                      'ARS activates debit, but responders are multi-channel payment hubs',
-                     ha='center', fontsize=12, color=_MUTED, style='italic')
+                     ha='center', fontsize=16, color=_MUTED, style='italic')
 
             plt.show()
 

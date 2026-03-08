@@ -114,8 +114,8 @@ else:
                 markeredgecolor=panel['color'], markeredgewidth=2.5, zorder=4)
 
         ax.set_xticks(x_pos)
-        ax.set_xticklabels(x_labels, fontsize=13, fontweight='bold')
-        ax.set_xlabel("Products Held", fontsize=13, fontweight='bold', labelpad=8)
+        ax.set_xticklabels(x_labels, fontsize=15, fontweight='bold')
+        ax.set_xlabel("Products Held", fontsize=15, fontweight='bold', labelpad=8)
         ax.yaxis.set_major_formatter(plt.FuncFormatter(panel['formatter']))
 
         gen_clean_axes(ax)
@@ -129,7 +129,7 @@ else:
         max_v = max(values) if len(values) > 0 else 1
         for i, v in enumerate(values):
             ax.text(i, v + max_v * 0.03, panel['formatter'](v, None),
-                    ha='center', va='bottom', fontsize=10, fontweight='bold',
+                    ha='center', va='bottom', fontsize=14, fontweight='bold',
                     color=GEN_COLORS['dark_text'])
 
         ax.set_ylim(0, max_v * 1.2)
@@ -145,7 +145,7 @@ else:
     fig.text(0.01, 1.01,
              f"Each additional product adds significant member value  |  "
              f"Top-tier members worth {multiplier:.1f}x single-product  |  {DATASET_LABEL}",
-             fontsize=13, color=GEN_COLORS['muted'], style='italic')
+             fontsize=16, color=GEN_COLORS['muted'], style='italic')
 
     plt.tight_layout()
     plt.show()

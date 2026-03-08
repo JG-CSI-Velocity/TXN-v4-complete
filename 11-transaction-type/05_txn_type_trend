@@ -53,11 +53,11 @@ ax1.stackplot(dates, *[_spend_pivot[t] for t in _all_types],
               labels=_all_types, colors=_colors, alpha=0.75,
               edgecolor='white', linewidth=0.5)
 
-ax1.set_ylabel('Total Monthly Spend', fontsize=12, fontweight='bold', labelpad=8)
+ax1.set_ylabel('Total Monthly Spend', fontsize=16, fontweight='bold', labelpad=8)
 ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"${v/1e6:,.1f}M" if v >= 1e6 else f"${v/1e3:,.0f}K"))
-ax1.set_title('Spend Volume by Type', fontsize=15, fontweight='bold', color=_DARK, pad=8)
+ax1.set_title('Spend Volume by Type', fontsize=18, fontweight='bold', color=_DARK, pad=8)
 ax1.xaxis.set_major_formatter(mdates.DateFormatter('%b\n%Y'))
-ax1.tick_params(axis='x', rotation=0, labelsize=9)
+ax1.tick_params(axis='x', rotation=0, labelsize=14)
 gen_clean_axes(ax1, keep_left=True, keep_bottom=True)
 ax1.yaxis.grid(True, color=_GRID, linewidth=0.5, alpha=0.5)
 ax1.set_axisbelow(True)
@@ -69,11 +69,11 @@ ax2.stackplot(dates, *[_count_pivot[t] for t in _all_types],
               labels=_all_types, colors=_colors, alpha=0.75,
               edgecolor='white', linewidth=0.5)
 
-ax2.set_ylabel('Monthly Transactions', fontsize=12, fontweight='bold', labelpad=8)
+ax2.set_ylabel('Monthly Transactions', fontsize=16, fontweight='bold', labelpad=8)
 ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v/1e3:,.0f}K" if v >= 1e3 else f"{v:,.0f}"))
-ax2.set_title('Transaction Count by Type', fontsize=15, fontweight='bold', color=_DARK, pad=8)
+ax2.set_title('Transaction Count by Type', fontsize=18, fontweight='bold', color=_DARK, pad=8)
 ax2.xaxis.set_major_formatter(mdates.DateFormatter('%b\n%Y'))
-ax2.tick_params(axis='x', rotation=0, labelsize=9)
+ax2.tick_params(axis='x', rotation=0, labelsize=14)
 gen_clean_axes(ax2, keep_left=True, keep_bottom=True)
 ax2.yaxis.grid(True, color=_GRID, linewidth=0.5, alpha=0.5)
 ax2.set_axisbelow(True)
@@ -88,18 +88,18 @@ for t in _main_types:
                  marker='o', markersize=4, label=t, zorder=3)
         # Start and end labels
         ax3.text(dates[0], _vals.iloc[0], f' {_vals.iloc[0]:.0f}%',
-                 ha='right', va='center', fontsize=10, fontweight='bold',
+                 ha='right', va='center', fontsize=15, fontweight='bold',
                  color=_type_colors.get(t, _MUTED))
         ax3.text(dates[-1], _vals.iloc[-1], f' {_vals.iloc[-1]:.0f}%',
-                 ha='left', va='center', fontsize=10, fontweight='bold',
+                 ha='left', va='center', fontsize=15, fontweight='bold',
                  color=_type_colors.get(t, _MUTED))
 
-ax3.set_ylabel('% of Transactions', fontsize=12, fontweight='bold', labelpad=8)
+ax3.set_ylabel('% of Transactions', fontsize=16, fontweight='bold', labelpad=8)
 ax3.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.0f}%"))
-ax3.set_title('PIN vs SIG Share', fontsize=15, fontweight='bold', color=_DARK, pad=8)
+ax3.set_title('PIN vs SIG Share', fontsize=18, fontweight='bold', color=_DARK, pad=8)
 ax3.xaxis.set_major_formatter(mdates.DateFormatter('%b\n%Y'))
-ax3.tick_params(axis='x', rotation=0, labelsize=9)
-ax3.legend(fontsize=11, framealpha=0.9)
+ax3.tick_params(axis='x', rotation=0, labelsize=14)
+ax3.legend(fontsize=14, framealpha=0.9)
 gen_clean_axes(ax3, keep_left=True, keep_bottom=True)
 ax3.yaxis.grid(True, color=_GRID, linewidth=0.5, alpha=0.5)
 ax3.set_axisbelow(True)
@@ -107,14 +107,14 @@ ax3.set_axisbelow(True)
 # Shared legend for stacked charts
 handles, labels = ax1.get_legend_handles_labels()
 fig.legend(handles, labels, loc='lower center', ncol=len(_all_types),
-           fontsize=11, frameon=False, bbox_to_anchor=(0.35, 0.01),
+           fontsize=14, frameon=False, bbox_to_anchor=(0.35, 0.01),
            title='Transaction Type',
-           title_fontproperties={'weight': 'bold', 'size': 12})
+           title_fontproperties={'weight': 'bold', 'size': 15})
 
 fig.suptitle('Transaction Volume Trends by Type',
-             fontsize=22, fontweight='bold', color=_DARK, y=0.95)
+             fontsize=28, fontweight='bold', color=_DARK, y=0.95)
 fig.text(0.5, 0.905, DATASET_LABEL,
-         ha='center', fontsize=12, color=_MUTED, style='italic')
+         ha='center', fontsize=16, color=_MUTED, style='italic')
 
 plt.show()
 

@@ -127,7 +127,7 @@ else:
             ax.set_xticks(x_pos)
             rotation = 45 if len(x_labels) > 6 else 0
             ha = 'right' if rotation > 0 else 'center'
-            ax.set_xticklabels(x_labels, fontsize=10, fontweight='bold',
+            ax.set_xticklabels(x_labels, fontsize=14, fontweight='bold',
                                rotation=rotation, ha=ha)
 
             max_v = max(values) if len(values) > 0 else 1
@@ -135,10 +135,10 @@ else:
                 pct_single = data.iloc[i]['pct_single']
                 ax.text(i, v + max_v * 0.02,
                         f"{v:.1f}\n({pct_single:.0f}% single)",
-                        ha='center', va='bottom', fontsize=9, fontweight='bold',
+                        ha='center', va='bottom', fontsize=14, fontweight='bold',
                         color=GEN_COLORS['dark_text'])
 
-            ax.set_ylabel("Avg Products/Member", fontsize=12, fontweight='bold', labelpad=8)
+            ax.set_ylabel("Avg Products/Member", fontsize=16, fontweight='bold', labelpad=8)
             ax.set_ylim(0, max_v * 1.35)
 
             gen_clean_axes(ax)
@@ -157,7 +157,7 @@ else:
                 'shallowest',
                 xy=(pos_in_chart, min_val),
                 xytext=(pos_in_chart, min_val + max_v * 0.15),
-                fontsize=10, fontweight='bold', color=GEN_COLORS['accent'],
+                fontsize=14, fontweight='bold', color=GEN_COLORS['accent'],
                 ha='center',
                 arrowprops=dict(arrowstyle='->', color=GEN_COLORS['accent'], lw=1.5)
             )

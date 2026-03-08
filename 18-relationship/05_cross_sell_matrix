@@ -92,9 +92,9 @@ else:
         )
 
         ax.set_xticklabels(col_labels, rotation=45, ha='right',
-                           fontsize=11, fontweight='bold')
+                           fontsize=14, fontweight='bold')
         ax.set_yticklabels(row_labels, rotation=0,
-                           fontsize=11, fontweight='bold')
+                           fontsize=14, fontweight='bold')
         ax.set_xlabel("Product NOT Held (Cross-Sell Target)", fontsize=14,
                        fontweight='bold', labelpad=12)
         ax.set_ylabel("Product Held (Current)", fontsize=14,

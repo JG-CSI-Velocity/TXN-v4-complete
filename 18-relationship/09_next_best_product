@@ -186,13 +186,13 @@ else:
                 )
 
                 ax.set_yticks(range(n))
-                ax.set_yticklabels(bar_labels, fontsize=10, fontweight='bold')
+                ax.set_yticklabels(bar_labels, fontsize=14, fontweight='bold')
 
                 max_val = bar_values.max()
                 for j, (val, (_, row)) in enumerate(zip(bar_values, plot_rec.iterrows())):
                     ax.text(val + max_val * 0.015, j,
                             f"{int(val):,} targets ({row['co_occur_pct']:.0f}% co-occur)",
-                            va='center', fontsize=10, fontweight='bold',
+                            va='center', fontsize=14, fontweight='bold',
                             color=GEN_COLORS['dark_text'])
 
                 ax.set_xlabel("Single-Product Members to Target", fontsize=14,

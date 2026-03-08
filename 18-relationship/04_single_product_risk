@@ -61,7 +61,7 @@ else:
         ax.set_yticks(range(n))
         ax.set_yticklabels(
             [p[:35] for p in prod_counts['product_label']],
-            fontsize=12, fontweight='bold'
+            fontsize=14, fontweight='bold'
         )
 
         total_single = len(single_df)
@@ -72,7 +72,7 @@ else:
             ax.text(
                 row['member_count'] + max_val * 0.015, j,
                 f"{int(row['member_count']):,} ({pct:.1f}%)",
-                va='center', fontsize=11, fontweight='bold',
+                va='center', fontsize=14, fontweight='bold',
                 color=GEN_COLORS['dark_text']
             )
 

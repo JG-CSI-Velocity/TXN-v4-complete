@@ -89,7 +89,7 @@ else:
                 color='white',
                 path_effects=[pe.withStroke(linewidth=2, foreground=kpi['color'])])
         ax.text(5, 2.3, kpi['sub'],
-                ha='center', va='center', fontsize=11,
+                ha='center', va='center', fontsize=14,
                 color='white', alpha=0.8, style='italic')
 
     fig.suptitle("Member Relationship Depth",

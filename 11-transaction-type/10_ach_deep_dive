@@ -42,15 +42,15 @@ else:
         _fmt = f"${spend/1e6:,.1f}M" if spend >= 1e6 else f"${spend/1e3:,.0f}K"
         ax1.text(bar.get_width() + bar.get_width() * 0.02, bar.get_y() + bar.get_height() / 2,
                  f'{_fmt}  ({int(accts):,} accts)',
-                 va='center', fontsize=10, fontweight='bold', color=_ACH_COLOR)
+                 va='center', fontsize=15, fontweight='bold', color=_ACH_COLOR)
 
     ax1.set_yticks(_y)
-    ax1.set_yticklabels(_names, fontsize=10, fontweight='bold')
-    ax1.set_xlabel('Total ACH Volume', fontsize=12, fontweight='bold', labelpad=8)
+    ax1.set_yticklabels(_names, fontsize=14, fontweight='bold')
+    ax1.set_xlabel('Total ACH Volume', fontsize=16, fontweight='bold', labelpad=8)
     ax1.xaxis.set_major_formatter(plt.FuncFormatter(
         lambda v, _: f"${v/1e6:,.1f}M" if v >= 1e6 else f"${v/1e3:,.0f}K"))
     ax1.set_title('Top 15 ACH Payees by Volume',
-                  fontsize=15, fontweight='bold', color=_DARK, pad=10)
+                  fontsize=20, fontweight='bold', color=_DARK, pad=10)
     gen_clean_axes(ax1, keep_left=True, keep_bottom=True)
     ax1.xaxis.grid(True, color=_GRID, linewidth=0.5, alpha=0.5)
     ax1.set_axisbelow(True)
@@ -73,7 +73,7 @@ else:
              markersize=5, markeredgecolor='white', markeredgewidth=1.5,
              zorder=4, label='ACH Volume')
 
-    ax2.set_ylabel('Monthly ACH Volume', fontsize=12, fontweight='bold', labelpad=8)
+    ax2.set_ylabel('Monthly ACH Volume', fontsize=16, fontweight='bold', labelpad=8)
     ax2.yaxis.set_major_formatter(plt.FuncFormatter(
         lambda v, _: f"${v/1e6:,.1f}M" if v >= 1e6 else f"${v/1e3:,.0f}K"))
 
@@ -81,7 +81,7 @@ else:
     ax2b = ax2.twinx()
     ax2b.plot(dates, ach_monthly['unique_accounts'], color=_MUTED, linewidth=2,
               linestyle='--', marker='s', markersize=4, alpha=0.7, label='Unique Accounts')
-    ax2b.set_ylabel('Unique ACH Accounts', fontsize=11, fontweight='bold',
+    ax2b.set_ylabel('Unique ACH Accounts', fontsize=15, fontweight='bold',
                     labelpad=8, color=_MUTED)
     ax2b.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:,.0f}"))
     ax2b.tick_params(axis='y', colors=_MUTED)
@@ -93,32 +93,32 @@ else:
 
     ax2.annotate(f'{_first_fmt}', xy=(dates[0], spend[0]),
                  xytext=(5, -20), textcoords='offset points',
-                 fontsize=11, fontweight='bold', color=_ACH_COLOR, ha='left')
+                 fontsize=16, fontweight='bold', color=_ACH_COLOR, ha='left')
     ax2.annotate(f'{_last_fmt} ({_pct_chg:+.1f}%)', xy=(dates[-1], spend[-1]),
                  xytext=(-5, 15), textcoords='offset points',
-                 fontsize=11, fontweight='bold',
+                 fontsize=16, fontweight='bold',
                  color=GEN_COLORS.get('success', '#2A9D8F') if _pct_chg >= 0 else GEN_COLORS.get('accent', '#E63946'),
                  ha='right')
 
     ax2.xaxis.set_major_formatter(mdates.DateFormatter('%b\n%Y'))
-    ax2.tick_params(axis='x', rotation=0, labelsize=9)
+    ax2.tick_params(axis='x', rotation=0, labelsize=14)
     ax2.set_title('Monthly ACH Volume Trend',
-                  fontsize=15, fontweight='bold', color=_DARK, pad=10)
+                  fontsize=20, fontweight='bold', color=_DARK, pad=10)
 
     # Combined legend
     lines1, labels1 = ax2.get_legend_handles_labels()
     lines2, labels2 = ax2b.get_legend_handles_labels()
-    ax2.legend(lines1 + lines2, labels1 + labels2, fontsize=10, framealpha=0.9, loc='upper left')
+    ax2.legend(lines1 + lines2, labels1 + labels2, fontsize=14, framealpha=0.9, loc='upper left')
 
     gen_clean_axes(ax2, keep_left=True, keep_bottom=True)
     ax2.yaxis.grid(True, color=_GRID, linewidth=0.5, alpha=0.5)
     ax2.set_axisbelow(True)
 
     fig.suptitle('ACH Payment Patterns',
-                 fontsize=22, fontweight='bold', color=_DARK, y=0.95)
+                 fontsize=28, fontweight='bold', color=_DARK, y=0.95)
     fig.text(0.5, 0.905,
              f'{len(ach_df):,} ACH transactions  |  {ach_df["primary_account_num"].nunique():,} accounts',
-             ha='center', fontsize=12, color=_MUTED, style='italic')
+             ha='center', fontsize=16, color=_MUTED, style='italic')
 
     plt.show()
 

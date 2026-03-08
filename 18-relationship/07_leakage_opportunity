@@ -94,7 +94,7 @@ else:
                 ax.text(
                     row['account_count'] + max_val * 0.015, j,
                     '  |  '.join(label_parts),
-                    va='center', fontsize=11, fontweight='bold',
+                    va='center', fontsize=14, fontweight='bold',
                     color=GEN_COLORS['dark_text']
                 )
 

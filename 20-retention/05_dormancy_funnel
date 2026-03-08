@@ -45,7 +45,7 @@ else:
             ax.text(bar.get_width() + _funnel_df['count'].max() * 0.01,
                     bar.get_y() + bar.get_height() / 2 - 0.15,
                     f"avg ${row['avg_spend']:,.0f}/mo",
-                    ha='left', va='top', fontsize=9,
+                    ha='left', va='top', fontsize=14,
                     color=GEN_COLORS['muted'], style='italic')
 
     ax.set_yticks(y)
@@ -63,7 +63,7 @@ else:
                  color=GEN_COLORS['dark_text'], pad=35, loc='left')
     ax.text(0.0, 1.02,
             f"How many accounts are on the path to dormancy?  ({DATASET_LABEL})",
-            transform=ax.transAxes, fontsize=13,
+            transform=ax.transAxes, fontsize=16,
             color=GEN_COLORS['muted'], style='italic')
 
     plt.tight_layout()
