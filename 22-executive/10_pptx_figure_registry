@@ -1,0 +1,67 @@
+# ===========================================================================
+# PPTX FIGURE REGISTRY: Setup for PPTX export
+# ===========================================================================
+# Run AFTER all analysis cells have been executed.
+#
+# This cell does NOT try to capture figures from memory (they're already
+# gone after plt.show()). Instead it sets up the infrastructure for the
+# export cell (11_pptx_export), which re-executes each chart cell with
+# plt.show() intercepted to save PNGs.
+#
+# The key insight: all DataFrames, palettes, and helper functions are
+# still in the notebook's globals(). The export engine re-runs each
+# cell file using exec() in that namespace, but patches plt.show()
+# to save to PNG instead of displaying.
+
+import os
+import sys
+
+# ---------------------------------------------------------------------------
+# Set up paths
+# ---------------------------------------------------------------------------
+# Base path: root of the cell files (the txn-visual-test directory)
+# Adjust this if your notebook is in a different location relative to cells.
+PPTX_BASE_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(os.path.abspath('.')), '')
+)
+
+# Try common locations
+for _candidate in [
+    '/tmp/txn-visual-test',
+    '/private/tmp/txn-visual-test',
+    os.path.abspath('.'),
+    os.path.abspath('..'),
+]:
+    if os.path.isdir(os.path.join(_candidate, '22-executive')):
+        PPTX_BASE_PATH = _candidate
+        break
+
+# Ensure dashboard package is importable
+if PPTX_BASE_PATH not in sys.path:
+    sys.path.insert(0, PPTX_BASE_PATH)
+
+# Pre-captured images (if any cells called register_chart earlier)
+pptx_fig_registry = {}
+
+print("PPTX Export Setup")
+print("=" * 60)
+print(f"  Cell files root: {PPTX_BASE_PATH}")
+print(f"  Dashboard package: {os.path.join(PPTX_BASE_PATH, 'dashboard')}")
+
+# Verify dashboard package
+try:
+    from dashboard.storyline_config import STORYLINES, PRESENTATION_ORDER
+    from dashboard.pptx_engine import export_storyline, export_all_storylines
+    print(f"  Storylines loaded: {len(STORYLINES)}")
+    for key in PRESENTATION_ORDER:
+        cfg = STORYLINES[key]
+        _chart_ct = sum(1 for s in cfg['slides'] if s['type'] == 'chart')
+        print(f"    {cfg['id']}. {cfg['title']} "
+              f"({cfg['type']}, {len(cfg['slides'])} slides, {_chart_ct} charts)")
+    print(f"\n  Ready. Run the next cell (11_pptx_export) to generate decks.")
+except ImportError as e:
+    print(f"\n  ERROR: Could not import dashboard package: {e}")
+    print(f"  Make sure {PPTX_BASE_PATH}/dashboard/ exists with:")
+    print(f"    __init__.py, storyline_config.py, pptx_engine.py")
+
+print("=" * 60)
