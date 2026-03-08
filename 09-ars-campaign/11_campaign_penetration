@@ -128,16 +128,16 @@ else:
         if row['new_responders'] > 0:
             ax1.text(i, row['new_responders'] / 2,
                      f"{int(row['new_responders']):,}",
-                     ha='center', va='center', fontsize=9, fontweight='bold',
+                     ha='center', va='center', fontsize=14, fontweight='bold',
                      color='white')
         if row['repeat_responders'] > 0:
             ax1.text(i, row['new_responders'] + row['repeat_responders'] / 2,
                      f"{int(row['repeat_responders']):,}",
-                     ha='center', va='center', fontsize=9, fontweight='bold',
+                     ha='center', va='center', fontsize=14, fontweight='bold',
                      color='white')
 
     ax1.set_xticks(x)
-    ax1.set_xticklabels(penetration_df['period'], fontsize=11,
+    ax1.set_xticklabels(penetration_df['period'], fontsize=14,
                          fontweight='bold', rotation=45, ha='right')
     ax1.set_ylabel("Responders", fontsize=16, fontweight='bold', labelpad=10)
     ax1.yaxis.set_major_formatter(plt.FuncFormatter(gen_fmt_count))
@@ -156,14 +156,14 @@ else:
                   color=GEN_COLORS['accent'], linewidth=3,
                   marker='D', markersize=8, zorder=5,
                   label='Response Penetration (% of portfolio)')
-    ax1_twin.set_ylabel(f"% of Total Portfolio ({total_population:,} accounts)", fontsize=14,
+    ax1_twin.set_ylabel(f"% of Total Portfolio ({total_population:,} accounts)", fontsize=16,
                          fontweight='bold', color=GEN_COLORS['accent'], labelpad=10)
     ax1_twin.yaxis.set_major_formatter(plt.FuncFormatter(gen_fmt_pct))
     ax1_twin.spines['top'].set_visible(False)
     ax1_twin.spines['left'].set_visible(False)
 
     for i, pct in enumerate(penetration_df['cum_resp_penetration_pct']):
-        ax1_twin.text(i, pct + 0.3, f"{pct:.1f}%", ha='center', fontsize=10,
+        ax1_twin.text(i, pct + 0.3, f"{pct:.1f}%", ha='center', fontsize=14,
                       fontweight='bold', color=GEN_COLORS['accent'])
 
     # Combined legend
@@ -171,7 +171,7 @@ else:
     lines2, labels2 = ax1_twin.get_legend_handles_labels()
     ax1.legend(lines1 + lines2, labels1 + labels2,
                loc='upper center', bbox_to_anchor=(0.5, -0.22),
-               ncol=3, fontsize=12, frameon=False)
+               ncol=3, fontsize=14, frameon=False)
 
     ax1.set_title("New vs Repeat Responders by Period",
                   fontsize=26, fontweight='bold',
@@ -217,7 +217,7 @@ else:
              edgecolor='white', linewidth=1, height=0.6)
 
     ax2.set_yticks(y_pos)
-    ax2.set_yticklabels(funnel_labels, fontsize=12, fontweight='bold')
+    ax2.set_yticklabels(funnel_labels, fontsize=14, fontweight='bold')
     ax2.xaxis.set_major_formatter(plt.FuncFormatter(gen_fmt_count))
     ax2.invert_yaxis()
 
@@ -232,7 +232,7 @@ else:
             pct_label = f"  {val:,}"
         else:
             pct_label = f"  {val:,}  ({pct:.1f}% of portfolio)"
-        ax2.text(val, j, pct_label, va='center', fontsize=12,
+        ax2.text(val, j, pct_label, va='center', fontsize=14,
                  fontweight='bold', color=funnel_colors[j])
 
     ax2.set_title("Responder Funnel",

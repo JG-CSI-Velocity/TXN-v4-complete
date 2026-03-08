@@ -71,14 +71,14 @@ else:
                 color='white',
                 path_effects=[pe.withStroke(linewidth=2, foreground=kpi['color'])])
         ax.text(5, 2.3, kpi['sub'],
-                ha='center', va='center', fontsize=11,
+                ha='center', va='center', fontsize=14,
                 color='white', alpha=0.8, style='italic')
 
     fig.suptitle("ARS Cohort Lift Overview",
                  fontsize=28, fontweight='bold',
                  color=GEN_COLORS['dark_text'], y=1.04)
     fig.text(0.5, 0.97, f"Difference-in-Differences methodology  ({DATASET_LABEL})",
-             ha='center', fontsize=13, color=GEN_COLORS['muted'], style='italic')
+             ha='center', fontsize=14, color=GEN_COLORS['muted'], style='italic')
 
     plt.tight_layout()
     plt.show()

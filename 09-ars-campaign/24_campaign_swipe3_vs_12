@@ -56,7 +56,7 @@ else:
                             ax.text(0.5, 0.5, f"No {_title} data",
                                     ha='center', va='center', transform=ax.transAxes,
                                     fontsize=14, color=GEN_COLORS['muted'])
-                            ax.set_title(_title, fontsize=18, fontweight='bold')
+                            ax.set_title(_title, fontsize=20, fontweight='bold')
                             continue
 
                         _xtab = pd.crosstab(
@@ -102,12 +102,12 @@ else:
                         )
 
                         ax.set_xlabel('Recent Behavior (3-Month Swipe Tier)',
-                                      fontsize=12, fontweight='bold', labelpad=10)
+                                      fontsize=14, fontweight='bold', labelpad=10)
                         ax.set_ylabel('Baseline (12-Month Swipe Tier)',
-                                      fontsize=12, fontweight='bold', labelpad=10)
-                        ax.set_xticklabels(ax.get_xticklabels(), fontsize=9,
+                                      fontsize=14, fontweight='bold', labelpad=10)
+                        ax.set_xticklabels(ax.get_xticklabels(), fontsize=14,
                                            fontweight='bold', rotation=45, ha='right')
-                        ax.set_yticklabels(ax.get_yticklabels(), fontsize=9,
+                        ax.set_yticklabels(ax.get_yticklabels(), fontsize=14,
                                            fontweight='bold', rotation=0)
 
                         ax.set_title(f"{_title}  ({len(_subset):,} accounts)",
@@ -120,14 +120,14 @@ else:
                                 f"Improving: {_improve_pct:.1f}%  |  "
                                 f"Stable: {_stable_pct:.1f}%  |  "
                                 f"Declining: {_decline_pct:.1f}%",
-                                transform=ax.transAxes, ha='center', fontsize=11,
+                                transform=ax.transAxes, ha='center', fontsize=14,
                                 fontweight='bold', color=_stats_color)
 
                     # Reading guide (placed between panels, not overlapping)
                     fig.text(0.5, 0.02,
                              "Read: find an account's 12-month tier on Y-axis, "
                              "then 3-month tier on X-axis.  Right of diagonal = usage increasing.",
-                             ha='center', fontsize=11,
+                             ha='center', fontsize=14,
                              color=GEN_COLORS['muted'], style='italic')
 
                     fig.suptitle("Swipe Behavior Shift: Are Responders Accelerating?",

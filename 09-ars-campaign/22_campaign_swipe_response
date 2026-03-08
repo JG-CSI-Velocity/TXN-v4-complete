@@ -84,19 +84,19 @@ else:
                             ax.text(bar.get_x() + bar.get_width() / 2,
                                     bar.get_height() + 0.5,
                                     f"{pct:.1f}%",
-                                    ha='center', va='bottom', fontsize=9,
+                                    ha='center', va='bottom', fontsize=14,
                                     fontweight='bold',
                                     color=_status_colors.get(status, GEN_COLORS['muted']))
 
                 ax.set_xticks(x)
-                ax.set_xticklabels(_tier_order, fontsize=12, fontweight='bold')
+                ax.set_xticklabels(_tier_order, fontsize=14, fontweight='bold')
                 ax.set_ylabel("% of Group", fontsize=16, fontweight='bold', labelpad=10)
                 ax.yaxis.set_major_formatter(plt.FuncFormatter(gen_fmt_pct))
 
                 gen_clean_axes(ax, keep_left=True, keep_bottom=True)
                 ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
                 ax.set_axisbelow(True)
-                ax.legend(loc='upper right', fontsize=12, framealpha=0.9)
+                ax.legend(loc='upper right', fontsize=14, framealpha=0.9)
 
                 _window_label = '12-month' if '12' in _cat_col else '3-month'
                 ax.set_title("Swipe Tier Distribution: Responders vs Non-Responders",
@@ -105,7 +105,7 @@ else:
                 ax.text(0.0, 1.02,
                         f"Which swipe tiers are campaign responders coming from?  "
                         f"({_window_label} avg monthly swipes, {DATASET_LABEL})",
-                        transform=ax.transAxes, fontsize=13,
+                        transform=ax.transAxes, fontsize=14,
                         color=GEN_COLORS['muted'], style='italic')
 
                 plt.tight_layout()

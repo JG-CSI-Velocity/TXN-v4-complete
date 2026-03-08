@@ -117,10 +117,10 @@ else:
 
                         if n_r == 0 and n_nr == 0:
                             ax.text(0.5, 0.5, 'No Data', ha='center', va='center',
-                                    transform=ax.transAxes, fontsize=12,
+                                    transform=ax.transAxes, fontsize=14,
                                     color=_MUTED, style='italic')
                             if r_idx == 0:
-                                ax.set_title(seg, fontsize=14, fontweight='bold',
+                                ax.set_title(seg, fontsize=20, fontweight='bold',
                                              color=_SEG_COLORS.get(seg, _DARK), pad=8)
                             ax.axis('off')
                             continue
@@ -152,7 +152,7 @@ else:
                                    edgecolor='white', linewidth=0.5)
 
                         ax.set_xticks(x)
-                        ax.set_xticklabels(bar_labels, fontsize=9, fontweight='bold')
+                        ax.set_xticklabels(bar_labels, fontsize=14, fontweight='bold')
 
                         # Value labels
                         for i in range(len(x)):
@@ -163,12 +163,12 @@ else:
                             _nudge = 1 if '$' in val_fmt else 0.3
                             ax.text(x[i] + w/2, post_vals[i] + _nudge,
                                     f"{_val_str}\n({_dlt_str})",
-                                    ha='center', va='bottom', fontsize=8,
+                                    ha='center', va='bottom', fontsize=14,
                                     fontweight='bold', color=delta_color)
 
                         # Segment title only on top row
                         if r_idx == 0:
-                            ax.set_title(seg, fontsize=14, fontweight='bold',
+                            ax.set_title(seg, fontsize=20, fontweight='bold',
                                          color=_SEG_COLORS.get(seg, _DARK), pad=8)
 
                         # Y-axis formatting
@@ -186,7 +186,7 @@ else:
                         ax.set_axisbelow(True)
 
                         if s_idx == 0:
-                            ax.set_ylabel(ylabel, fontsize=11,
+                            ax.set_ylabel(ylabel, fontsize=16,
                                           fontweight='bold', color=_DARK, labelpad=6)
 
                 # Legend below figure
@@ -195,7 +195,7 @@ else:
                     Patch(facecolor=_MUTED, alpha=1.0, label='Post (3mo avg after mail)'),
                 ]
                 fig.legend(handles=_legend_elements, loc='lower center',
-                           ncol=2, fontsize=10, frameon=False,
+                           ncol=2, fontsize=14, frameon=False,
                            bbox_to_anchor=(0.5, -0.03))
 
                 fig.suptitle(_suptitle,

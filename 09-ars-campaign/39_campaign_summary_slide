@@ -143,14 +143,14 @@ else:
         ax.add_patch(card)
 
         ax.text(5, 7.0, kpi['label'],
-                ha='center', va='center', fontsize=13, fontweight='bold',
+                ha='center', va='center', fontsize=14, fontweight='bold',
                 color='white', alpha=0.9)
         ax.text(5, 4.5, kpi['value'],
                 ha='center', va='center', fontsize=36, fontweight='bold',
                 color='white',
                 path_effects=[pe.withStroke(linewidth=2, foreground=kpi['color'])])
         ax.text(5, 2.2, kpi['sub'],
-                ha='center', va='center', fontsize=10,
+                ha='center', va='center', fontsize=14,
                 color='white', alpha=0.8, style='italic')
 
     # =====================================================================
@@ -174,18 +174,18 @@ else:
         # Avg line
         ax_spend.axhline(_avg_did, color=_DARK, linewidth=1.5, linestyle='--', zorder=2)
         ax_spend.text(len(_seg_x) - 0.5, _avg_did, f'  Avg: ${_avg_did:+,.0f}',
-                      fontsize=10, fontweight='bold', color=_DARK, va='bottom', ha='right')
+                      fontsize=14, fontweight='bold', color=_DARK, va='bottom', ha='right')
 
         for bar, val in zip(bars, _seg_vals):
             _va = 'bottom' if val >= 0 else 'top'
             _offset = max(abs(val) * 0.05, 1) if val >= 0 else -max(abs(val) * 0.05, 1)
             ax_spend.text(bar.get_x() + bar.get_width() / 2, val + _offset,
-                          f'${val:+,.0f}', ha='center', va=_va, fontsize=12,
+                          f'${val:+,.0f}', ha='center', va=_va, fontsize=14,
                           fontweight='bold', color=_DARK)
 
         ax_spend.set_xticks(_seg_x)
-        ax_spend.set_xticklabels(_seg_labels, fontsize=13, fontweight='bold')
-        ax_spend.set_ylabel('DID Spend Lift ($/mo per acct)', fontsize=12,
+        ax_spend.set_xticklabels(_seg_labels, fontsize=14, fontweight='bold')
+        ax_spend.set_ylabel('DID Spend Lift ($/mo per acct)', fontsize=16,
                             fontweight='bold', labelpad=8)
         ax_spend.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"${v:+,.0f}"))
     else:
@@ -215,18 +215,18 @@ else:
 
         ax_swipe.axhline(_avg_sw_did, color=_DARK, linewidth=1.5, linestyle='--', zorder=2)
         ax_swipe.text(len(_sw_x) - 0.5, _avg_sw_did, f'  Avg: {_avg_sw_did:+,.1f}',
-                      fontsize=10, fontweight='bold', color=_DARK, va='bottom', ha='right')
+                      fontsize=14, fontweight='bold', color=_DARK, va='bottom', ha='right')
 
         for bar, val in zip(bars, _sw_vals):
             _va = 'bottom' if val >= 0 else 'top'
             _offset = max(abs(val) * 0.05, 0.2) if val >= 0 else -max(abs(val) * 0.05, 0.2)
             ax_swipe.text(bar.get_x() + bar.get_width() / 2, val + _offset,
-                          f'{val:+,.1f}', ha='center', va=_va, fontsize=12,
+                          f'{val:+,.1f}', ha='center', va=_va, fontsize=14,
                           fontweight='bold', color=_DARK)
 
         ax_swipe.set_xticks(_sw_x)
-        ax_swipe.set_xticklabels(_sw_labels, fontsize=13, fontweight='bold')
-        ax_swipe.set_ylabel('DID Swipe Lift (swipes/mo per acct)', fontsize=12,
+        ax_swipe.set_xticklabels(_sw_labels, fontsize=14, fontweight='bold')
+        ax_swipe.set_ylabel('DID Swipe Lift (swipes/mo per acct)', fontsize=16,
                             fontweight='bold', labelpad=8)
         ax_swipe.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:+,.1f}"))
     else:
@@ -245,7 +245,7 @@ else:
                  fontsize=26, fontweight='bold', color=_DARK, y=0.96)
     fig.text(0.5, 0.925,
              f'{_num_mailers} mailers  |  3-month pre/post DID  |  All mailers pooled',
-             ha='center', fontsize=13, color=_MUTED, style='italic')
+             ha='center', fontsize=14, color=_MUTED, style='italic')
 
     plt.show()
 

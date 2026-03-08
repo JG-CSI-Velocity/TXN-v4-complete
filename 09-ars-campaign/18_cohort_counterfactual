@@ -118,7 +118,7 @@ else:
                     label='ARS Program Value')
 
     ax.set_xticks(range(len(actual_df)))
-    ax.set_xticklabels(actual_df['month'], fontsize=11, fontweight='bold',
+    ax.set_xticklabels(actual_df['month'], fontsize=14, fontweight='bold',
                        rotation=45, ha='right')
     ax.set_ylabel("Total Portfolio Spend", fontsize=16, fontweight='bold', labelpad=10)
 
@@ -127,7 +127,7 @@ else:
     ax.set_axisbelow(True)
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
 
-    ax.legend(loc='upper right', fontsize=13)
+    ax.legend(loc='upper right', fontsize=14)
 
     if len(actual_df) > 0:
         last_actual = actual_df['spend'].iloc[-1]
@@ -138,7 +138,7 @@ else:
             ax.annotate(f"${gap:,.0f}\nprotected",
                         xy=(len(actual_df) - 1, mid_y),
                         xytext=(len(actual_df) - 3, mid_y + (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.1),
-                        fontsize=13, fontweight='bold', color=GEN_COLORS['success'],
+                        fontsize=14, fontweight='bold', color=GEN_COLORS['success'],
                         arrowprops=dict(arrowstyle='->', color=GEN_COLORS['success'], lw=2))
 
     ax.set_title("Counterfactual: What If We Didn't Have the ARS Program?",

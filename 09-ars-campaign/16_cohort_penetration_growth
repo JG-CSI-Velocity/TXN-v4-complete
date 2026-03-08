@@ -57,7 +57,7 @@ else:
                    fontweight='bold', color=GEN_COLORS['info'], labelpad=10)
 
     ax1.set_xticks(range(len(pen_df)))
-    ax1.set_xticklabels(pen_df['wave'], fontsize=13, fontweight='bold')
+    ax1.set_xticklabels(pen_df['wave'], fontsize=14, fontweight='bold')
 
     gen_clean_axes(ax1)
     gen_clean_axes(ax2, keep_left=False)
@@ -68,13 +68,13 @@ else:
     for i, (_, row) in enumerate(pen_df.iterrows()):
         ax1.text(i, row['cum_penetration'] + 0.3,
                  f"{row['cum_penetration']:.1f}%\n({row['cum_responders']:,})",
-                 ha='center', va='bottom', fontsize=10, fontweight='bold',
+                 ha='center', va='bottom', fontsize=14, fontweight='bold',
                  color=GEN_COLORS['success'])
 
     # Combined legend
     lines1, labels1 = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left', fontsize=12)
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left', fontsize=14)
 
     ax1.set_title("Penetration Growth: Each Wave Activates New Spenders",
                   fontsize=26, fontweight='bold',

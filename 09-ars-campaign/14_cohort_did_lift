@@ -42,14 +42,14 @@ else:
 
         ax.text(bar.get_x() + bar.get_width() / 2, y_pos,
                 f"{sign}${val:,.0f}\n({sign}{pct:.1f}%)",
-                ha='center', va=va, fontsize=11, fontweight='bold',
+                ha='center', va=va, fontsize=14, fontweight='bold',
                 color=colors[i])
 
     # Avg line
     avg_lift = cohort_did['did_spend_lift'].mean()
     ax.axhline(y=avg_lift, color=GEN_COLORS['info'], linewidth=2,
                linestyle='--', alpha=0.8, label=f"Avg DID: ${avg_lift:,.0f}")
-    ax.legend(loc='upper right', fontsize=13)
+    ax.legend(loc='upper right', fontsize=14)
 
     ax.set_title("Program Proof: Difference-in-Differences Spend Lift",
                  fontsize=26, fontweight='bold',

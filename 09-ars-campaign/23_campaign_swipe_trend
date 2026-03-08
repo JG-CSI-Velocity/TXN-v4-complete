@@ -77,25 +77,25 @@ else:
                         ax.axvline(_idx, color=GEN_COLORS['accent'], linestyle='--',
                                    linewidth=1.5, alpha=0.6)
                         ax.text(_idx, ax.get_ylim()[1] * 0.97, f"Mail\n{_wl}",
-                                ha='center', va='top', fontsize=8, fontweight='bold',
+                                ha='center', va='top', fontsize=14, fontweight='bold',
                                 color=GEN_COLORS['accent'], alpha=0.8)
 
             ax.set_xticks(range(len(_month_labels)))
-            ax.set_xticklabels(_month_labels, fontsize=10, fontweight='bold', rotation=45, ha='right')
+            ax.set_xticklabels(_month_labels, fontsize=14, fontweight='bold', rotation=45, ha='right')
             ax.set_ylabel("Avg Monthly Swipes", fontsize=16, fontweight='bold', labelpad=10)
 
             gen_clean_axes(ax, keep_left=True, keep_bottom=True)
             ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
             ax.set_axisbelow(True)
 
-            ax.legend(loc='upper left', fontsize=12, frameon=False)
+            ax.legend(loc='upper left', fontsize=14, frameon=False)
 
             ax.set_title("Monthly Swipe Trajectory by Campaign Status",
                          fontsize=26, fontweight='bold',
                          color=GEN_COLORS['dark_text'], pad=35, loc='left')
             ax.text(0.0, 1.02,
                     f"Do campaign responders increase card usage after mailing waves?  ({DATASET_LABEL})",
-                    transform=ax.transAxes, fontsize=13,
+                    transform=ax.transAxes, fontsize=14,
                     color=GEN_COLORS['muted'], style='italic')
 
             plt.tight_layout()

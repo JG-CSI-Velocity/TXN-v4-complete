@@ -124,7 +124,7 @@ else:
 
                         if not _plotted:
                             ax.text(0.5, 0.5, 'No Data', ha='center', va='center',
-                                    transform=ax.transAxes, fontsize=12,
+                                    transform=ax.transAxes, fontsize=14,
                                     color=_MUTED, style='italic')
 
                         # Mail date line
@@ -133,21 +133,21 @@ else:
 
                         # Segment title only on top row
                         if r_idx == 0:
-                            ax.set_title(seg, fontsize=14, fontweight='bold',
+                            ax.set_title(seg, fontsize=20, fontweight='bold',
                                          color=_SEG_COLORS.get(seg, _DARK), pad=8)
 
                         # X-axis label only on bottom row
                         if r_idx == n_rows - 1:
-                            ax.set_xlabel('Months from Mail', fontsize=10,
+                            ax.set_xlabel('Months from Mail', fontsize=16,
                                           fontweight='bold', labelpad=4)
 
                         if s_idx == 0:
-                            ax.set_ylabel(ylabel, fontsize=11,
+                            ax.set_ylabel(ylabel, fontsize=16,
                                           fontweight='bold', color=_DARK, labelpad=6)
                             ax.yaxis.set_major_formatter(plt.FuncFormatter(y_fmt))
 
                         if s_idx == 0 and r_idx == 0:
-                            ax.legend(fontsize=8, loc='upper left', framealpha=0.8)
+                            ax.legend(fontsize=14, loc='upper left', framealpha=0.8)
 
                         gen_clean_axes(ax, keep_left=(s_idx == 0), keep_bottom=True)
                         ax.yaxis.grid(True, color=_GRID, linewidth=0.5, alpha=0.5)

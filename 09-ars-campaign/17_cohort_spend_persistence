@@ -65,19 +65,19 @@ else:
                     y_off = abs(ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.02 * (1 if val >= 0 else -1)
                     ax.text(bar.get_x() + bar.get_width() / 2, val + y_off,
                             f"{sign}${val:,.0f}", ha='center', va=va,
-                            fontsize=9, fontweight='bold', color=window_colors[window])
+                            fontsize=14, fontweight='bold', color=window_colors[window])
 
         # Zero line
         ax.axhline(y=0, color=GEN_COLORS['dark_text'], linewidth=1.5, linestyle='-', alpha=0.4)
 
         ax.set_xticks(x)
-        ax.set_xticklabels(waves, fontsize=13, fontweight='bold')
+        ax.set_xticklabels(waves, fontsize=14, fontweight='bold')
         ax.set_ylabel("DID Spend Lift ($/acct/month)", fontsize=16, fontweight='bold', labelpad=10)
 
         gen_clean_axes(ax)
         ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
         ax.set_axisbelow(True)
-        ax.legend(loc='upper right', fontsize=12)
+        ax.legend(loc='upper right', fontsize=14)
 
         ax.set_title("Lift Persistence: Does the Spend Increase Last?",
                      fontsize=26, fontweight='bold',

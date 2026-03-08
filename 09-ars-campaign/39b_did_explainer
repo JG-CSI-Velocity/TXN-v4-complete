@@ -74,20 +74,20 @@ else:
 
     # Labels on the dots
     ax1.text(-0.05, r_pre, f'${r_pre:,.0f}', ha='right', va='center',
-             fontsize=12, fontweight='bold', color=_RESP_COLOR)
+             fontsize=14, fontweight='bold', color=_RESP_COLOR)
     ax1.text(-0.05, nr_pre, f'${nr_pre:,.0f}', ha='right', va='center',
-             fontsize=12, fontweight='bold', color=_NONRESP_COLOR)
+             fontsize=14, fontweight='bold', color=_NONRESP_COLOR)
     ax1.text(0.55, r_post + (r_post - nr_post) * 0.08, f'${r_post:,.0f}',
-             ha='center', va='bottom', fontsize=12, fontweight='bold', color=_RESP_COLOR)
+             ha='center', va='bottom', fontsize=14, fontweight='bold', color=_RESP_COLOR)
     ax1.text(0.55, nr_post - (r_post - nr_post) * 0.08, f'${nr_post:,.0f}',
-             ha='center', va='top', fontsize=12, fontweight='bold', color=_NONRESP_COLOR)
+             ha='center', va='top', fontsize=14, fontweight='bold', color=_NONRESP_COLOR)
 
     ax1.set_xticks([0, 1])
     ax1.set_xticklabels(['Before Mail', 'After Mail'], fontsize=14, fontweight='bold')
-    ax1.set_ylabel('Avg Monthly Spend', fontsize=12, fontweight='bold', labelpad=8)
+    ax1.set_ylabel('Avg Monthly Spend', fontsize=16, fontweight='bold', labelpad=8)
     ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"${v:,.0f}"))
     ax1.set_xlim(-0.2, 1.35)
-    ax1.legend(fontsize=11, framealpha=0.9, loc='upper left')
+    ax1.legend(fontsize=14, framealpha=0.9, loc='upper left')
     ax1.set_title('The DID Concept',
                    fontsize=16, fontweight='bold', color=_DARK, pad=10)
     gen_clean_axes(ax1, keep_left=True, keep_bottom=True)
@@ -156,13 +156,13 @@ else:
         _offset = 0 if i in [0, 3] else (3 if val >= 0 else -3)
         _fmt = f'${val:,.0f}' if i in [0, 3] else f'${val:+,.0f}/mo'
         ax3.text(bar.get_x() + bar.get_width() / 2, _y + _offset,
-                 _fmt, ha='center', va=_va, fontsize=13,
+                 _fmt, ha='center', va=_va, fontsize=14,
                  fontweight='bold', color='white' if i in [0, 3] else _waterfall_colors[i])
 
     ax3.set_xticks(_wx)
-    ax3.set_xticklabels(_waterfall_labels, fontsize=12, fontweight='bold')
+    ax3.set_xticklabels(_waterfall_labels, fontsize=14, fontweight='bold')
     ax3.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"${v:,.0f}"))
-    ax3.set_ylabel('Avg Monthly Spend', fontsize=12, fontweight='bold', labelpad=8)
+    ax3.set_ylabel('Avg Monthly Spend', fontsize=16, fontweight='bold', labelpad=8)
     ax3.set_title('Breaking Down the Change',
                    fontsize=16, fontweight='bold', color=_DARK, pad=10)
     gen_clean_axes(ax3, keep_left=True, keep_bottom=True)
@@ -220,6 +220,6 @@ else:
                  fontsize=24, fontweight='bold', color=_DARK, y=0.95)
     fig.text(0.5, 0.905,
              'Isolating the true program impact from natural spending trends',
-             ha='center', fontsize=13, color=_MUTED, style='italic')
+             ha='center', fontsize=14, color=_MUTED, style='italic')
 
     plt.show()

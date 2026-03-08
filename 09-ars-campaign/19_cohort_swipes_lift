@@ -39,14 +39,14 @@ else:
 
         ax.text(bar.get_x() + bar.get_width() / 2, y_pos,
                 f"{sign}{val:,.1f}",
-                ha='center', va=va, fontsize=12, fontweight='bold',
+                ha='center', va=va, fontsize=14, fontweight='bold',
                 color=colors[i])
 
     # Avg line
     avg_swipe_lift = cohort_did['did_swipes_lift'].mean()
     ax.axhline(y=avg_swipe_lift, color=GEN_COLORS['info'], linewidth=2,
                linestyle='--', alpha=0.8, label=f"Avg DID: {avg_swipe_lift:+,.1f} swipes")
-    ax.legend(loc='upper right', fontsize=13)
+    ax.legend(loc='upper right', fontsize=14)
 
     ax.set_title("Card Activation Proof: DID Swipes Lift by Wave",
                  fontsize=26, fontweight='bold',

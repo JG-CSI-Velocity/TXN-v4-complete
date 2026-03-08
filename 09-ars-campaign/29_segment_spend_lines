@@ -103,19 +103,19 @@ else:
                     # Mail date vertical line
                     ax.axvline(x=0, color=_DARK, linewidth=1.2, linestyle='--', alpha=0.5, zorder=2)
                     ax.text(0.3, 0.98, 'Mail', transform=ax.get_xaxis_transform(),
-                            fontsize=8, color=_MUTED, va='top')
+                            fontsize=14, color=_MUTED, va='top')
 
-                    ax.set_title(seg, fontsize=14, fontweight='bold',
+                    ax.set_title(seg, fontsize=20, fontweight='bold',
                                  color=_SEG_COLORS.get(seg, _DARK), pad=8)
-                    ax.set_xlabel('Months from Mail', fontsize=10, fontweight='bold', labelpad=4)
+                    ax.set_xlabel('Months from Mail', fontsize=16, fontweight='bold', labelpad=4)
 
                     if s_idx == 0:
-                        ax.set_ylabel('Avg Monthly Spend ($)', fontsize=11,
+                        ax.set_ylabel('Avg Monthly Spend ($)', fontsize=16,
                                       fontweight='bold', color=_DARK, labelpad=6)
                         ax.yaxis.set_major_formatter(plt.FuncFormatter(
                             lambda v, _: f"${v:,.0f}"
                         ))
-                    ax.legend(fontsize=8, loc='upper left', framealpha=0.8)
+                    ax.legend(fontsize=14, loc='upper left', framealpha=0.8)
 
                     gen_clean_axes(ax, keep_left=(s_idx == 0), keep_bottom=True)
                     ax.yaxis.grid(True, color=_GRID, linewidth=0.5, alpha=0.5)

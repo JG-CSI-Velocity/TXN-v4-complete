@@ -70,7 +70,7 @@ else:
         bottom = bottom + vals
 
     ax.set_xticks(range(len(stack_df)))
-    ax.set_xticklabels(stack_df.index, fontsize=11, fontweight='bold', rotation=45, ha='right')
+    ax.set_xticklabels(stack_df.index, fontsize=14, fontweight='bold', rotation=45, ha='right')
     ax.set_ylabel("Cumulative Protected Spend ($)", fontsize=16, fontweight='bold', labelpad=10)
 
     gen_clean_axes(ax)
@@ -78,7 +78,7 @@ else:
     ax.set_axisbelow(True)
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
 
-    ax.legend(handles=legend_handles, loc='upper left', fontsize=12)
+    ax.legend(handles=legend_handles, loc='upper left', fontsize=14)
 
     # Annotate total at the peak
     peak_val = bottom.max()
@@ -87,7 +87,7 @@ else:
         ax.annotate(f"${peak_val:,.0f}\ntotal protected",
                     xy=(peak_idx, peak_val),
                     xytext=(peak_idx + 1, peak_val * 1.05),
-                    fontsize=12, fontweight='bold', color=GEN_COLORS['dark_text'],
+                    fontsize=14, fontweight='bold', color=GEN_COLORS['dark_text'],
                     ha='center',
                     arrowprops=dict(arrowstyle='->', color=GEN_COLORS['dark_text'], lw=1.5))
 
