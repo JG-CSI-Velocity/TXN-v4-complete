@@ -74,7 +74,7 @@ else:
         ax.text(0.98, 0.98,
                 f"Top-right = highest risk\n(high spend, steep decline)",
                 transform=ax.transAxes, ha='right', va='top',
-                fontsize=10, color=GEN_COLORS['accent'],
+                fontsize=14, color=GEN_COLORS['accent'],
                 fontweight='bold', style='italic')
 
         ax.set_title("Early Warning: At-Risk Account Map",
@@ -82,7 +82,7 @@ else:
                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
         ax.text(0.0, 1.02,
                 f"Bubble size = prior spend level  |  Color = warning signal count  ({DATASET_LABEL})",
-                transform=ax.transAxes, fontsize=13,
+                transform=ax.transAxes, fontsize=16,
                 color=GEN_COLORS['muted'], style='italic')
 
         plt.tight_layout()

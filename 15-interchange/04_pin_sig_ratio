@@ -28,7 +28,7 @@ ax.plot(x, sig_pct, color=GEN_COLORS['primary'], linewidth=3,
 # Value labels on each point
 for i, val in enumerate(sig_pct):
     ax.text(i, val + 2.0, f"{val:.1f}%",
-            ha='center', va='bottom', fontsize=11, fontweight='bold',
+            ha='center', va='bottom', fontsize=15, fontweight='bold',
             color=GEN_COLORS['primary'])
 
 # Trend line (linear regression)
@@ -40,13 +40,13 @@ if len(x) >= 3:
 
 # Formatting
 ax.set_xticks(x)
-ax.set_xticklabels(labels, rotation=45, ha='right', fontsize=12)
+ax.set_xticklabels(labels, rotation=45, ha='right', fontsize=14)
 ax.set_ylim(0, 100)
 ax.set_ylabel('SIG Ratio (%)', fontsize=16, fontweight='bold')
 ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_pct))
 gen_clean_axes(ax)
 
-ax.legend(loc='lower right', fontsize=12)
+ax.legend(loc='lower right', fontsize=14)
 
 # Title
 fig.suptitle("Signature Routing Ratio -- Monthly Trend",

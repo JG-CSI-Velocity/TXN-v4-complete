@@ -31,7 +31,7 @@ else:
         for bar, (_, row) in zip(bars, _grouped.iterrows()):
             ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.5,
                     f"{row['at_risk_rate']:.1f}%\n({int(row['at_risk']):,} of {int(row['total']):,})",
-                    ha='center', va='bottom', fontsize=10, fontweight='bold',
+                    ha='center', va='bottom', fontsize=14, fontweight='bold',
                     color=palette.get(row[group_col], GEN_COLORS['muted']))
 
         ax.set_xticks(x)
@@ -46,7 +46,7 @@ else:
         ax.set_title(title, fontsize=26, fontweight='bold',
                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
         ax.text(0.0, 1.02, subtitle,
-                transform=ax.transAxes, fontsize=13,
+                transform=ax.transAxes, fontsize=16,
                 color=GEN_COLORS['muted'], style='italic')
 
         plt.tight_layout()
