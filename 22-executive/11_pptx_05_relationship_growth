@@ -1,0 +1,121 @@
+# ===========================================================================
+# PPTX EXPORT: Relationship Depth & Growth (Storyline 5 of 7, CORE)
+# ===========================================================================
+# Exports a single storyline deck: "Relationship Depth & Growth"
+# Audience: VP Lending, VP Deposits, CEO, Product Team
+# Requires: 10_pptx_figure_registry has already run
+#
+# Data sources: rel_df, payroll_df, balance_df
+
+import os
+
+from dashboard.storyline_config import STORYLINES
+from dashboard.pptx_engine import export_storyline
+
+_STORYLINE_KEY = "relationship_growth"
+_config = STORYLINES[_STORYLINE_KEY]
+
+_cu_name = CU_NAME if 'CU_NAME' in dir() else "Credit Union"
+_dataset_label = DATASET_LABEL if 'DATASET_LABEL' in dir() else "Analysis Period"
+_csm_name = CSM_NAME if 'CSM_NAME' in dir() else ""
+
+EXPORT_DIR = os.path.join(PPTX_BASE_PATH, 'pptx_output')
+os.makedirs(EXPORT_DIR, exist_ok=True)
+
+print(f"PPTX Export: {_config['title']}")
+print("=" * 60)
+print(f"  Type:     {_config['type']}")
+print(f"  Audience: {_config['audience']}")
+print(f"  CU:       {_cu_name}")
+print(f"  Dataset:  {_dataset_label}")
+
+# ---------------------------------------------------------------------------
+# Build KPI values relevant to Relationship Growth
+# ---------------------------------------------------------------------------
+_kpi_values = {}
+
+if 'rel_df' in dir() and len(rel_df) > 0 and 'product_count' in rel_df.columns:
+    _kpi_values['Avg Products'] = f"{rel_df['product_count'].mean():.2f}"
+
+    _sp = (rel_df['product_count'] == 1).sum()
+    _sp_pct = _sp / len(rel_df) * 100
+    _kpi_values['Single-Product'] = f"{_sp_pct:.1f}%"
+
+    _deep = (rel_df['product_count'] >= 3).sum()
+    _kpi_values['3+ Products'] = f"{_deep:,}"
+
+if 'payroll_df' in dir() and len(payroll_df) > 0 and 'has_payroll' in payroll_df.columns:
+    _kpi_values['Payroll DD'] = f"{payroll_df['has_payroll'].sum() / len(payroll_df) * 100:.1f}%"
+
+if 'balance_df' in dir() and len(balance_df) > 0 and 'avg_balance' in balance_df.columns:
+    _avg_bal = balance_df['avg_balance'].mean()
+    _kpi_values['Avg Balance'] = gen_fmt_dollar(_avg_bal, None)
+
+print(f"  KPIs:     {len(_kpi_values)} populated")
+
+# ---------------------------------------------------------------------------
+# Build findings for relationship narrative
+# ---------------------------------------------------------------------------
+_findings = []
+
+if 'rel_df' in dir() and len(rel_df) > 0 and 'product_count' in rel_df.columns:
+    _avg_prod = rel_df['product_count'].mean()
+    _findings.append(
+        f"Average {_avg_prod:.2f} products per member"
+    )
+
+    _sp = (rel_df['product_count'] == 1).sum()
+    _findings.append(
+        f"{_sp:,} single-product members represent cross-sell opportunity"
+    )
+
+    if 'total_balance' in rel_df.columns:
+        _bal_1 = rel_df[rel_df['product_count'] == 1]['total_balance'].mean()
+        _bal_3 = rel_df[rel_df['product_count'] >= 3]['total_balance'].mean()
+        if _bal_1 > 0:
+            _multiplier = _bal_3 / _bal_1
+            _findings.append(
+                f"Members with 3+ products hold {_multiplier:.1f}x higher balances"
+            )
+
+if 'payroll_df' in dir() and len(payroll_df) > 0 and 'has_payroll' in payroll_df.columns:
+    _payroll_pct = payroll_df['has_payroll'].sum() / len(payroll_df) * 100
+    _no_payroll = (~payroll_df['has_payroll']).sum()
+    _findings.append(
+        f"{_payroll_pct:.1f}% have payroll DD -- "
+        f"{_no_payroll:,} without payroll represent PFI growth opportunity"
+    )
+
+if 'balance_df' in dir() and len(balance_df) > 0:
+    if 'flight_risk' in balance_df.columns:
+        _at_risk_bal = balance_df[balance_df['flight_risk'] == True]['avg_balance'].sum()
+        _findings.append(
+            f"Deposit flight risk: {gen_fmt_dollar(_at_risk_bal, None)} "
+            f"in balances from declining-engagement members"
+        )
+
+# ---------------------------------------------------------------------------
+# Export
+# ---------------------------------------------------------------------------
+try:
+    _path = export_storyline(
+        storyline_key=_STORYLINE_KEY,
+        fig_registry=pptx_fig_registry,
+        kpi_values=_kpi_values,
+        findings=_findings,
+        cu_name=_cu_name,
+        dataset_label=_dataset_label,
+        csm_name=_csm_name,
+        output_dir=EXPORT_DIR,
+        notebook_globals=globals(),
+        base_path=PPTX_BASE_PATH,
+    )
+    _size = os.path.getsize(_path) / 1024
+    print(f"\n{'='*60}")
+    print(f"  EXPORT COMPLETE: {_config['title']}")
+    print(f"  File: {os.path.basename(_path)} ({_size:.0f} KB)")
+    print(f"  Path: {_path}")
+    print(f"{'='*60}")
+except Exception as e:
+    print(f"\n  FAILED: {_STORYLINE_KEY} -- {e}")
+    print(f"{'='*60}")

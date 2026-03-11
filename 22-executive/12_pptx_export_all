@@ -1,30 +1,23 @@
 # ===========================================================================
-# PPTX EXPORT: Generate storyline PowerPoint decks
+# PPTX EXPORT ALL: Generate all storyline decks in batch
 # ===========================================================================
-# Run AFTER all analysis cells and 10_pptx_figure_registry.
+# Convenience cell that exports all 7 storyline decks (or core-only).
+# Equivalent to the original 11_pptx_export monolithic behavior.
 #
-# HOW IT WORKS:
-#   For each chart slide in a storyline, the engine re-executes the
-#   referenced cell file using exec() in the notebook's namespace.
-#   plt.show() is monkey-patched to savefig() instead of displaying,
-#   so each chart is captured to a PNG and inserted into the PPTX.
+# Run AFTER 10_pptx_figure_registry. All DataFrames must be in scope.
 #
-#   All DataFrames (attrition_df, interchange_df, rel_df, etc.),
-#   palettes (GEN_COLORS), and helpers (gen_fmt_dollar, gen_clean_axes)
-#   are available because they live in the notebook's globals().
-#
-# CONFIGURATION:
-#   CU_NAME              -- credit union name (set in 00-setup)
-#   DATASET_LABEL        -- date range (set in 00-setup)
-#   CSM_NAME             -- presenter name (optional)
-#   EXPORT_DIR           -- output directory (default: ./pptx_output)
-#   STORYLINES_TO_EXPORT -- "all", "core", or list of storyline keys
+# Set STORYLINES_TO_EXPORT to control scope:
+#   "all"  = all 7 decks
+#   "core" = 5 CORE storylines only
+#   list   = specific storyline keys, e.g. ["executive_health_check"]
 
 import os
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
+from dashboard.storyline_config import (
+    PRESENTATION_ORDER, STORYLINES, CORE_STORYLINES,
+)
+from dashboard.pptx_engine import export_storyline
+
 _cu_name = CU_NAME if 'CU_NAME' in dir() else "Credit Union"
 _dataset_label = DATASET_LABEL if 'DATASET_LABEL' in dir() else "Analysis Period"
 _csm_name = CSM_NAME if 'CSM_NAME' in dir() else ""
@@ -32,10 +25,10 @@ _csm_name = CSM_NAME if 'CSM_NAME' in dir() else ""
 EXPORT_DIR = os.path.join(PPTX_BASE_PATH, 'pptx_output')
 os.makedirs(EXPORT_DIR, exist_ok=True)
 
-# "all" = all 7 decks, "core" = 5 CORE only, or list like ["executive_health_check"]
+# "all" = all 7 decks, "core" = 5 CORE only, or list of storyline keys
 STORYLINES_TO_EXPORT = "core"
 
-print("PPTX Storyline Export")
+print("PPTX Batch Storyline Export")
 print("=" * 60)
 print(f"  CU:       {_cu_name}")
 print(f"  Dataset:  {_dataset_label}")
@@ -44,7 +37,7 @@ print(f"  Output:   {EXPORT_DIR}")
 print(f"  Scope:    {STORYLINES_TO_EXPORT}")
 
 # ---------------------------------------------------------------------------
-# Build KPI values from upstream data
+# Build shared KPI values from upstream data
 # ---------------------------------------------------------------------------
 _kpi_values = {}
 
@@ -57,7 +50,9 @@ if 'attrition_df' in dir() and len(attrition_df) > 0:
     _ar = attrition_df[attrition_df['risk_tier'].isin(['Declining', 'Dormant'])]
     _kpi_values['At Risk'] = f"{len(_ar) / len(attrition_df) * 100:.1f}%"
     if 'last_12mo_spend' in attrition_df.columns:
-        _kpi_values['Spend at Risk'] = gen_fmt_dollar(_ar['last_12mo_spend'].sum(), None)
+        _kpi_values['Spend at Risk'] = gen_fmt_dollar(
+            _ar['last_12mo_spend'].sum(), None
+        )
 
 if 'interchange_df' in dir() and len(interchange_df) > 0:
     _td = interchange_df['total_sig_dollars'].sum() if 'total_sig_dollars' in interchange_df.columns else 0
@@ -78,7 +73,7 @@ if 'rege_df' in dir() and len(rege_df) > 0:
 print(f"  KPIs:     {len(_kpi_values)} populated")
 
 # ---------------------------------------------------------------------------
-# Build findings
+# Build shared findings
 # ---------------------------------------------------------------------------
 _findings = []
 
@@ -86,24 +81,31 @@ if 'scorecard_df' in dir() and len(scorecard_df) > 0:
     _nr = int((scorecard_df['rag'] == 'Red').sum())
     _na = int((scorecard_df['rag'] == 'Amber').sum())
     _ng = int((scorecard_df['rag'] == 'Green').sum())
-    _findings.append(f"{_nr} RED, {_na} AMBER, {_ng} GREEN across {len(scorecard_df)} KPIs")
+    _findings.append(
+        f"{_nr} RED, {_na} AMBER, {_ng} GREEN across {len(scorecard_df)} KPIs"
+    )
 
 if 'attrition_df' in dir() and len(attrition_df) > 0:
     _ar_ct = len(attrition_df[attrition_df['risk_tier'].isin(['Declining', 'Dormant'])])
-    _findings.append(f"{_ar_ct / len(attrition_df) * 100:.1f}% of accounts at risk ({_ar_ct:,} accounts)")
+    _findings.append(
+        f"{_ar_ct / len(attrition_df) * 100:.1f}% of accounts at risk "
+        f"({_ar_ct:,} accounts)"
+    )
 
 if 'rel_df' in dir() and len(rel_df) > 0 and 'product_count' in rel_df.columns:
     _sp = (rel_df['product_count'] == 1).sum()
-    _findings.append(f"{_sp:,} single-product members represent cross-sell opportunity")
+    _findings.append(
+        f"{_sp:,} single-product members represent cross-sell opportunity"
+    )
 
 if '_grand_total' in dir() and _grand_total > 0:
-    _findings.append(f"Combined revenue opportunity: {gen_fmt_dollar(_grand_total, None)}")
+    _findings.append(
+        f"Combined revenue opportunity: {gen_fmt_dollar(_grand_total, None)}"
+    )
 
 # ---------------------------------------------------------------------------
-# Resolve storylines
+# Resolve storylines to export
 # ---------------------------------------------------------------------------
-from dashboard.storyline_config import PRESENTATION_ORDER, STORYLINES, CORE_STORYLINES
-
 if STORYLINES_TO_EXPORT == "all":
     _export_keys = list(PRESENTATION_ORDER)
 elif STORYLINES_TO_EXPORT == "core":
@@ -117,10 +119,8 @@ print(f"\n  Exporting {len(_export_keys)} deck(s)...")
 print(f"{'='*60}")
 
 # ---------------------------------------------------------------------------
-# Export
+# Export loop
 # ---------------------------------------------------------------------------
-from dashboard.pptx_engine import export_storyline
-
 _exported = []
 
 for key in _export_keys:
