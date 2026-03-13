@@ -16,12 +16,25 @@ CLIENT_ID = 1780
 CU_NAME = CU_NAME if 'CU_NAME' in dir() else "USF FCU"
 
 # Data path -- override as needed per client
+# Structure: analysis-platform/data/{CLIENT_ID} - {CLIENT_NAME}/files
 try:
-    _data_path = DATA_PATH
+    _data_root = DATA_PATH
 except NameError:
-    _data_path = Path(r"C:\Users\james.gilmore\analysis-platform\data")
+    _data_root = Path(r"C:\Users\james.gilmore\analysis-platform\data")
 
-_data_path = Path(_data_path)
+_data_root = Path(_data_root)
+
+# Find the client folder: looks for "{CLIENT_ID} - *" or "{CLIENT_ID}_*" subdirectory
+_client_folders = list(_data_root.glob(f"{CLIENT_ID} - *")) + \
+                  list(_data_root.glob(f"{CLIENT_ID}_*"))
+_client_folders = [f for f in _client_folders if f.is_dir()]
+
+if _client_folders:
+    _data_path = _client_folders[0]
+    print(f"    Client folder: {_data_path.name}")
+else:
+    _data_path = _data_root
+    print(f"    WARNING: No client folder found for {CLIENT_ID}, using data root")
 
 # DATASET_LABEL fallback (normally set by 00-setup/09, but we may skip txn files)
 if 'DATASET_LABEL' not in dir():
@@ -42,16 +55,13 @@ print(f"    Data path: {_data_path}")
 # ---------------------------------------------------------------------------
 # 2. Load ZAccounts (find most recent snapshot, support multiple)
 # ---------------------------------------------------------------------------
+# Search client folder first, then subdirectories (client-ID-scoped only)
 _za_pattern = str(_data_path / f"{CLIENT_ID}_zaccounts_*.xlsx")
 _za_files = sorted(glob.glob(_za_pattern))
 
 if not _za_files:
     _za_pattern_alt = str(_data_path / "**" / f"{CLIENT_ID}_zaccounts_*.xlsx")
     _za_files = sorted(glob.glob(_za_pattern_alt, recursive=True))
-
-if not _za_files:
-    _za_pattern_alt2 = str(_data_path / "**" / f"*zaccounts*.xlsx")
-    _za_files = sorted(glob.glob(_za_pattern_alt2, recursive=True))
 
 _za_snapshots = {}
 if _za_files:
@@ -80,16 +90,13 @@ else:
 # ---------------------------------------------------------------------------
 # 3. Load ZTrends
 # ---------------------------------------------------------------------------
-_zt_pattern = str(_data_path / f"{CLIENT_ID}_ztrends_*.xlsx")
+# Search client folder first, then subdirectories (client-ID-scoped only)
+_zt_pattern = str(_data_path / f"{CLIENT_ID}_ztrend*_*.xlsx")
 _zt_files = sorted(glob.glob(_zt_pattern))
 
 if not _zt_files:
-    _zt_pattern_alt = str(_data_path / "**" / f"{CLIENT_ID}_ztrends_*.xlsx")
+    _zt_pattern_alt = str(_data_path / "**" / f"{CLIENT_ID}_ztrend*_*.xlsx")
     _zt_files = sorted(glob.glob(_zt_pattern_alt, recursive=True))
-
-if not _zt_files:
-    _zt_pattern_alt2 = str(_data_path / "**" / f"*ztrends*.xlsx")
-    _zt_files = sorted(glob.glob(_zt_pattern_alt2, recursive=True))
 
 if _zt_files:
     _zt_file = _zt_files[-1]
