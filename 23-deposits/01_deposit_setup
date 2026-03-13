@@ -13,6 +13,7 @@ from pathlib import Path
 # 1. Configuration
 # ---------------------------------------------------------------------------
 CLIENT_ID = 1780
+CU_NAME = CU_NAME if 'CU_NAME' in dir() else "USF FCU"
 
 # Data path -- override as needed per client
 try:
@@ -22,7 +23,20 @@ except NameError:
 
 _data_path = Path(_data_path)
 
+# DATASET_LABEL fallback (normally set by 00-setup/09, but we may skip txn files)
+if 'DATASET_LABEL' not in dir():
+    # Derive from ODDD monthly columns if available
+    _spend_months = [c for c in rewards_df.columns if re.match(r'^[A-Z][a-z]{2}\d{2}\s+Spend$', c)]
+    if _spend_months:
+        _first = _spend_months[0].split()[0]
+        _last = _spend_months[-1].split()[0]
+        DATASET_LABEL = f"{_first[:3]} '{_first[3:]} - {_last[:3]} '{_last[3:]}"
+    else:
+        DATASET_LABEL = "Analysis Period"
+    print(f"    DATASET_LABEL (derived): {DATASET_LABEL}")
+
 print(f"    Client ID: {CLIENT_ID}")
+print(f"    CU Name:   {CU_NAME}")
 print(f"    Data path: {_data_path}")
 
 # ---------------------------------------------------------------------------
