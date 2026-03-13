@@ -149,7 +149,7 @@ else:
     # -------------------------------------------------------------------
     # Segmentation Chart (right 2/3)
     # -------------------------------------------------------------------
-    ax_chart = fig.add_subplot(_gs_right[0, 0])
+    ax_chart = fig.add_axes([0.48, 0.10, 0.48, 0.74])
 
     _seg_data = [
         {'label': 'Recent Depositors\n(33 days)', 'count': _dep_33,
@@ -193,5 +193,6 @@ else:
     ax_chart.tick_params(axis='y', labelsize=15)
     ax_chart.tick_params(axis='x', labelsize=12)
     gen_clean_axes(ax_chart)
+    ax_chart.set_position([0.48, 0.10, 0.48, 0.74])
 
     plt.show()
