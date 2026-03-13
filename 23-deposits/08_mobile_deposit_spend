@@ -2,7 +2,7 @@
 # PERSONAL DEPOSITS: Mobile Depositors vs Card Spend (Cross-Source)
 # ===========================================================================
 # Do members who use mobile deposit spend more on their debit cards?
-# Cross-source: ZAccounts (Mobile_Deposits_90) + ODDD (Total Spend, Total Swipes)
+# Cross-source: ZAccounts (Mobile_Deposits_90) + ODDD (last 12-mon spend/swipes)
 # Data: deposits_personal_df
 
 import matplotlib.pyplot as plt

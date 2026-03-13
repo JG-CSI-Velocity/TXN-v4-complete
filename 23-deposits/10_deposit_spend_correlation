@@ -3,7 +3,7 @@
 # ===========================================================================
 # Scatter plot: annual deposit amount (ZAccounts) vs annual spend (ODDD).
 # Are heavy depositors also heavy spenders?
-# Cross-source: ZAccounts (depAmt365) + ODDD (Total Spend)
+# Cross-source: ZAccounts (depAmt365) + ODDD (last 12-mon spend)
 # Data: deposits_personal_df
 
 import matplotlib.pyplot as plt

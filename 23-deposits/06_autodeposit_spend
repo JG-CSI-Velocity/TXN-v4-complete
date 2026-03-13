@@ -2,7 +2,7 @@
 # PERSONAL DEPOSITS: Auto-Deposit x Card Spend (Cross-Source)
 # ===========================================================================
 # Do auto-deposit users spend more on their debit cards?
-# Cross-source: ZAccounts (autodeposit) + ODDD (Total Spend, Total Swipes)
+# Cross-source: ZAccounts (autodeposit) + ODDD (last 12-mon spend/swipes)
 # Data: deposits_personal_df
 
 import matplotlib.pyplot as plt
@@ -24,13 +24,14 @@ else:
         lambda v: 'Auto-Deposit' if v in ('yes', 'y', 'true', '1', '1.0') else 'No Auto-Deposit'
     )
 
-    # Filter to accounts with valid spend data (joined from ODDD)
-    # Without this, "No Auto-Deposit" is dominated by accounts with no
-    # ODDD match, making all their spend/swipe medians zero.
-    _spend_filter = _df[_avail_spend[0]].notna()
-    for _sf in _avail_spend[1:]:
-        _spend_filter = _spend_filter | _df[_sf].notna()
+    # Filter to accounts with actual card spend activity (> 0)
+    # Accounts with zero or NaN spend dilute the comparison — we want
+    # to answer "among people who use their card, do auto-depositors
+    # spend more?" not "do auto-depositors have cards?"
     _pre_filter = len(_df)
+    _spend_filter = (_df[_avail_spend[0]].fillna(0) > 0)
+    for _sf in _avail_spend[1:]:
+        _spend_filter = _spend_filter | (_df[_sf].fillna(0) > 0)
     _df = _df[_spend_filter].copy()
 
     _groups = _df.groupby('_has_ad')
@@ -50,9 +51,15 @@ else:
     print(f"      Source: deposits_personal_df (cross-source: ZAccounts + ODDD)")
     print(f"      Auto-deposit field: {_ad_field}")
     print(f"      Spend fields: {_avail_spend}")
-    print(f"      Filtered to accounts with spend data: {len(_df):,} of {_pre_filter:,}")
+    print(f"      Total accounts: {_pre_filter:,}")
+    print(f"      Accounts with card activity (spend or swipes > 0): {len(_df):,}")
+    print(f"      Excluded (no card activity): {_pre_filter - len(_df):,}")
     for g in _group_names:
-        print(f"      {g}: {(_df['_has_ad'] == g).sum():,}")
+        _g_df = _df[_df['_has_ad'] == g]
+        print(f"      {g}: {len(_g_df):,}")
+        for _sf in _avail_spend:
+            _med = _g_df[_sf].dropna().median()
+            print(f"        {_sf}: median = {_med:,.0f}, non-zero = {(_g_df[_sf].fillna(0) > 0).sum():,}")
 
     if len(_group_names) == 2:
         _n = len(_avail_spend)
