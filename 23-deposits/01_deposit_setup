@@ -56,11 +56,11 @@ print(f"    Data path: {_data_path}")
 # 2. Load ZAccounts (find most recent snapshot, support multiple)
 # ---------------------------------------------------------------------------
 # Search client folder first, then subdirectories (client-ID-scoped only)
-_za_pattern = str(_data_path / f"{CLIENT_ID}_zaccounts_*.xlsx")
+_za_pattern = str(_data_path / f"{CLIENT_ID}_zaccounts_*.csv")
 _za_files = sorted(glob.glob(_za_pattern))
 
 if not _za_files:
-    _za_pattern_alt = str(_data_path / "**" / f"{CLIENT_ID}_zaccounts_*.xlsx")
+    _za_pattern_alt = str(_data_path / "**" / f"{CLIENT_ID}_zaccounts_*.csv")
     _za_files = sorted(glob.glob(_za_pattern_alt, recursive=True))
 
 _za_snapshots = {}
@@ -70,7 +70,7 @@ if _za_files:
         _date_match = re.search(r'(\d{8})', _fname)
         _snap_key = _date_match.group(1) if _date_match else _fname
         print(f"    Loading ZAccounts: {Path(f).name}")
-        _za_snapshots[_snap_key] = pd.read_excel(f)
+        _za_snapshots[_snap_key] = pd.read_csv(f)
 
     _latest_key = sorted(_za_snapshots.keys())[-1]
     zaccounts_df = _za_snapshots[_latest_key].copy()
@@ -91,17 +91,17 @@ else:
 # 3. Load ZTrends
 # ---------------------------------------------------------------------------
 # Search client folder first, then subdirectories (client-ID-scoped only)
-_zt_pattern = str(_data_path / f"{CLIENT_ID}_ztrend*_*.xlsx")
+_zt_pattern = str(_data_path / f"{CLIENT_ID}_ztrend*_*.csv")
 _zt_files = sorted(glob.glob(_zt_pattern))
 
 if not _zt_files:
-    _zt_pattern_alt = str(_data_path / "**" / f"{CLIENT_ID}_ztrend*_*.xlsx")
+    _zt_pattern_alt = str(_data_path / "**" / f"{CLIENT_ID}_ztrend*_*.csv")
     _zt_files = sorted(glob.glob(_zt_pattern_alt, recursive=True))
 
 if _zt_files:
     _zt_file = _zt_files[-1]
     print(f"    Loading ZTrends: {Path(_zt_file).name}")
-    ztrends_df = pd.read_excel(_zt_file)
+    ztrends_df = pd.read_csv(_zt_file)
     print(f"    ZTrends loaded: {len(ztrends_df):,} rows, "
           f"{len(ztrends_df.columns)} columns")
 else:
