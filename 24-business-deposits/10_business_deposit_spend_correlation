@@ -9,7 +9,7 @@ import numpy as np
 
 _df = deposits_business_df.copy()
 _dep_field = 'depAmt365'
-_spend_field = 'Total Spend'
+_spend_field = 'last 12-mon spend'
 
 if len(_df) < _MIN_ACCOUNTS:
     print(f"    10 Skipped: {len(_df)} business accounts (below {_MIN_ACCOUNTS} threshold)")
@@ -36,7 +36,7 @@ else:
     ax.set_title('Business Accounts \u2014 Deposit Amount vs Card Spend',
                  fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], pad=15)
     ax.set_xlabel('Annual Deposit Amount (365d)', fontsize=16, fontweight='bold')
-    ax.set_ylabel('Total Card Spend', fontsize=16, fontweight='bold')
+    ax.set_ylabel('Card Spend (12mo)', fontsize=16, fontweight='bold')
     ax.xaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
     ax.tick_params(axis='both', labelsize=13)

@@ -73,12 +73,12 @@ if 'avgrepaymentrate' in _df.columns:
     print(f"    Low repayment (<0.50): {_low_repay:,} of {len(_repay):,} w/ OD activity")
 
 # Cross-Source
-if 'Total Spend' in _df.columns and 'depAmt365' in _df.columns:
-    _both = _df[(_df['Total Spend'] > 0) & (_df['depAmt365'] > 0)]
-    _corr = _both['depAmt365'].corr(_both['Total Spend'])
+if 'last 12-mon spend' in _df.columns and 'depAmt365' in _df.columns:
+    _both = _df[(_df['last 12-mon spend'] > 0) & (_df['depAmt365'] > 0)]
+    _corr = _both['depAmt365'].corr(_both['last 12-mon spend'])
     print(f"\n  CROSS-SOURCE (DEPOSITS x CARD SPEND)")
     print(f"    Deposit-Spend correlation: {_corr:.3f}")
     print(f"    Median annual deposit: ${_both['depAmt365'].median():,.0f}")
-    print(f"    Median total spend: ${_both['Total Spend'].median():,.0f}")
+    print(f"    Median 12mo spend: ${_both['last 12-mon spend'].median():,.0f}")
 
 print(f"\n{'=' * 80}")

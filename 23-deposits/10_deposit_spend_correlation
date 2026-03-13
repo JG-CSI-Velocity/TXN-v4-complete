@@ -12,7 +12,7 @@ import numpy as np
 
 _df = deposits_personal_df.copy()
 _dep_field = 'depAmt365'
-_spend_field = 'Total Spend'
+_spend_field = 'last 12-mon spend'
 
 if _dep_field not in _df.columns or _spend_field not in _df.columns:
     print(f"    WARNING: Missing '{_dep_field}' or '{_spend_field}' -- skipping")
@@ -76,7 +76,7 @@ else:
     ax.set_title('Personal Accounts \u2014 Deposit Amount vs Card Spend',
                  fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], pad=15)
     ax.set_xlabel('Annual Deposit Amount (365d)', fontsize=16, fontweight='bold')
-    ax.set_ylabel('Total Card Spend', fontsize=16, fontweight='bold')
+    ax.set_ylabel('Card Spend (12mo)', fontsize=16, fontweight='bold')
     ax.xaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
     ax.tick_params(axis='both', labelsize=13)

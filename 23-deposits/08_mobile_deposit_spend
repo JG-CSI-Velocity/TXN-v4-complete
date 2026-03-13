@@ -22,8 +22,8 @@ else:
     _group_names = [g for g in _group_names if g in _groups.groups]
 
     _compare = [
-        ('Total Spend', 'Total Spend', gen_fmt_dollar),
-        ('Total Swipes', 'Total Swipes', gen_fmt_count),
+        ('last 12-mon spend', 'Spend (12mo)', gen_fmt_dollar),
+        ('last 12-mon swipes', 'Swipes (12mo)', gen_fmt_count),
         ('depAmt365', 'Deposit Amount (365d)', gen_fmt_dollar),
     ]
     _avail = [(f, l, fmt) for f, l, fmt in _compare if f in _df.columns]
