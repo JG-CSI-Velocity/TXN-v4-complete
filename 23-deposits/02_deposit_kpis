@@ -31,10 +31,22 @@ _avg_dep_amt = (
     if 'depAmt365' in _df.columns else np.nan
 )
 
-_median_bal = (
-    _df['balance'].median()
-    if 'balance' in _df.columns else np.nan
-)
+if 'balance' in _df.columns and 'depCount365' in _df.columns:
+    _active_mask = _df['depCount365'] > 0
+    _median_bal_active = _df.loc[_active_mask, 'balance'].median()
+    _median_bal_inactive = _df.loc[~_active_mask, 'balance'].median()
+    _n_active_bal = _active_mask.sum()
+    _n_inactive_bal = (~_active_mask).sum()
+elif 'balance' in _df.columns:
+    _median_bal_active = _df['balance'].median()
+    _median_bal_inactive = np.nan
+    _n_active_bal = len(_df)
+    _n_inactive_bal = 0
+else:
+    _median_bal_active = np.nan
+    _median_bal_inactive = np.nan
+    _n_active_bal = 0
+    _n_inactive_bal = 0
 
 _auto_rate = (
     (_df['autodeposit'].astype(str).str.strip().str.lower().isin(
@@ -92,9 +104,10 @@ _kpis = [
         'color': GEN_COLORS['accent'],
     },
     {
-        'label': 'Median Balance',
-        'value': f"${_median_bal:,.0f}" if not np.isnan(_median_bal) else 'N/A',
-        'sub': 'Current balance',
+        'label': 'Median Balance (Active)',
+        'value': f"${_median_bal_active:,.0f}" if not np.isnan(_median_bal_active) else 'N/A',
+        'sub': (f"{_n_active_bal:,} depositors | Inactive: "
+                f"${_median_bal_inactive:,.0f}" if not np.isnan(_median_bal_inactive) else f"{_n_active_bal:,} depositors"),
         'color': GEN_COLORS['primary'],
     },
     {
