@@ -5,9 +5,13 @@
 #   TH-* or NU 5+ = true responder (success)
 #   NU 1-4 = partial activation (non-responder, tracked in 14b)
 #   null = no response
-# Mail column non-null = account was mailed that period.
+# Mail columns: non-null = mailed, values = challenge segment (NU, TH-10, etc.)
+# Resp columns: outcome values — NU split into NU 1-4 and NU 5+
 #
-# Cross-source: ODDD (Resp cols, Response Grouping, monthly spend)
+# Uses monthly Spend and MTD (deposit) columns to compute pre/post mailer
+# behavior changes instead of relying on rolling aggregates.
+#
+# Cross-source: ODDD (Mail/Resp cols, monthly Spend/MTD/Swipes)
 #             + ZAccounts (deposit fields)
 # Data: deposits_personal_df
 
@@ -18,18 +22,27 @@ import re
 
 _df = deposits_personal_df.copy()
 
-# ---- Discover Mail / Resp columns ----
+# ---- Discover all column families ----
 _mail_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Mail$')
 _resp_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Resp$')
+_spend_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Spend$')
+_mtd_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+MTD$')
+_swipes_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Swipes$')
+
 _mail_cols = {}
 _resp_cols = {}
+_spend_cols = {}
+_mtd_cols = {}
+_swipes_cols = {}
+
 for col in _df.columns:
-    m = _mail_pattern.match(col)
-    if m:
-        _mail_cols[m.group(1)] = col
-    m = _resp_pattern.match(col)
-    if m:
-        _resp_cols[m.group(1)] = col
+    for pat, target in [(_mail_pattern, _mail_cols), (_resp_pattern, _resp_cols),
+                        (_spend_pattern, _spend_cols), (_mtd_pattern, _mtd_cols),
+                        (_swipes_pattern, _swipes_cols)]:
+        m = pat.match(col)
+        if m:
+            target[m.group(1)] = col
+            break
 
 _month_order = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
                 'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
@@ -37,13 +50,13 @@ def _msort(k):
     return (int(k[3:])+2000, _month_order.get(k[:3], 0))
 
 _mailer_keys = sorted([k for k in _mail_cols if k in _resp_cols], key=_msort)
+_all_months = sorted(set(list(_spend_cols.keys()) + list(_mtd_cols.keys())), key=_msort)
 
 if not _mailer_keys:
     print("    WARNING: No paired Mail/Resp columns found -- skipping")
 else:
-    # ---- Classification (same logic as Section 09 campaign code) ----
+    # ---- Classification (same logic as Section 09) ----
     def _is_success(val):
-        """TH-* or NU 5+ = true responder."""
         if pd.isna(val):
             return False
         v = str(val).strip().upper()
@@ -54,13 +67,11 @@ else:
         return False
 
     def _is_nu_partial(val):
-        """NU 1-4 = showed activity but missed goal."""
         if pd.isna(val):
             return False
         v = str(val).strip().upper()
         return v in ('NU 1-4', 'NU1-4')
 
-    # Classify each account across all Resp columns
     _resp_col_list = [_resp_cols[k] for k in _mailer_keys]
     _mail_col_list = [_mail_cols[k] for k in _mailer_keys]
 
@@ -77,19 +88,42 @@ else:
 
     _status_counts = _df['_camp_status'].value_counts()
     _total = len(_df)
-    _n_responders = _status_counts.get('Responder', 0)
-    _n_nu14 = _status_counts.get('NU 1-4 (Partial)', 0)
-    _n_nonresp = _status_counts.get('Non-Responder', 0)
-    _n_never = _status_counts.get('Never Mailed', 0)
 
-    # Metrics
-    _compare = [
-        ('last 12-mon spend', 'Card Spend (12mo)', gen_fmt_dollar),
-        ('last 12-mon swipes', 'Card Swipes (12mo)', gen_fmt_count),
-        ('depCount365', 'Deposits (365d)', gen_fmt_count),
-        ('depAmt365', 'Deposit Amount (365d)', gen_fmt_dollar),
-    ]
-    _avail = [(f, l, fmt) for f, l, fmt in _compare if f in _df.columns]
+    # ---- Find first mail period and first response period per account ----
+    _df['_first_mail'] = None
+    _df['_first_resp'] = None
+    for mk in _mailer_keys:
+        _m_col = _mail_cols[mk]
+        _r_col = _resp_cols[mk]
+        _was_mailed = _df[_m_col].notna() & _df['_first_mail'].isna()
+        _df.loc[_was_mailed, '_first_mail'] = mk
+        _did_respond = _df[_r_col].map(_is_success) & _df['_first_resp'].isna()
+        _df.loc[_did_respond, '_first_resp'] = mk
+
+    # ---- Compute monthly spend and deposits from MmmYY columns ----
+    # Average monthly spend across all available months (more accurate than last 12-mon)
+    if _spend_cols:
+        _spend_col_list = [_spend_cols[k] for k in sorted(_spend_cols.keys(), key=_msort)]
+        _df['_avg_monthly_spend'] = _df[_spend_col_list].apply(
+            lambda row: row.dropna().mean(), axis=1)
+        _df['_total_spend'] = _df[_spend_col_list].sum(axis=1)
+    if _mtd_cols:
+        _mtd_col_list = [_mtd_cols[k] for k in sorted(_mtd_cols.keys(), key=_msort)]
+        _df['_avg_monthly_dep'] = _df[_mtd_col_list].apply(
+            lambda row: row.dropna().mean(), axis=1)
+        _df['_total_dep'] = _df[_mtd_col_list].sum(axis=1)
+
+    # ---- Metrics using monthly data ----
+    _compare = []
+    if '_avg_monthly_spend' in _df.columns:
+        _compare.append(('_avg_monthly_spend', 'Avg Monthly Spend', gen_fmt_dollar))
+    if '_avg_monthly_dep' in _df.columns:
+        _compare.append(('_avg_monthly_dep', 'Avg Monthly Deposits', gen_fmt_dollar))
+    if 'depAmt365' in _df.columns:
+        _compare.append(('depAmt365', 'ZA Deposit Amt (365d)', gen_fmt_dollar))
+    if 'depCount365' in _df.columns:
+        _compare.append(('depCount365', 'ZA Deposit Count (365d)', gen_fmt_count))
+    _avail = _compare
 
     # ---- Conference-format summary ----
     print(f"\n{'=' * 90}")
@@ -98,14 +132,15 @@ else:
     print(f"  Source: deposits_personal_df (cross-source: ODDD + ZAccounts)")
     print(f"  Total accounts: {_total:,}")
     print(f"  Mailer periods (Mail + Resp pairs): {len(_mailer_keys)}")
+    print(f"  Monthly Spend columns: {len(_spend_cols)}")
+    print(f"  Monthly MTD (deposit) columns: {len(_mtd_cols)}")
     print(f"  Classification (from Resp columns, same as Section 09):")
-    print(f"    Responders (TH-* / NU 5+): {_n_responders:,}")
-    print(f"    NU 1-4 (partial, non-responder): {_n_nu14:,}")
-    print(f"    Non-Responder (mailed, no response): {_n_nonresp:,}")
-    print(f"    Never Mailed: {_n_never:,}")
+    for status in ['Responder', 'NU 1-4 (Partial)', 'Non-Responder', 'Never Mailed']:
+        _cnt = _status_counts.get(status, 0)
+        print(f"    {status}: {_cnt:,}")
     print()
 
-    # ---- Responder vs Non-Responder metric comparison ----
+    # ---- Status comparison table ----
     _camp_groups = ['Responder', 'NU 1-4 (Partial)', 'Non-Responder']
     _camp_groups = [g for g in _camp_groups if g in _df['_camp_status'].values]
 
@@ -188,7 +223,6 @@ else:
         _rows = (_n + _cols - 1) // _cols
         fig, axes = plt.subplots(_rows, _cols, figsize=(9 * _cols, 6 * _rows))
         axes = axes.flatten() if _n > 1 else [axes]
-
         _palette = [GEN_COLORS['success'], GEN_COLORS['warning'], GEN_COLORS['muted']]
 
         for i, (field, label, formatter) in enumerate(_avail[:_n]):
@@ -200,14 +234,12 @@ else:
                 _med = _g_df[field].dropna().median()
                 _vals.append(_med if not pd.isna(_med) else 0)
                 _ns.append(len(_g_df))
-
-            bars = ax.bar(_camp_groups, _vals,
-                          color=_palette[:len(_camp_groups)],
+            bars = ax.bar(_camp_groups, _vals, color=_palette[:len(_camp_groups)],
                           edgecolor='white', width=0.5)
             for bar, val, n in zip(bars, _vals, _ns):
                 ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
-                        formatter(val, None),
-                        ha='center', va='bottom', fontsize=14, fontweight='bold')
+                        formatter(val, None), ha='center', va='bottom',
+                        fontsize=14, fontweight='bold')
                 ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() * 0.5,
                         f"n={n:,}", ha='center', va='center',
                         fontsize=11, fontweight='bold', color='white')
@@ -216,63 +248,80 @@ else:
             ax.tick_params(axis='x', labelsize=11, rotation=15)
             ax.tick_params(axis='y', labelsize=11)
             gen_clean_axes(ax)
-
         for j in range(_n, len(axes)):
             axes[j].set_visible(False)
 
-        fig.suptitle('Personal Accounts \u2014 Campaign Responders vs Non-Responders',
+        fig.suptitle('Personal Accounts \u2014 Campaign Status: Spend & Deposit Comparison',
                      fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
         fig.text(0.5, -0.01,
-                 f'Classified from Resp columns: TH-*/NU 5+ = Responder  |  {_total:,} accounts',
+                 f'Metrics from monthly ODDD + ZAccounts  |  {_total:,} accounts',
                  ha='center', fontsize=12, color=GEN_COLORS['muted'])
         plt.tight_layout()
         plt.show()
 
     # =========================================================================
-    # CHART 2: Sustained Activity — monthly spend trend
+    # CHART 2: Pre vs Post Mailer — Spend and Deposit Trend
     # =========================================================================
-    _spend_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Spend$')
-    _monthly_spend = {}
-    for col in _df.columns:
-        m = _spend_pattern.match(col)
-        if m:
-            _monthly_spend[m.group(1)] = col
-    _spend_months = sorted(_monthly_spend.keys(), key=_msort)
+    # For each group, show monthly spend and deposit trends across all months.
+    # Mailer periods are marked on the x-axis so you can see behavior changes.
+    _has_spend = bool(_spend_cols)
+    _has_mtd = bool(_mtd_cols)
 
-    _trend_groups = ['Responder', 'Non-Responder']
-    _trend_groups = [g for g in _trend_groups if g in _df['_camp_status'].values]
+    if (_has_spend or _has_mtd) and len(_camp_groups) >= 2:
+        _n_charts = int(_has_spend) + int(_has_mtd)
+        fig, axes = plt.subplots(1, _n_charts, figsize=(16, 7) if _n_charts == 1
+                                 else (9 * _n_charts, 7))
+        if _n_charts == 1:
+            axes = [axes]
 
-    if _spend_months and len(_trend_groups) >= 2:
-        fig, ax = plt.subplots(figsize=(16, 7))
-        _trend_colors = [GEN_COLORS['success'], GEN_COLORS['muted']]
+        _trend_colors = {'Responder': GEN_COLORS['success'],
+                         'NU 1-4 (Partial)': GEN_COLORS['warning'],
+                         'Non-Responder': GEN_COLORS['muted']}
 
-        for j, g in enumerate(_trend_groups):
-            _g_df = _df[_df['_camp_status'] == g]
-            _monthly_medians = []
-            for mk in _spend_months:
-                _col = _monthly_spend[mk]
-                _med = _g_df[_col].dropna().median()
-                _monthly_medians.append(_med if not np.isnan(_med) else 0)
+        _chart_idx = 0
 
-            _x_labels = [f"{mk[:3]} '{mk[3:]}" for mk in _spend_months]
-            ax.plot(_x_labels, _monthly_medians, marker='o', markersize=5,
-                    linewidth=2.5, color=_trend_colors[j],
-                    label=f"{g} (n={len(_g_df):,})")
+        for _metric_cols, _metric_label, _metric_fmt in [
+            (_spend_cols, 'Median Monthly Spend', gen_fmt_dollar),
+            (_mtd_cols, 'Median Monthly Deposits', gen_fmt_dollar),
+        ]:
+            if not _metric_cols:
+                continue
+            ax = axes[_chart_idx]
+            _chart_idx += 1
+            _m_keys = sorted(_metric_cols.keys(), key=_msort)
+            _x_labels = [f"{mk[:3]} '{mk[3:]}" for mk in _m_keys]
 
-        ax.set_title('Personal Accounts \u2014 Monthly Spend: Responders vs Non-Responders',
-                     fontsize=20, fontweight='bold', color=GEN_COLORS['dark_text'], pad=15)
-        ax.set_xlabel('Month', fontsize=14, fontweight='bold')
-        ax.set_ylabel('Median Monthly Spend', fontsize=14, fontweight='bold')
-        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
-        ax.tick_params(axis='x', labelsize=11, rotation=45)
-        ax.tick_params(axis='y', labelsize=12)
-        ax.legend(fontsize=13, frameon=False, loc='upper left')
+            for g in _camp_groups:
+                _g_df = _df[_df['_camp_status'] == g]
+                _medians = []
+                for mk in _m_keys:
+                    _col = _metric_cols[mk]
+                    _med = _g_df[_col].dropna().median()
+                    _medians.append(_med if not np.isnan(_med) else 0)
+                ax.plot(_x_labels, _medians, marker='o', markersize=4,
+                        linewidth=2, color=_trend_colors.get(g, GEN_COLORS['info']),
+                        label=f"{g} (n={len(_g_df):,})")
 
-        ax.text(0.5, -0.18,
-                'Do campaign responders sustain higher spending over time?',
-                transform=ax.transAxes, ha='center', fontsize=12,
-                color=GEN_COLORS['muted'])
+            # Mark mailer periods on x-axis
+            for mk in _mailer_keys:
+                if mk in _m_keys:
+                    _xi = _m_keys.index(mk)
+                    ax.axvline(x=_xi, color=GEN_COLORS['accent'], alpha=0.3,
+                               linestyle='--', linewidth=1)
 
-        gen_clean_axes(ax)
+            ax.set_title(_metric_label, fontsize=16, fontweight='bold',
+                         color=GEN_COLORS['dark_text'])
+            ax.set_ylabel(_metric_label, fontsize=12, fontweight='bold')
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(_metric_fmt))
+            ax.tick_params(axis='x', labelsize=9, rotation=45)
+            ax.tick_params(axis='y', labelsize=11)
+            ax.legend(fontsize=11, frameon=False, loc='upper left')
+            gen_clean_axes(ax)
+
+        fig.suptitle('Personal Accounts \u2014 Monthly Spend & Deposits by Campaign Status',
+                     fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+        fig.text(0.5, -0.02,
+                 'Dashed lines = mailer periods  |  Do responders show spend/deposit increases after campaigns?',
+                 ha='center', fontsize=12, color=GEN_COLORS['muted'])
         plt.tight_layout()
         plt.show()
