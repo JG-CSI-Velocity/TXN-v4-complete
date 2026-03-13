@@ -1,0 +1,141 @@
+# ===========================================================================
+# PERSONAL DEPOSITS: Monthly Spend & Deposit Trend by Campaign Status
+# ===========================================================================
+# Shows median monthly Card Spend and MTD (deposits) per campaign status
+# group over all 36 monthly periods. Mailer periods marked as dashed lines.
+#
+# Depends on cell 14 classification (_df with _camp_status already assigned).
+# Cross-source: ODDD (monthly Spend/MTD cols, Mail/Resp cols)
+# Data: deposits_personal_df (via _df from cell 14)
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import numpy as np
+import re
+
+_df = deposits_personal_df.copy()
+
+# ---- Discover column families ----
+_mail_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Mail$')
+_resp_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Resp$')
+_spend_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Spend$')
+_mtd_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+MTD$')
+
+_mail_cols = {}
+_resp_cols = {}
+_spend_cols = {}
+_mtd_cols = {}
+
+for col in _df.columns:
+    for pat, target in [(_mail_pattern, _mail_cols), (_resp_pattern, _resp_cols),
+                        (_spend_pattern, _spend_cols), (_mtd_pattern, _mtd_cols)]:
+        m = pat.match(col)
+        if m:
+            target[m.group(1)] = col
+            break
+
+_month_order = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
+                'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
+def _msort(k):
+    return (int(k[3:])+2000, _month_order.get(k[:3], 0))
+
+_mailer_keys = sorted([k for k in _mail_cols if k in _resp_cols], key=_msort)
+
+# ---- Classification (same as cell 14) ----
+def _is_success(val):
+    if pd.isna(val):
+        return False
+    v = str(val).strip().upper()
+    if v.startswith('TH'):
+        return True
+    if v in ('NU 5+', 'NU5+', 'NU 5', 'NU 6', 'NU 7', 'NU 8', 'NU 9', 'NU 10'):
+        return True
+    return False
+
+def _is_nu_partial(val):
+    if pd.isna(val):
+        return False
+    v = str(val).strip().upper()
+    return v in ('NU 1-4', 'NU1-4')
+
+_resp_col_list = [_resp_cols[k] for k in _mailer_keys]
+_mail_col_list = [_mail_cols[k] for k in _mailer_keys]
+
+_times_mailed = _df[_mail_col_list].notna().sum(axis=1)
+_times_success = _df[_resp_col_list].apply(
+    lambda col: col.map(_is_success)).sum(axis=1)
+_times_nu14 = _df[_resp_col_list].apply(
+    lambda col: col.map(_is_nu_partial)).sum(axis=1)
+
+_df['_camp_status'] = 'Never Mailed'
+_df.loc[_times_mailed > 0, '_camp_status'] = 'Non-Responder'
+_df.loc[_times_nu14 > 0, '_camp_status'] = 'NU 1-4 (Partial)'
+_df.loc[_times_success > 0, '_camp_status'] = 'Responder'
+
+_camp_groups = ['Responder', 'NU 1-4 (Partial)', 'Non-Responder']
+_camp_groups = [g for g in _camp_groups if g in _df['_camp_status'].values]
+_total = len(_df)
+
+_has_spend = bool(_spend_cols)
+_has_mtd = bool(_mtd_cols)
+
+if (_has_spend or _has_mtd) and len(_camp_groups) >= 2:
+    _n_charts = int(_has_spend) + int(_has_mtd)
+    fig, axes = plt.subplots(1, _n_charts, figsize=(16, 7) if _n_charts == 1
+                             else (9 * _n_charts, 7))
+    if _n_charts == 1:
+        axes = [axes]
+
+    _trend_colors = {'Responder': GEN_COLORS['success'],
+                     'NU 1-4 (Partial)': GEN_COLORS['warning'],
+                     'Non-Responder': GEN_COLORS['muted']}
+
+    _chart_idx = 0
+
+    for _metric_cols, _metric_label, _metric_fmt in [
+        (_spend_cols, 'Median Monthly Card Spend', gen_fmt_dollar),
+        (_mtd_cols, 'Median Monthly Deposits (MTD)', gen_fmt_dollar),
+    ]:
+        if not _metric_cols:
+            continue
+        ax = axes[_chart_idx]
+        _chart_idx += 1
+        _m_keys = sorted(_metric_cols.keys(), key=_msort)
+        _x_labels = [f"{mk[:3]} '{mk[3:]}" for mk in _m_keys]
+
+        for g in _camp_groups:
+            _g_df = _df[_df['_camp_status'] == g]
+            _medians = []
+            for mk in _m_keys:
+                _col = _metric_cols[mk]
+                _med = _g_df[_col].dropna().median()
+                _medians.append(_med if not np.isnan(_med) else 0)
+            ax.plot(_x_labels, _medians, marker='o', markersize=4,
+                    linewidth=2, color=_trend_colors.get(g, GEN_COLORS['info']),
+                    label=f"{g} (n={len(_g_df):,})")
+
+        # Mark mailer periods
+        for mk in _mailer_keys:
+            if mk in _m_keys:
+                _xi = _m_keys.index(mk)
+                ax.axvline(x=_xi, color=GEN_COLORS['accent'], alpha=0.3,
+                           linestyle='--', linewidth=1)
+
+        ax.set_title(_metric_label, fontsize=16, fontweight='bold',
+                     color=GEN_COLORS['dark_text'])
+        ax.set_ylabel(_metric_label, fontsize=12, fontweight='bold')
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(_metric_fmt))
+        ax.tick_params(axis='x', labelsize=9, rotation=45)
+        ax.tick_params(axis='y', labelsize=11)
+        ax.legend(fontsize=11, frameon=False, loc='upper left')
+        gen_clean_axes(ax)
+
+    fig.suptitle('Personal Accounts \u2014 Monthly Spend & Deposits by Campaign Status',
+                 fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+    fig.text(0.5, -0.02,
+             'Dashed lines = mailer periods  |  Do responders show behavior changes around campaigns?',
+             ha='center', fontsize=12, color=GEN_COLORS['muted'])
+    plt.tight_layout()
+    plt.show()
+else:
+    print("    14d Skipped: insufficient monthly Spend/MTD columns or campaign groups")

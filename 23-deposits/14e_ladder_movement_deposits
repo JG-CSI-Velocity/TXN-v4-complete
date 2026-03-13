@@ -1,0 +1,142 @@
+# ===========================================================================
+# PERSONAL DEPOSITS: Deposits by Ladder Movement Direction
+# ===========================================================================
+# For repeat responders who moved Up, Same, or Down in challenge tier:
+# compare deposit and spend behavior.
+#
+# Uses MmmYY Resp columns for classification and tier tracking.
+# Cross-source: ODDD (Resp cols) + ZAccounts (deposit fields)
+# Data: deposits_personal_df
+
+import matplotlib.pyplot as plt
+import numpy as np
+import re
+
+_df = deposits_personal_df.copy()
+
+_resp_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Resp$')
+_resp_cols = {}
+for col in _df.columns:
+    m = _resp_pattern.match(col)
+    if m:
+        _resp_cols[m.group(1)] = col
+
+_month_order = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
+                'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
+def _msort(k):
+    return (int(k[3:])+2000, _month_order.get(k[:3], 0))
+
+_resp_keys = sorted(_resp_cols.keys(), key=_msort)
+
+if len(_resp_keys) < 2:
+    print("    14e Skipped: need 2+ Resp periods")
+else:
+    def _is_success(val):
+        if pd.isna(val):
+            return False
+        v = str(val).strip().upper()
+        if v.startswith('TH'):
+            return True
+        if v in ('NU 5+', 'NU5+', 'NU 5', 'NU 6', 'NU 7', 'NU 8', 'NU 9', 'NU 10'):
+            return True
+        return False
+
+    def _challenge_tier(val):
+        if pd.isna(val):
+            return 0
+        v = str(val).strip().upper()
+        if v.startswith('TH-'):
+            try:
+                return int(v.replace('TH-', ''))
+            except ValueError:
+                return 5
+        if v in ('NU 5+', 'NU5+', 'NU 5'):
+            return 1
+        return 0
+
+    _resp_history = pd.DataFrame(index=_df.index)
+    for i, rk in enumerate(_resp_keys):
+        _col = _resp_cols[rk]
+        _resp_history[f'success_{i}'] = _df[_col].map(_is_success)
+        _resp_history[f'tier_{i}'] = _df[_col].map(_challenge_tier)
+
+    _success_cols = [c for c in _resp_history.columns if c.startswith('success_')]
+    _resp_history['resp_count'] = _resp_history[_success_cols].sum(axis=1)
+    _repeat_responder = _resp_history['resp_count'] > 1
+    _n_repeat = int(_repeat_responder.sum())
+
+    _movements = []
+    _repeat_idx = _resp_history[_repeat_responder].index
+
+    for idx in _repeat_idx:
+        _tiers = []
+        for i in range(len(_resp_keys)):
+            if _resp_history.at[idx, f'success_{i}']:
+                _tiers.append(_resp_history.at[idx, f'tier_{i}'])
+        if len(_tiers) >= 2:
+            _last = _tiers[-1]
+            _prev = _tiers[-2]
+            if _last > _prev:
+                _movements.append('Up')
+            elif _last < _prev:
+                _movements.append('Down')
+            else:
+                _movements.append('Same')
+
+    _compare = [
+        ('depAmt365', 'Deposit Amt (365d)', gen_fmt_dollar),
+        ('depCount365', 'Deposit Count (365d)', gen_fmt_count),
+        ('balance', 'Balance', gen_fmt_dollar),
+        ('last 12-mon spend', 'Card Spend (12mo)', gen_fmt_dollar),
+    ]
+    _avail = [(f, l, fmt) for f, l, fmt in _compare if f in _df.columns]
+
+    if _n_repeat >= 10 and _avail and len(_movements) > 0:
+        _rp_df = _df.loc[_repeat_idx].copy()
+        _move_series = pd.Series(_movements, index=_repeat_idx[:len(_movements)])
+        _rp_df['_movement'] = _move_series
+
+        _dir_groups = {}
+        for d in ['Up', 'Same', 'Down']:
+            _d_df = _rp_df[_rp_df['_movement'] == d]
+            if len(_d_df) > 0:
+                _dir_groups[d] = _d_df
+
+        if len(_dir_groups) >= 2:
+            fig, ax = plt.subplots(figsize=(12, 7))
+            _dir_colors_map = {'Up': GEN_COLORS['success'], 'Same': GEN_COLORS['info'],
+                               'Down': GEN_COLORS['warning']}
+            x = np.arange(len(_avail))
+            _w = 0.8 / len(_dir_groups)
+
+            for gi, (dname, ddf) in enumerate(_dir_groups.items()):
+                _med_vals = []
+                for field, _, _ in _avail:
+                    _med = ddf[field].dropna().median()
+                    _med_vals.append(_med if not pd.isna(_med) else 0)
+                offset = -0.4 + gi * _w + _w / 2
+                bars = ax.bar(x + offset, _med_vals, _w,
+                              label=f"{dname} (n={len(ddf):,})",
+                              color=_dir_colors_map.get(dname, GEN_COLORS['muted']),
+                              edgecolor='white')
+                for bar, val, (_, _, fmt) in zip(bars, _med_vals, _avail):
+                    if val > 0:
+                        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                                fmt(val, None), ha='center', va='bottom',
+                                fontsize=12, fontweight='bold')
+
+            ax.set_xticks(x)
+            ax.set_xticklabels([lbl for _, lbl, _ in _avail], fontsize=12)
+            ax.legend(fontsize=13, frameon=False, loc='upper right')
+            ax.set_title('Deposits & Spend by Ladder Movement',
+                         fontsize=18, fontweight='bold', color=GEN_COLORS['dark_text'])
+            gen_clean_axes(ax)
+
+            fig.suptitle('Personal Accounts \u2014 Does Moving Up the Ladder Drive Deposits?',
+                         fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+            plt.tight_layout()
+            plt.show()
+        else:
+            print("    14e Skipped: fewer than 2 movement directions with data")
+    else:
+        print(f"    14e Skipped: {_n_repeat} repeat responders (need 10+)")
