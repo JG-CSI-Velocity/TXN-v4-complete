@@ -79,9 +79,10 @@ else:
                  fontsize=24, fontweight='bold',
                  color=_CLR_NEUTRAL, y=0.98)
 
-    gs = gridspec.GridSpec(1, 2, figure=fig, width_ratios=[1, 2],
-                           wspace=0.28,
-                           left=0.03, right=0.97, top=0.88, bottom=0.06)
+    _gs_left = gridspec.GridSpec(1, 1, figure=fig,
+                                  left=0.03, right=0.33, top=0.88, bottom=0.06)
+    _gs_right = gridspec.GridSpec(1, 1, figure=fig,
+                                   left=0.48, right=0.97, top=0.88, bottom=0.06)
 
     _divider_x = 0.36
     fig.add_artist(plt.Line2D(
@@ -90,10 +91,10 @@ else:
         linewidth=1.5, alpha=0.45))
 
     _title_y = 0.905
-    fig.text(0.19, _title_y, 'Portfolio Health',
+    fig.text(0.18, _title_y, 'Portfolio Health',
              fontsize=20, fontweight='bold',
              color=_CLR_NEUTRAL, ha='center', va='center')
-    fig.text(0.68, _title_y, 'Where Do Accounts & Money Live?',
+    fig.text(0.72, _title_y, 'Where Do Accounts & Money Live?',
              fontsize=20, fontweight='bold',
              color=_CLR_NEUTRAL, ha='center', va='center')
 
@@ -127,7 +128,7 @@ else:
         },
     ]
 
-    _gs_cards = gridspec.GridSpecFromSubplotSpec(2, 2, subplot_spec=gs[0, 0],
+    _gs_cards = gridspec.GridSpecFromSubplotSpec(2, 2, subplot_spec=_gs_left[0, 0],
                                                  hspace=0.25, wspace=0.2)
     for idx, kpi in enumerate(_kpis):
         ax = fig.add_subplot(_gs_cards[idx])
@@ -148,7 +149,7 @@ else:
     # -------------------------------------------------------------------
     # Segmentation Chart (right 2/3)
     # -------------------------------------------------------------------
-    ax_chart = fig.add_subplot(gs[0, 1])
+    ax_chart = fig.add_subplot(_gs_right[0, 0])
 
     _seg_data = [
         {'label': 'Recent Depositors\n(33 days)', 'count': _dep_33,
