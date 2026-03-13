@@ -1,0 +1,194 @@
+# ===========================================================================
+# BUSINESS DEPOSITS: NU 1-4 Conversion Journey
+# ===========================================================================
+# Mirror of Section 23 cell 14b for business accounts.
+# Track whether partial activators (NU 1-4) later convert to true
+# responders (NU 5+ or TH-*), and compare deposit behavior.
+#
+# Uses MmmYY Segmentation columns for challenge outcomes across periods.
+# Cross-source: ODDD (Segmentation cols) + ZAccounts (deposit fields)
+# Data: deposits_business_df
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import numpy as np
+import re
+
+_df = deposits_business_df.copy()
+
+if len(_df) < _MIN_ACCOUNTS:
+    print(f"    14b Skipped: {len(_df)} business accounts (below {_MIN_ACCOUNTS} threshold)")
+else:
+    # ---- Discover Segmentation columns ----
+    _seg_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Segmentation$')
+    _seg_cols = {}
+    for col in _df.columns:
+        m = _seg_pattern.match(col)
+        if m:
+            _seg_cols[m.group(1)] = col
+
+    _month_order = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
+                    'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
+    def _msort(k):
+        return (int(k[3:])+2000, _month_order.get(k[:3], 0))
+
+    _seg_keys = sorted(_seg_cols.keys(), key=_msort)
+
+    if not _seg_keys:
+        print("    WARNING: No Segmentation columns found -- skipping NU conversion")
+    else:
+        def _is_success(val):
+            if pd.isna(val):
+                return False
+            v = str(val).strip().upper()
+            if v.startswith('TH'):
+                return True
+            if v in ('NU 5+', 'NU5+', 'NU 5', 'NU 6', 'NU 7', 'NU 8', 'NU 9', 'NU 10'):
+                return True
+            return False
+
+        def _is_nu14(val):
+            if pd.isna(val):
+                return False
+            v = str(val).strip().upper()
+            return v in ('NU 1-4', 'NU1-4')
+
+        _ever_nu14 = pd.Series(False, index=_df.index)
+        _first_nu14_period = pd.Series(None, index=_df.index, dtype=object)
+        _ever_success_after_nu14 = pd.Series(False, index=_df.index)
+        _success_segment = pd.Series(None, index=_df.index, dtype=object)
+
+        for i, sk in enumerate(_seg_keys):
+            _col = _seg_cols[sk]
+            if _col not in _df.columns:
+                continue
+            _is_nu = _df[_col].map(_is_nu14)
+            _new_nu = _is_nu & ~_ever_nu14
+            _first_nu14_period = _first_nu14_period.where(~_new_nu, sk)
+            _ever_nu14 = _ever_nu14 | _is_nu
+
+            _is_succ = _df[_col].map(_is_success)
+            _converted = _ever_nu14 & _is_succ & ~_ever_success_after_nu14
+            _ever_success_after_nu14 = _ever_success_after_nu14 | _converted
+            _success_segment = _success_segment.where(~_converted, _df[_col].astype(str).str.strip())
+
+        _df['_ever_nu14'] = _ever_nu14
+        _df['_nu14_converted'] = _ever_success_after_nu14
+        _df['_first_nu14'] = _first_nu14_period
+        _df['_success_seg'] = _success_segment
+
+        _nu14_df = _df[_df['_ever_nu14']].copy()
+        _total_nu14 = len(_nu14_df)
+        _converted_count = _nu14_df['_nu14_converted'].sum()
+        _not_converted = _total_nu14 - _converted_count
+        _conv_rate = _converted_count / _total_nu14 * 100 if _total_nu14 > 0 else 0
+
+        _compare = [
+            ('depAmt365', 'Deposit Amount (365d)', gen_fmt_dollar),
+            ('depCount365', 'Deposits (365d)', gen_fmt_count),
+            ('last 12-mon spend', 'Card Spend (12mo)', gen_fmt_dollar),
+        ]
+        _avail = [(f, l, fmt) for f, l, fmt in _compare if f in _df.columns]
+
+        print(f"\n{'=' * 80}")
+        print(f"  BUSINESS DEPOSITS — NU 1-4 CONVERSION JOURNEY (Cell 14b)")
+        print(f"{'=' * 80}")
+        print(f"  Source: deposits_business_df (cross-source: ODDD Segmentation + ZAccounts)")
+        print(f"  Segmentation periods found: {len(_seg_keys)}")
+        print(f"  Accounts ever NU 1-4: {_total_nu14:,}")
+        print(f"  Converted to NU 5+ / TH-*: {_converted_count:,} ({_conv_rate:.1f}%)")
+        print(f"  Never converted: {_not_converted:,}")
+        print()
+
+        if _total_nu14 > 0 and _avail:
+            _groups = {
+                'Converted': _nu14_df[_nu14_df['_nu14_converted']],
+                'Never Converted': _nu14_df[~_nu14_df['_nu14_converted']],
+            }
+
+            _hdr = f"  {'Group':<22s}  {'N':>8s}"
+            for _, lbl, _ in _avail:
+                _hdr += f"  {'Med ' + lbl:>22s}"
+            print(_hdr)
+            print(f"  {'-'*22}  {'-'*8}" + (f"  {'-'*22}" * len(_avail)))
+            for gname, gdf in _groups.items():
+                _row = f"  {gname:<22s}  {len(gdf):>8,}"
+                for field, _, fmt in _avail:
+                    _med = gdf[field].dropna().median()
+                    if pd.isna(_med):
+                        _row += f"  {'N/A':>22s}"
+                    elif fmt == gen_fmt_dollar:
+                        _row += f"  {'${:>,.0f}'.format(_med):>22s}"
+                    elif fmt == gen_fmt_count:
+                        _row += f"  {_med:>22,.0f}"
+                    else:
+                        _row += f"  {fmt(_med, None):>22s}"
+                print(_row)
+            print(f"{'=' * 80}")
+
+            if _converted_count > 0:
+                _seg_dist = _nu14_df[_nu14_df['_nu14_converted']]['_success_seg'].value_counts()
+                print(f"\n  CONVERSION OUTCOMES (what NU 1-4 converted to)")
+                print(f"  {'Segment':<20s}  {'Count':>8s}  {'Share':>8s}")
+                print(f"  {'-'*20}  {'-'*8}  {'-'*8}")
+                for seg, cnt in _seg_dist.head(6).items():
+                    _pct = cnt / _converted_count * 100
+                    print(f"  {seg:<20s}  {cnt:>8,}  {_pct:>7.1f}%")
+                print()
+
+        # Chart: Conversion Funnel + Deposit Comparison
+        if _total_nu14 >= 10 and _avail:
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7),
+                                            gridspec_kw={'width_ratios': [1, 1.5]})
+
+            _funnel_labels = ['Total NU 1-4', 'Converted\n(NU 5+ / TH-*)', 'Never\nConverted']
+            _funnel_vals = [_total_nu14, _converted_count, _not_converted]
+            _funnel_colors = [GEN_COLORS['info'], GEN_COLORS['success'], GEN_COLORS['muted']]
+            bars = ax1.bar(_funnel_labels, _funnel_vals, color=_funnel_colors,
+                           edgecolor='white', width=0.5)
+            for bar, val in zip(bars, _funnel_vals):
+                ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                         f"{val:,}", ha='center', va='bottom',
+                         fontsize=15, fontweight='bold')
+                if val > 0 and val != _total_nu14:
+                    _pct = val / _total_nu14 * 100
+                    ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height() * 0.5,
+                             f"{_pct:.0f}%", ha='center', va='center',
+                             fontsize=12, fontweight='bold', color='white')
+            ax1.set_title('NU 1-4 Conversion Funnel', fontsize=16, fontweight='bold',
+                           color=GEN_COLORS['dark_text'])
+            gen_clean_axes(ax1)
+
+            _group_colors = [GEN_COLORS['success'], GEN_COLORS['muted']]
+            x = np.arange(len(_avail))
+            _w = 0.3
+            for gi, (gname, gdf) in enumerate(_groups.items()):
+                _med_vals = []
+                for field, _, _ in _avail:
+                    _med = gdf[field].dropna().median()
+                    _med_vals.append(_med if not pd.isna(_med) else 0)
+                offset = -_w/2 + gi * _w
+                bars = ax2.bar(x + offset, _med_vals, _w, label=f"{gname} (n={len(gdf):,})",
+                               color=_group_colors[gi], edgecolor='white')
+                for bar, val, (_, _, fmt) in zip(bars, _med_vals, _avail):
+                    if val > 0:
+                        ax2.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                                 fmt(val, None), ha='center', va='bottom',
+                                 fontsize=13, fontweight='bold')
+
+            ax2.set_xticks(x)
+            ax2.set_xticklabels([lbl for _, lbl, _ in _avail], fontsize=12)
+            ax2.set_title('Deposit & Spend: Converted vs Never Converted',
+                           fontsize=16, fontweight='bold', color=GEN_COLORS['dark_text'])
+            ax2.legend(fontsize=12, frameon=False, loc='upper right')
+            gen_clean_axes(ax2)
+
+            fig.suptitle('Business Accounts \u2014 NU 1-4 Conversion Journey',
+                         fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+            fig.text(0.5, -0.02,
+                     f'Do partial activators who convert show stronger deposit behavior?  |  {_total_nu14:,} NU 1-4 accounts',
+                     ha='center', fontsize=12, color=GEN_COLORS['muted'])
+            plt.tight_layout()
+            plt.show()
+        elif _total_nu14 == 0:
+            print("    No NU 1-4 accounts found in Segmentation columns")

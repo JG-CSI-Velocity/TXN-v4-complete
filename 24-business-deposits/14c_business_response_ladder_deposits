@@ -1,0 +1,251 @@
+# ===========================================================================
+# BUSINESS DEPOSITS: Response Ladder — Repeat Responder Movement
+# ===========================================================================
+# Mirror of Section 23 cell 14c for business accounts.
+# For accounts that responded in 2+ periods: did they move up, down, or
+# stay at the same challenge tier? Correlate with deposit behavior.
+#
+# Uses MmmYY Segmentation columns. Tier hierarchy:
+#   NU 5+ (tier 1) < TH-10 < TH-15 < TH-20 < TH-25
+#
+# Cross-source: ODDD (Segmentation cols) + ZAccounts (deposit fields)
+# Data: deposits_business_df
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import numpy as np
+import re
+
+_df = deposits_business_df.copy()
+
+if len(_df) < _MIN_ACCOUNTS:
+    print(f"    14c Skipped: {len(_df)} business accounts (below {_MIN_ACCOUNTS} threshold)")
+else:
+    _seg_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Segmentation$')
+    _seg_cols = {}
+    for col in _df.columns:
+        m = _seg_pattern.match(col)
+        if m:
+            _seg_cols[m.group(1)] = col
+
+    _month_order = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
+                    'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
+    def _msort(k):
+        return (int(k[3:])+2000, _month_order.get(k[:3], 0))
+
+    _seg_keys = sorted(_seg_cols.keys(), key=_msort)
+
+    if len(_seg_keys) < 2:
+        print("    WARNING: Need 2+ Segmentation periods for ladder analysis -- skipping")
+    else:
+        def _is_success(val):
+            if pd.isna(val):
+                return False
+            v = str(val).strip().upper()
+            if v.startswith('TH'):
+                return True
+            if v in ('NU 5+', 'NU5+', 'NU 5', 'NU 6', 'NU 7', 'NU 8', 'NU 9', 'NU 10'):
+                return True
+            return False
+
+        def _challenge_tier(val):
+            if pd.isna(val):
+                return 0
+            v = str(val).strip().upper()
+            if v.startswith('TH-'):
+                try:
+                    return int(v.replace('TH-', ''))
+                except ValueError:
+                    return 5
+            if v in ('NU 5+', 'NU5+', 'NU 5'):
+                return 1
+            return 0
+
+        _resp_history = pd.DataFrame(index=_df.index)
+        for i, sk in enumerate(_seg_keys):
+            _col = _seg_cols[sk]
+            if _col in _df.columns:
+                _resp_history[f'success_{i}'] = _df[_col].map(_is_success)
+                _resp_history[f'tier_{i}'] = _df[_col].map(_challenge_tier)
+            else:
+                _resp_history[f'success_{i}'] = False
+                _resp_history[f'tier_{i}'] = 0
+
+        _success_cols = [c for c in _resp_history.columns if c.startswith('success_')]
+        _resp_history['resp_count'] = _resp_history[_success_cols].sum(axis=1)
+
+        _any_responder = _resp_history['resp_count'] > 0
+        _repeat_responder = _resp_history['resp_count'] > 1
+        _first_time = _any_responder & ~_repeat_responder
+
+        _n_any = _any_responder.sum()
+        _n_first = _first_time.sum()
+        _n_repeat = _repeat_responder.sum()
+
+        _movements = []
+        _repeat_idx = _resp_history[_repeat_responder].index
+
+        for idx in _repeat_idx:
+            _tiers = []
+            for i in range(len(_seg_keys)):
+                if _resp_history.at[idx, f'success_{i}']:
+                    _tiers.append(_resp_history.at[idx, f'tier_{i}'])
+            if len(_tiers) >= 2:
+                _last = _tiers[-1]
+                _prev = _tiers[-2]
+                if _last > _prev:
+                    _movements.append('Up')
+                elif _last < _prev:
+                    _movements.append('Down')
+                else:
+                    _movements.append('Same')
+
+        _move_counts = {}
+        for m in ['Up', 'Same', 'Down']:
+            _move_counts[m] = _movements.count(m)
+
+        _compare = [
+            ('depAmt365', 'Deposit Amount (365d)', gen_fmt_dollar),
+            ('depCount365', 'Deposits (365d)', gen_fmt_count),
+            ('last 12-mon spend', 'Card Spend (12mo)', gen_fmt_dollar),
+        ]
+        _avail = [(f, l, fmt) for f, l, fmt in _compare if f in _df.columns]
+
+        print(f"\n{'=' * 80}")
+        print(f"  BUSINESS DEPOSITS — RESPONSE LADDER MOVEMENT (Cell 14c)")
+        print(f"{'=' * 80}")
+        print(f"  Source: deposits_business_df (cross-source: ODDD Segmentation + ZAccounts)")
+        print(f"  Segmentation periods: {len(_seg_keys)}")
+        print(f"  Any-period responders: {_n_any:,}")
+        print(f"  First-time responders: {_n_first:,}")
+        print(f"  Repeat responders (2+ periods): {_n_repeat:,}")
+        print()
+
+        if _n_repeat > 0:
+            print(f"  LADDER MOVEMENT (repeat responders)")
+            print(f"  {'Direction':<12s}  {'Count':>8s}  {'Share':>8s}")
+            print(f"  {'-'*12}  {'-'*8}  {'-'*8}")
+            for direction in ['Up', 'Same', 'Down']:
+                cnt = _move_counts.get(direction, 0)
+                pct = cnt / _n_repeat * 100 if _n_repeat > 0 else 0
+                print(f"  {direction:<12s}  {cnt:>8,}  {pct:>7.1f}%")
+            print()
+
+        if _avail and _n_any > 0:
+            _ftdf = _df[_first_time]
+            _rpdf = _df[_repeat_responder]
+            _groups = {'First-Time': _ftdf, 'Repeat': _rpdf}
+
+            _hdr = f"  {'Responder Type':<18s}  {'N':>8s}"
+            for _, lbl, _ in _avail:
+                _hdr += f"  {'Med ' + lbl:>22s}"
+            print(_hdr)
+            print(f"  {'-'*18}  {'-'*8}" + (f"  {'-'*22}" * len(_avail)))
+            for gname, gdf in _groups.items():
+                _row = f"  {gname:<18s}  {len(gdf):>8,}"
+                for field, _, fmt in _avail:
+                    _med = gdf[field].dropna().median()
+                    if pd.isna(_med):
+                        _row += f"  {'N/A':>22s}"
+                    elif fmt == gen_fmt_dollar:
+                        _row += f"  {'${:>,.0f}'.format(_med):>22s}"
+                    elif fmt == gen_fmt_count:
+                        _row += f"  {_med:>22,.0f}"
+                    else:
+                        _row += f"  {fmt(_med, None):>22s}"
+                print(_row)
+            print(f"{'=' * 80}")
+
+        # Chart: First-Time vs Repeat Donut + Ladder Movement
+        if _n_any >= 10:
+            _has_movement = _n_repeat > 0 and len(_movements) > 0
+            _ncols = 2 if _has_movement else 1
+            fig, axes = plt.subplots(1, _ncols, figsize=(8 * _ncols, 7))
+            if _ncols == 1:
+                axes = [axes]
+
+            ax1 = axes[0]
+            _donut_vals = [_n_first, _n_repeat]
+            _donut_labels = [f'First-Time\n{_n_first:,}', f'Repeat\n{_n_repeat:,}']
+            _donut_colors = [GEN_COLORS['info'], GEN_COLORS['success']]
+            wedges, texts = ax1.pie(_donut_vals, labels=_donut_labels,
+                                    colors=_donut_colors, startangle=90,
+                                    wedgeprops={'width': 0.4, 'edgecolor': 'white'},
+                                    textprops={'fontsize': 14, 'fontweight': 'bold'})
+            ax1.text(0, 0, f'{_n_any:,}\nTotal', ha='center', va='center',
+                     fontsize=16, fontweight='bold', color=GEN_COLORS['dark_text'])
+            ax1.set_title('First-Time vs Repeat Responders',
+                           fontsize=16, fontweight='bold', color=GEN_COLORS['dark_text'])
+
+            if _has_movement:
+                ax2 = axes[1]
+                _dir_labels = ['Up', 'Same', 'Down']
+                _dir_vals = [_move_counts.get(d, 0) for d in _dir_labels]
+                _dir_colors = [GEN_COLORS['success'], GEN_COLORS['info'], GEN_COLORS['warning']]
+                bars = ax2.barh(_dir_labels, _dir_vals, color=_dir_colors,
+                                edgecolor='white', height=0.5)
+                for bar, val in zip(bars, _dir_vals):
+                    if val > 0:
+                        _pct = val / _n_repeat * 100
+                        ax2.text(bar.get_width(), bar.get_y() + bar.get_height() / 2,
+                                 f"  {val:,} ({_pct:.0f}%)", va='center',
+                                 fontsize=14, fontweight='bold')
+                ax2.set_title('Ladder Movement (Repeat Responders)',
+                               fontsize=16, fontweight='bold', color=GEN_COLORS['dark_text'])
+                ax2.invert_yaxis()
+                gen_clean_axes(ax2)
+
+            fig.suptitle('Business Accounts \u2014 Response Ladder & Repeat Behavior',
+                         fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+            fig.text(0.5, -0.02,
+                     f'Do repeat responders escalate challenge tiers and deposit more?  |  {_n_any:,} responders',
+                     ha='center', fontsize=12, color=GEN_COLORS['muted'])
+            plt.tight_layout()
+            plt.show()
+
+        # Chart 2: Deposit comparison by movement direction
+        if _n_repeat >= 10 and _avail and len(_movements) > 0:
+            _rp_df = _df.loc[_repeat_idx].copy()
+            _move_series = pd.Series(_movements, index=_repeat_idx[:len(_movements)])
+            _rp_df['_movement'] = _move_series
+
+            _dir_groups = {}
+            for d in ['Up', 'Same', 'Down']:
+                _d_df = _rp_df[_rp_df['_movement'] == d]
+                if len(_d_df) > 0:
+                    _dir_groups[d] = _d_df
+
+            if len(_dir_groups) >= 2:
+                fig, ax = plt.subplots(figsize=(12, 7))
+                _dir_colors_map = {'Up': GEN_COLORS['success'], 'Same': GEN_COLORS['info'],
+                                   'Down': GEN_COLORS['warning']}
+                x = np.arange(len(_avail))
+                _w = 0.8 / len(_dir_groups)
+
+                for gi, (dname, ddf) in enumerate(_dir_groups.items()):
+                    _med_vals = []
+                    for field, _, _ in _avail:
+                        _med = ddf[field].dropna().median()
+                        _med_vals.append(_med if not pd.isna(_med) else 0)
+                    offset = -0.4 + gi * _w + _w / 2
+                    bars = ax.bar(x + offset, _med_vals, _w,
+                                  label=f"{dname} (n={len(ddf):,})",
+                                  color=_dir_colors_map.get(dname, GEN_COLORS['muted']),
+                                  edgecolor='white')
+                    for bar, val, (_, _, fmt) in zip(bars, _med_vals, _avail):
+                        if val > 0:
+                            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                                    fmt(val, None), ha='center', va='bottom',
+                                    fontsize=12, fontweight='bold')
+
+                ax.set_xticks(x)
+                ax.set_xticklabels([lbl for _, lbl, _ in _avail], fontsize=12)
+                ax.legend(fontsize=13, frameon=False, loc='upper right')
+                ax.set_title('Deposits & Spend by Ladder Movement',
+                             fontsize=18, fontweight='bold', color=GEN_COLORS['dark_text'])
+                gen_clean_axes(ax)
+
+                fig.suptitle('Business Accounts \u2014 Does Moving Up the Ladder Drive Deposits?',
+                             fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+                plt.tight_layout()
+                plt.show()

@@ -2,8 +2,8 @@
 # BUSINESS DEPOSITS: Campaign Responder Deposit & Card Behavior
 # ===========================================================================
 # Mirror of Section 23 cell 14 for business accounts.
-# Focus on swipes, spend, deposits (not repayment). Per-mailer breakdown
-# and sustained activity trend.
+# ARS campaign responders by Response Grouping (offer x response type).
+# NU 1-4 accounts excluded — they are non-responders. Tracked in cell 14b.
 #
 # ODDD mailer columns come in pairs:
 #   "MmmYY Mail" — offer type (SO=Single Offer, MO=Multiple Offer)
@@ -28,8 +28,16 @@ elif _resp_field not in _df.columns:
     print(f"    WARNING: '{_resp_field}' not available -- skipping")
 else:
     _df = _df[_df[_resp_field].notna()].copy()
-    _resp_vals = _df[_resp_field].value_counts()
+    _total_with_grouping = len(_df)
+
+    # ---- Exclude NU 1-4 (non-responders with partial activation) ----
+    _df['_resp_clean'] = _df[_resp_field].astype(str).str.strip().str.upper()
+    _nu14_mask = _df['_resp_clean'].str.contains(r'NU\s*1.*4|NU\s*[1234]$', regex=True, na=False)
+    _nu14_count = _nu14_mask.sum()
+    _df = _df[~_nu14_mask].copy()
     _total = len(_df)
+
+    _resp_vals = _df[_resp_field].value_counts()
     _top_groups = _resp_vals.head(4).index.tolist()
 
     # ---- Discover paired Mail / Resp columns ----
@@ -45,13 +53,11 @@ else:
         if m:
             _resp_cols[m.group(1)] = col
 
-    # Sort chronologically
     _month_order = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
                     'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
     def _msort(k):
         return (int(k[3:])+2000, _month_order.get(k[:3], 0))
 
-    # Only include periods that have both Mail and Resp columns
     _mailer_keys = sorted([k for k in _mail_cols if k in _resp_cols], key=_msort)
 
     _compare = [
@@ -67,11 +73,12 @@ else:
     print(f"  BUSINESS DEPOSITS — CAMPAIGN RESPONDER BEHAVIOR (Cell 14)")
     print(f"{'=' * 90}")
     print(f"  Source: deposits_business_df (cross-source: ODDD + ZAccounts)")
-    print(f"  Accounts with response grouping: {_total:,}")
+    print(f"  Accounts with response grouping: {_total_with_grouping:,}")
+    print(f"  Excluded NU 1-4 (non-responders): {_nu14_count:,}")
+    print(f"  True responders analyzed: {_total:,}")
     print(f"  Mailer periods found (Mail + Resp pairs): {len(_mailer_keys)}")
     print()
 
-    # Group summary
     _hdr = f"  {'Response Group':<24s}  {'N':>8s}"
     for _, lbl, _ in _avail:
         _hdr += f"  {'Med ' + lbl:>22s}"
@@ -92,22 +99,17 @@ else:
     print(f"{'=' * 90}")
 
     # ---- Per-mailer response rate table ----
-    # Mailed = non-null in Mail column (SO or MO = was offered)
-    # Responded = non-null in Resp column (SR or MR = responded)
     if _mailer_keys:
         print(f"\n  PER-MAILER RESPONSE RATE")
         print(f"  {'Mailer':<12s}  {'Mailed':>8s}  {'Responded':>10s}  {'Rate':>8s}  {'Offer Types':>16s}  {'Resp Types':>16s}")
         print(f"  {'-'*12}  {'-'*8}  {'-'*10}  {'-'*8}  {'-'*16}  {'-'*16}")
-        _mail_rates = []
         for mk in _mailer_keys:
             _m_col = _mail_cols[mk]
             _r_col = _resp_cols[mk]
             _mailed_count = _df[_m_col].notna().sum()
             _responded_count = _df[_r_col].notna().sum()
             _rate = _responded_count / _mailed_count * 100 if _mailed_count > 0 else 0
-            _mail_rates.append((mk, _mailed_count, _responded_count, _rate))
 
-            # Show the actual codes for transparency
             _offer_codes = _df[_m_col].dropna().astype(str).str.strip().value_counts().head(3)
             _resp_codes = _df[_r_col].dropna().astype(str).str.strip().value_counts().head(3)
             _offer_str = ', '.join([f"{v}:{c}" for v, c in _offer_codes.items()])
@@ -150,7 +152,7 @@ else:
         for j in range(_n, len(axes)): axes[j].set_visible(False)
         fig.suptitle('Business Accounts \u2014 Campaign Responders: Spend, Swipes & Deposits',
                      fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
-        fig.text(0.5, -0.01, 'Median values by Response Grouping',
+        fig.text(0.5, -0.01, f'Median values by Response Grouping (excl. NU 1-4)  |  {_total:,} true responders',
                  ha='center', fontsize=12, color=GEN_COLORS['muted'])
         plt.tight_layout(); plt.show()
 
