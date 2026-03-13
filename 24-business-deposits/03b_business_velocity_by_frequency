@@ -55,16 +55,19 @@ else:
         _ct = pd.crosstab(_df['freq_segment'], _df['velocity']).reindex(index=_freq_labels, columns=_vel_order).fillna(0)
         _ct_pct = _ct.div(_ct.sum(axis=1), axis=0) * 100
 
-        print(f"    03b Data Decisions:")
-        print(f"      Source: deposits_business_df")
-        print(f"      Accounts with valid frequency + velocity: {_total:,}")
+        print(f"\n{'=' * 80}")
+        print(f"  BUSINESS DEPOSITS — VELOCITY BY FREQUENCY (Cell 03b)")
+        print(f"{'=' * 80}")
+        print(f"  Source: deposits_business_df")
+        print(f"  Accounts with valid frequency + velocity: {_total:,}")
+        print(f"  Deviation threshold: {_MIN_DEV} deposits (ratio AND absolute)")
+        print(f"\n  {'Frequency Band':<25s}  {'N':>8s}  {'Accel':>8s}  {'Stable':>8s}  {'Decel':>8s}")
+        print(f"  {'-'*25}  {'-'*8}  {'-'*8}  {'-'*8}  {'-'*8}")
         for lbl in _freq_labels:
             _row = _ct_pct.loc[lbl]
             _n = int(_ct.loc[lbl].sum())
-            print(f"        {lbl} (n={_n:,}): "
-                  f"Acc {_row['Accelerating']:.1f}%  |  "
-                  f"Stable {_row['Stable']:.1f}%  |  "
-                  f"Dec {_row['Decelerating']:.1f}%")
+            print(f"  {lbl:<25s}  {_n:>8,}  {_row['Accelerating']:>7.1f}%  {_row['Stable']:>7.1f}%  {_row['Decelerating']:>7.1f}%")
+        print(f"{'=' * 80}")
 
         # ---------------------------------------------------------------------------
         # Chart: 100% stacked horizontal bar
@@ -105,7 +108,7 @@ else:
         ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.12),
                   ncol=3, fontsize=14, frameon=False)
 
-        ax.text(0.5, -0.25,
+        ax.text(0.5, -0.30,
                 f'Velocity: 33d vs 365d rate (>20% change AND \u22652 deposit deviation)  |  Frequency: avgdaysbetweendeposits',
                 transform=ax.transAxes, ha='center', fontsize=12,
                 color=GEN_COLORS['muted'])
