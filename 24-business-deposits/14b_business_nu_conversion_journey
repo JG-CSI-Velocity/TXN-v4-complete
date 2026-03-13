@@ -3,10 +3,13 @@
 # ===========================================================================
 # Mirror of Section 23 cell 14b for business accounts.
 # Track whether partial activators (NU 1-4) later convert to true
-# responders (NU 5+ or TH-*), and compare deposit behavior.
+# responders (NU 5+ or TH-*) in subsequent waves, and compare deposit behavior.
 #
-# Uses MmmYY Segmentation columns for challenge outcomes across periods.
-# Cross-source: ODDD (Segmentation cols) + ZAccounts (deposit fields)
+# Uses MmmYY Resp columns — these contain challenge outcomes:
+#   TH-10/15/20/25 = threshold (success), NU 5+ (success), NU 1-4 (partial)
+#
+# Same classification as Section 09 (ARS Campaign).
+# Cross-source: ODDD (Resp cols) + ZAccounts (deposit fields)
 # Data: deposits_business_df
 
 import matplotlib.pyplot as plt
@@ -19,23 +22,22 @@ _df = deposits_business_df.copy()
 if len(_df) < _MIN_ACCOUNTS:
     print(f"    14b Skipped: {len(_df)} business accounts (below {_MIN_ACCOUNTS} threshold)")
 else:
-    # ---- Discover Segmentation columns ----
-    _seg_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Segmentation$')
-    _seg_cols = {}
+    _resp_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Resp$')
+    _resp_cols = {}
     for col in _df.columns:
-        m = _seg_pattern.match(col)
+        m = _resp_pattern.match(col)
         if m:
-            _seg_cols[m.group(1)] = col
+            _resp_cols[m.group(1)] = col
 
     _month_order = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
                     'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
     def _msort(k):
         return (int(k[3:])+2000, _month_order.get(k[:3], 0))
 
-    _seg_keys = sorted(_seg_cols.keys(), key=_msort)
+    _resp_keys = sorted(_resp_cols.keys(), key=_msort)
 
-    if not _seg_keys:
-        print("    WARNING: No Segmentation columns found -- skipping NU conversion")
+    if not _resp_keys:
+        print("    WARNING: No Resp columns found -- skipping NU conversion")
     else:
         def _is_success(val):
             if pd.isna(val):
@@ -58,10 +60,8 @@ else:
         _ever_success_after_nu14 = pd.Series(False, index=_df.index)
         _success_segment = pd.Series(None, index=_df.index, dtype=object)
 
-        for i, sk in enumerate(_seg_keys):
-            _col = _seg_cols[sk]
-            if _col not in _df.columns:
-                continue
+        for sk in _resp_keys:
+            _col = _resp_cols[sk]
             _is_nu = _df[_col].map(_is_nu14)
             _new_nu = _is_nu & ~_ever_nu14
             _first_nu14_period = _first_nu14_period.where(~_new_nu, sk)
@@ -70,16 +70,15 @@ else:
             _is_succ = _df[_col].map(_is_success)
             _converted = _ever_nu14 & _is_succ & ~_ever_success_after_nu14
             _ever_success_after_nu14 = _ever_success_after_nu14 | _converted
-            _success_segment = _success_segment.where(~_converted, _df[_col].astype(str).str.strip())
+            _success_segment = _success_segment.where(
+                ~_converted, _df[_col].astype(str).str.strip())
 
         _df['_ever_nu14'] = _ever_nu14
         _df['_nu14_converted'] = _ever_success_after_nu14
-        _df['_first_nu14'] = _first_nu14_period
-        _df['_success_seg'] = _success_segment
 
         _nu14_df = _df[_df['_ever_nu14']].copy()
         _total_nu14 = len(_nu14_df)
-        _converted_count = _nu14_df['_nu14_converted'].sum()
+        _converted_count = int(_nu14_df['_nu14_converted'].sum())
         _not_converted = _total_nu14 - _converted_count
         _conv_rate = _converted_count / _total_nu14 * 100 if _total_nu14 > 0 else 0
 
@@ -93,8 +92,8 @@ else:
         print(f"\n{'=' * 80}")
         print(f"  BUSINESS DEPOSITS — NU 1-4 CONVERSION JOURNEY (Cell 14b)")
         print(f"{'=' * 80}")
-        print(f"  Source: deposits_business_df (cross-source: ODDD Segmentation + ZAccounts)")
-        print(f"  Segmentation periods found: {len(_seg_keys)}")
+        print(f"  Source: deposits_business_df (cross-source: ODDD Resp cols + ZAccounts)")
+        print(f"  Resp periods found: {len(_resp_keys)}")
         print(f"  Accounts ever NU 1-4: {_total_nu14:,}")
         print(f"  Converted to NU 5+ / TH-*: {_converted_count:,} ({_conv_rate:.1f}%)")
         print(f"  Never converted: {_not_converted:,}")
@@ -127,7 +126,10 @@ else:
             print(f"{'=' * 80}")
 
             if _converted_count > 0:
-                _seg_dist = _nu14_df[_nu14_df['_nu14_converted']]['_success_seg'].value_counts()
+                _df['_success_seg'] = _success_segment
+                _seg_dist = _nu14_df[_nu14_df['_nu14_converted']].merge(
+                    _df[['_success_seg']], left_index=True, right_index=True, how='left'
+                )['_success_seg'].value_counts()
                 print(f"\n  CONVERSION OUTCOMES (what NU 1-4 converted to)")
                 print(f"  {'Segment':<20s}  {'Count':>8s}  {'Share':>8s}")
                 print(f"  {'-'*20}  {'-'*8}  {'-'*8}")
@@ -136,7 +138,6 @@ else:
                     print(f"  {seg:<20s}  {cnt:>8,}  {_pct:>7.1f}%")
                 print()
 
-        # Chart: Conversion Funnel + Deposit Comparison
         if _total_nu14 >= 10 and _avail:
             fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7),
                                             gridspec_kw={'width_ratios': [1, 1.5]})
@@ -168,7 +169,8 @@ else:
                     _med = gdf[field].dropna().median()
                     _med_vals.append(_med if not pd.isna(_med) else 0)
                 offset = -_w/2 + gi * _w
-                bars = ax2.bar(x + offset, _med_vals, _w, label=f"{gname} (n={len(gdf):,})",
+                bars = ax2.bar(x + offset, _med_vals, _w,
+                               label=f"{gname} (n={len(gdf):,})",
                                color=_group_colors[gi], edgecolor='white')
                 for bar, val, (_, _, fmt) in zip(bars, _med_vals, _avail):
                     if val > 0:
@@ -191,4 +193,4 @@ else:
             plt.tight_layout()
             plt.show()
         elif _total_nu14 == 0:
-            print("    No NU 1-4 accounts found in Segmentation columns")
+            print("    No NU 1-4 accounts found in Resp columns")

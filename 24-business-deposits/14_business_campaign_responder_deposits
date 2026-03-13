@@ -7,8 +7,10 @@
 #
 # ODDD mailer columns come in pairs:
 #   "MmmYY Mail" — offer type (SO=Single Offer, MO=Multiple Offer)
-#   "MmmYY Resp" — response type (SR=Single Response, MR=Multiple Response)
-# Non-null Mail = was mailed. Non-null Resp = responded.
+#   "MmmYY Resp" — challenge outcome (TH-10/15/20/25, NU 5+, NU 1-4)
+#     TH-* or NU 5+ = success (true responder)
+#     NU 1-4 = partial activation (non-responder)
+#     null = no response
 #
 # Cross-source: ODDD (Response Grouping, Mail/Resp cols, monthly spend)
 #             + ZAccounts (deposit fields)
@@ -60,6 +62,22 @@ else:
 
     _mailer_keys = sorted([k for k in _mail_cols if k in _resp_cols], key=_msort)
 
+    def _is_success(val):
+        if pd.isna(val):
+            return False
+        v = str(val).strip().upper()
+        if v.startswith('TH'):
+            return True
+        if v in ('NU 5+', 'NU5+', 'NU 5', 'NU 6', 'NU 7', 'NU 8', 'NU 9', 'NU 10'):
+            return True
+        return False
+
+    def _is_nu_partial(val):
+        if pd.isna(val):
+            return False
+        v = str(val).strip().upper()
+        return v in ('NU 1-4', 'NU1-4')
+
     _compare = [
         ('last 12-mon spend', 'Card Spend (12mo)', gen_fmt_dollar),
         ('last 12-mon swipes', 'Card Swipes (12mo)', gen_fmt_count),
@@ -68,7 +86,6 @@ else:
     ]
     _avail = [(f, l, fmt) for f, l, fmt in _compare if f in _df.columns]
 
-    # ---- Conference-format summary table ----
     print(f"\n{'=' * 90}")
     print(f"  BUSINESS DEPOSITS — CAMPAIGN RESPONDER BEHAVIOR (Cell 14)")
     print(f"{'=' * 90}")
@@ -98,28 +115,25 @@ else:
         print(_row)
     print(f"{'=' * 90}")
 
-    # ---- Per-mailer response rate table ----
     if _mailer_keys:
         print(f"\n  PER-MAILER RESPONSE RATE")
-        print(f"  {'Mailer':<12s}  {'Mailed':>8s}  {'Responded':>10s}  {'Rate':>8s}  {'Offer Types':>16s}  {'Resp Types':>16s}")
-        print(f"  {'-'*12}  {'-'*8}  {'-'*10}  {'-'*8}  {'-'*16}  {'-'*16}")
+        print(f"  {'Mailer':<12s}  {'Mailed':>8s}  {'Success':>10s}  {'NU 1-4':>8s}  {'Rate':>8s}  {'Resp Codes':>20s}")
+        print(f"  {'-'*12}  {'-'*8}  {'-'*10}  {'-'*8}  {'-'*8}  {'-'*20}")
         for mk in _mailer_keys:
             _m_col = _mail_cols[mk]
             _r_col = _resp_cols[mk]
             _mailed_count = _df[_m_col].notna().sum()
-            _responded_count = _df[_r_col].notna().sum()
-            _rate = _responded_count / _mailed_count * 100 if _mailed_count > 0 else 0
+            _success_count = _df[_r_col].map(_is_success).sum()
+            _nu14_period = _df[_r_col].map(_is_nu_partial).sum()
+            _rate = _success_count / _mailed_count * 100 if _mailed_count > 0 else 0
 
-            _offer_codes = _df[_m_col].dropna().astype(str).str.strip().value_counts().head(3)
-            _resp_codes = _df[_r_col].dropna().astype(str).str.strip().value_counts().head(3)
-            _offer_str = ', '.join([f"{v}:{c}" for v, c in _offer_codes.items()])
+            _resp_codes = _df[_r_col].dropna().astype(str).str.strip().value_counts().head(4)
             _resp_str = ', '.join([f"{v}:{c}" for v, c in _resp_codes.items()]) if len(_resp_codes) > 0 else '--'
 
             _lbl = f"{mk[:3]} '{mk[3:]}"
-            print(f"  {_lbl:<12s}  {_mailed_count:>8,}  {_responded_count:>10,}  {_rate:>7.1f}%  {_offer_str:>16s}  {_resp_str:>16s}")
+            print(f"  {_lbl:<12s}  {_mailed_count:>8,}  {_success_count:>10,}  {_nu14_period:>8,}  {_rate:>7.1f}%  {_resp_str:>20s}")
         print()
 
-    # Chart 1: metric comparison
     if len(_avail) >= 2 and len(_top_groups) >= 2:
         _n = min(len(_avail), 4)
         _cols_c = 2
@@ -156,7 +170,6 @@ else:
                  ha='center', fontsize=12, color=GEN_COLORS['muted'])
         plt.tight_layout(); plt.show()
 
-    # Chart 2: sustained monthly spend trend
     _spend_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Spend$')
     _monthly_spend = {}
     for col in _df.columns:

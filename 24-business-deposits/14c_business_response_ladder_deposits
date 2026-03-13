@@ -5,10 +5,13 @@
 # For accounts that responded in 2+ periods: did they move up, down, or
 # stay at the same challenge tier? Correlate with deposit behavior.
 #
-# Uses MmmYY Segmentation columns. Tier hierarchy:
-#   NU 5+ (tier 1) < TH-10 < TH-15 < TH-20 < TH-25
+# Uses MmmYY Resp columns — these contain challenge outcomes:
+#   TH-10/15/20/25 = threshold (tier = numeric value)
+#   NU 5+ = non-user activated (tier = 1)
+# Tier hierarchy: NU 5+ (1) < TH-10 < TH-15 < TH-20 < TH-25
 #
-# Cross-source: ODDD (Segmentation cols) + ZAccounts (deposit fields)
+# Same classification as Section 09 (ARS Campaign).
+# Cross-source: ODDD (Resp cols) + ZAccounts (deposit fields)
 # Data: deposits_business_df
 
 import matplotlib.pyplot as plt
@@ -21,22 +24,22 @@ _df = deposits_business_df.copy()
 if len(_df) < _MIN_ACCOUNTS:
     print(f"    14c Skipped: {len(_df)} business accounts (below {_MIN_ACCOUNTS} threshold)")
 else:
-    _seg_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Segmentation$')
-    _seg_cols = {}
+    _resp_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Resp$')
+    _resp_cols = {}
     for col in _df.columns:
-        m = _seg_pattern.match(col)
+        m = _resp_pattern.match(col)
         if m:
-            _seg_cols[m.group(1)] = col
+            _resp_cols[m.group(1)] = col
 
     _month_order = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
                     'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
     def _msort(k):
         return (int(k[3:])+2000, _month_order.get(k[:3], 0))
 
-    _seg_keys = sorted(_seg_cols.keys(), key=_msort)
+    _resp_keys = sorted(_resp_cols.keys(), key=_msort)
 
-    if len(_seg_keys) < 2:
-        print("    WARNING: Need 2+ Segmentation periods for ladder analysis -- skipping")
+    if len(_resp_keys) < 2:
+        print("    WARNING: Need 2+ Resp periods for ladder analysis -- skipping")
     else:
         def _is_success(val):
             if pd.isna(val):
@@ -62,14 +65,10 @@ else:
             return 0
 
         _resp_history = pd.DataFrame(index=_df.index)
-        for i, sk in enumerate(_seg_keys):
-            _col = _seg_cols[sk]
-            if _col in _df.columns:
-                _resp_history[f'success_{i}'] = _df[_col].map(_is_success)
-                _resp_history[f'tier_{i}'] = _df[_col].map(_challenge_tier)
-            else:
-                _resp_history[f'success_{i}'] = False
-                _resp_history[f'tier_{i}'] = 0
+        for i, rk in enumerate(_resp_keys):
+            _col = _resp_cols[rk]
+            _resp_history[f'success_{i}'] = _df[_col].map(_is_success)
+            _resp_history[f'tier_{i}'] = _df[_col].map(_challenge_tier)
 
         _success_cols = [c for c in _resp_history.columns if c.startswith('success_')]
         _resp_history['resp_count'] = _resp_history[_success_cols].sum(axis=1)
@@ -78,16 +77,16 @@ else:
         _repeat_responder = _resp_history['resp_count'] > 1
         _first_time = _any_responder & ~_repeat_responder
 
-        _n_any = _any_responder.sum()
-        _n_first = _first_time.sum()
-        _n_repeat = _repeat_responder.sum()
+        _n_any = int(_any_responder.sum())
+        _n_first = int(_first_time.sum())
+        _n_repeat = int(_repeat_responder.sum())
 
         _movements = []
         _repeat_idx = _resp_history[_repeat_responder].index
 
         for idx in _repeat_idx:
             _tiers = []
-            for i in range(len(_seg_keys)):
+            for i in range(len(_resp_keys)):
                 if _resp_history.at[idx, f'success_{i}']:
                     _tiers.append(_resp_history.at[idx, f'tier_{i}'])
             if len(_tiers) >= 2:
@@ -100,9 +99,7 @@ else:
                 else:
                     _movements.append('Same')
 
-        _move_counts = {}
-        for m in ['Up', 'Same', 'Down']:
-            _move_counts[m] = _movements.count(m)
+        _move_counts = {m: _movements.count(m) for m in ['Up', 'Same', 'Down']}
 
         _compare = [
             ('depAmt365', 'Deposit Amount (365d)', gen_fmt_dollar),
@@ -114,8 +111,8 @@ else:
         print(f"\n{'=' * 80}")
         print(f"  BUSINESS DEPOSITS — RESPONSE LADDER MOVEMENT (Cell 14c)")
         print(f"{'=' * 80}")
-        print(f"  Source: deposits_business_df (cross-source: ODDD Segmentation + ZAccounts)")
-        print(f"  Segmentation periods: {len(_seg_keys)}")
+        print(f"  Source: deposits_business_df (cross-source: ODDD Resp cols + ZAccounts)")
+        print(f"  Resp periods: {len(_resp_keys)}")
         print(f"  Any-period responders: {_n_any:,}")
         print(f"  First-time responders: {_n_first:,}")
         print(f"  Repeat responders (2+ periods): {_n_repeat:,}")
@@ -156,7 +153,6 @@ else:
                 print(_row)
             print(f"{'=' * 80}")
 
-        # Chart: First-Time vs Repeat Donut + Ladder Movement
         if _n_any >= 10:
             _has_movement = _n_repeat > 0 and len(_movements) > 0
             _ncols = 2 if _has_movement else 1
@@ -203,7 +199,6 @@ else:
             plt.tight_layout()
             plt.show()
 
-        # Chart 2: Deposit comparison by movement direction
         if _n_repeat >= 10 and _avail and len(_movements) > 0:
             _rp_df = _df.loc[_repeat_idx].copy()
             _move_series = pd.Series(_movements, index=_repeat_idx[:len(_movements)])

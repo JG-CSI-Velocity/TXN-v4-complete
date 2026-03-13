@@ -5,10 +5,15 @@
 # the campaign goal. Track whether they later convert to true responders
 # (NU 5+ or TH-*) in subsequent waves, and compare deposit behavior.
 #
-# Uses MmmYY Segmentation columns (TH-10, TH-15, NU 5+, NU 1-4) to track
-# challenge outcomes across periods.
+# Uses MmmYY Resp columns — these contain the challenge outcome per period:
+#   TH-10/15/20/25 = hit threshold (success)
+#   NU 5+ = non-user activated 5+ swipes (success)
+#   NU 1-4 = partial activation (non-responder)
+#   null = no response
 #
-# Cross-source: ODDD (Segmentation cols) + ZAccounts (deposit fields)
+# This is the same classification used in Section 09 (ARS Campaign).
+#
+# Cross-source: ODDD (Resp cols) + ZAccounts (deposit fields)
 # Data: deposits_personal_df
 
 import matplotlib.pyplot as plt
@@ -18,26 +23,27 @@ import re
 
 _df = deposits_personal_df.copy()
 
-# ---- Discover Segmentation columns ----
-_seg_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Segmentation$')
-_seg_cols = {}
+# ---- Discover Resp columns (contain challenge outcomes) ----
+_resp_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Resp$')
+_resp_cols = {}
 for col in _df.columns:
-    m = _seg_pattern.match(col)
+    m = _resp_pattern.match(col)
     if m:
-        _seg_cols[m.group(1)] = col
+        _resp_cols[m.group(1)] = col
 
 _month_order = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
                 'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
 def _msort(k):
     return (int(k[3:])+2000, _month_order.get(k[:3], 0))
 
-_seg_keys = sorted(_seg_cols.keys(), key=_msort)
+_resp_keys = sorted(_resp_cols.keys(), key=_msort)
 
-if not _seg_keys:
-    print("    WARNING: No Segmentation columns found -- skipping NU conversion")
+if not _resp_keys:
+    print("    WARNING: No Resp columns found -- skipping NU conversion")
 else:
-    # ---- Classify each period's segmentation value ----
+    # Classification functions (same as Section 09 campaign code)
     def _is_success(val):
+        """TH-* or NU 5+ = true responder."""
         if pd.isna(val):
             return False
         v = str(val).strip().upper()
@@ -48,6 +54,7 @@ else:
         return False
 
     def _is_nu14(val):
+        """NU 1-4 = showed activity but missed goal."""
         if pd.isna(val):
             return False
         v = str(val).strip().upper()
@@ -59,10 +66,8 @@ else:
     _ever_success_after_nu14 = pd.Series(False, index=_df.index)
     _success_segment = pd.Series(None, index=_df.index, dtype=object)
 
-    for i, sk in enumerate(_seg_keys):
-        _col = _seg_cols[sk]
-        if _col not in _df.columns:
-            continue
+    for sk in _resp_keys:
+        _col = _resp_cols[sk]
         _is_nu = _df[_col].map(_is_nu14)
         _new_nu = _is_nu & ~_ever_nu14
         _first_nu14_period = _first_nu14_period.where(~_new_nu, sk)
@@ -72,7 +77,8 @@ else:
         _is_succ = _df[_col].map(_is_success)
         _converted = _ever_nu14 & _is_succ & ~_ever_success_after_nu14
         _ever_success_after_nu14 = _ever_success_after_nu14 | _converted
-        _success_segment = _success_segment.where(~_converted, _df[_col].astype(str).str.strip())
+        _success_segment = _success_segment.where(
+            ~_converted, _df[_col].astype(str).str.strip())
 
     _df['_ever_nu14'] = _ever_nu14
     _df['_nu14_converted'] = _ever_success_after_nu14
@@ -81,19 +87,14 @@ else:
 
     _nu14_df = _df[_df['_ever_nu14']].copy()
     _total_nu14 = len(_nu14_df)
-    _converted_count = _nu14_df['_nu14_converted'].sum()
+    _converted_count = int(_nu14_df['_nu14_converted'].sum())
     _not_converted = _total_nu14 - _converted_count
     _conv_rate = _converted_count / _total_nu14 * 100 if _total_nu14 > 0 else 0
 
-    # Deposit metrics for comparison
-    _dep_field = 'depAmt365'
-    _dep_count_field = 'depCount365'
-    _spend_field = 'last 12-mon spend'
-
     _compare = [
-        (_dep_field, 'Deposit Amount (365d)', gen_fmt_dollar),
-        (_dep_count_field, 'Deposits (365d)', gen_fmt_count),
-        (_spend_field, 'Card Spend (12mo)', gen_fmt_dollar),
+        ('depAmt365', 'Deposit Amount (365d)', gen_fmt_dollar),
+        ('depCount365', 'Deposits (365d)', gen_fmt_count),
+        ('last 12-mon spend', 'Card Spend (12mo)', gen_fmt_dollar),
     ]
     _avail = [(f, l, fmt) for f, l, fmt in _compare if f in _df.columns]
 
@@ -101,8 +102,8 @@ else:
     print(f"\n{'=' * 80}")
     print(f"  PERSONAL DEPOSITS — NU 1-4 CONVERSION JOURNEY (Cell 14b)")
     print(f"{'=' * 80}")
-    print(f"  Source: deposits_personal_df (cross-source: ODDD Segmentation + ZAccounts)")
-    print(f"  Segmentation periods found: {len(_seg_keys)}")
+    print(f"  Source: deposits_personal_df (cross-source: ODDD Resp cols + ZAccounts)")
+    print(f"  Resp periods found: {len(_resp_keys)}")
     print(f"  Accounts ever NU 1-4: {_total_nu14:,}")
     print(f"  Converted to NU 5+ / TH-*: {_converted_count:,} ({_conv_rate:.1f}%)")
     print(f"  Never converted: {_not_converted:,}")
@@ -172,18 +173,17 @@ else:
         gen_clean_axes(ax1)
 
         # Right: Deposit comparison (converted vs not)
-        _group_names = ['Converted', 'Never Converted']
         _group_colors = [GEN_COLORS['success'], GEN_COLORS['muted']]
         x = np.arange(len(_avail))
         _w = 0.3
-
         for gi, (gname, gdf) in enumerate(_groups.items()):
             _med_vals = []
             for field, _, _ in _avail:
                 _med = gdf[field].dropna().median()
                 _med_vals.append(_med if not pd.isna(_med) else 0)
             offset = -_w/2 + gi * _w
-            bars = ax2.bar(x + offset, _med_vals, _w, label=f"{gname} (n={len(gdf):,})",
+            bars = ax2.bar(x + offset, _med_vals, _w,
+                           label=f"{gname} (n={len(gdf):,})",
                            color=_group_colors[gi], edgecolor='white')
             for bar, val, (_, _, fmt) in zip(bars, _med_vals, _avail):
                 if val > 0:
@@ -206,4 +206,4 @@ else:
         plt.tight_layout()
         plt.show()
     elif _total_nu14 == 0:
-        print("    No NU 1-4 accounts found in Segmentation columns")
+        print("    No NU 1-4 accounts found in Resp columns")
