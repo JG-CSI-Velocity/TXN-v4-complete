@@ -71,11 +71,19 @@ fig.suptitle('Personal Accounts \u2014 Deposit Portfolio Dashboard',
              color=GEN_COLORS['dark_text'], y=0.98)
 
 gs = gridspec.GridSpec(2, 2, figure=fig, width_ratios=[1, 1.1],
-                       hspace=0.35, wspace=0.25,
+                       hspace=0.35, wspace=0.08,
                        left=0.04, right=0.96, top=0.88, bottom=0.06)
 
 # ---------------------------------------------------------------------------
-# 3. KPI Cards (left column — 2x2)
+# 3. Faint vertical divider
+# ---------------------------------------------------------------------------
+fig.add_artist(plt.Line2D(
+    [0.48, 0.48], [0.08, 0.90],
+    transform=fig.transFigure, color=GEN_COLORS['muted'],
+    linewidth=0.8, alpha=0.3))
+
+# ---------------------------------------------------------------------------
+# 4. KPI Cards (left column — 2x2)
 # ---------------------------------------------------------------------------
 _kpis = [
     {
@@ -87,13 +95,13 @@ _kpis = [
     {
         'label': 'Median Days Between',
         'value': f"{_median_freq:.0f}" if not np.isnan(_median_freq) else 'N/A',
-        'sub': f"Among {_dep_365:,} active depositors (365d)",
+        'sub': f"Among {_dep_365:,} active depositors",
         'color': GEN_COLORS['warning'],
     },
     {
         'label': 'Avg Annual Deposit',
         'value': f"${_avg_dep_amt:,.0f}" if not np.isnan(_avg_dep_amt) else 'N/A',
-        'sub': f"Among {_dep_365:,} active depositors (365d)",
+        'sub': f"Among {_dep_365:,} active depositors",
         'color': GEN_COLORS['success'],
     },
     {
@@ -105,15 +113,11 @@ _kpis = [
     },
 ]
 
-_card_positions = [(0, 0), (0, 1), (1, 0), (1, 1)]
-for (r, c), kpi in zip(_card_positions, _kpis):
-    _inner = gridspec.GridSpecFromSubplotSpec(1, 1, subplot_spec=gs[r, 0])
-    if c == 0:
-        ax = fig.add_subplot(gs[r, 0])
-        # Split each grid cell into top/bottom for two cards
-        ax.remove()
+# Left-side title aligned with chart title
+fig.text(0.26, 0.90, '365-Day Deposit Overview',
+         fontsize=20, fontweight='bold',
+         color=GEN_COLORS['dark_text'], ha='center', va='center')
 
-# Use a finer grid for the 4 cards
 _gs_cards = gridspec.GridSpecFromSubplotSpec(2, 2, subplot_spec=gs[:, 0],
                                              hspace=0.25, wspace=0.2)
 for idx, kpi in enumerate(_kpis):
@@ -137,7 +141,7 @@ for idx, kpi in enumerate(_kpis):
             color=GEN_COLORS['muted'])
 
 # ---------------------------------------------------------------------------
-# 4. Account Composition Chart (right column — full height)
+# 5. Account Composition Chart (right column — full height)
 # ---------------------------------------------------------------------------
 ax_chart = fig.add_subplot(gs[:, 1])
 
@@ -146,20 +150,47 @@ _counts = [_dep_33, _active_not_recent, _inactive_365]
 _seg_colors = [GEN_COLORS['success'], GEN_COLORS['info'], GEN_COLORS['accent']]
 _bals = [_bal_recent, _bal_active_nr, _bal_inactive]
 
-# Horizontal bars
 _bars = ax_chart.barh(_segments[::-1], _counts[::-1],
                       color=_seg_colors[::-1], edgecolor='white',
                       height=0.55, linewidth=2)
 
-for bar, val, bal in zip(_bars, _counts[::-1], _bals[::-1]):
+_x_max = max(_counts) if max(_counts) > 0 else 1
+
+for bar, val, bal, clr in zip(_bars, _counts[::-1], _bals[::-1], _seg_colors[::-1]):
     _pct = val / _total * 100 if _total else 0
-    _bal_str = f"  |  Median bal: ${bal:,.0f}" if not np.isnan(bal) else ""
-    ax_chart.text(bar.get_width() + max(1, _total * 0.012),
-                  bar.get_y() + bar.get_height() / 2,
-                  f"{val:,}  ({_pct:.1f}%){_bal_str}",
-                  ha='left', va='center',
-                  fontsize=16, fontweight='bold',
-                  color=GEN_COLORS['dark_text'])
+
+    # Count + percentage INSIDE the bar (white text for contrast)
+    if val > _x_max * 0.15:
+        ax_chart.text(bar.get_width() - _x_max * 0.02,
+                      bar.get_y() + bar.get_height() / 2,
+                      f"{val:,}  ({_pct:.1f}%)",
+                      ha='right', va='center',
+                      fontsize=15, fontweight='bold', color='white')
+    else:
+        # Bar too small — put count just outside
+        ax_chart.text(bar.get_width() + _x_max * 0.01,
+                      bar.get_y() + bar.get_height() / 2,
+                      f"{val:,}  ({_pct:.1f}%)",
+                      ha='left', va='center',
+                      fontsize=15, fontweight='bold',
+                      color=GEN_COLORS['dark_text'])
+
+    # Median balance OUTSIDE the bar
+    if not np.isnan(bal):
+        _outside_x = bar.get_width() + _x_max * 0.02
+        # Shift right if count was placed outside
+        if val <= _x_max * 0.15:
+            _label_w = len(f"{val:,}  ({_pct:.1f}%)") * _x_max * 0.007
+            _outside_x = bar.get_width() + _label_w + _x_max * 0.03
+        ax_chart.text(_outside_x,
+                      bar.get_y() + bar.get_height() / 2,
+                      f"Median bal: ${bal:,.0f}",
+                      ha='left', va='center',
+                      fontsize=14, fontweight='medium',
+                      color=GEN_COLORS['muted'])
+
+# Expand x-axis to fit outside labels
+ax_chart.set_xlim(0, _x_max * 1.55)
 
 ax_chart.set_title('Account Composition by Deposit Activity',
                    fontsize=20, fontweight='bold',
@@ -169,7 +200,6 @@ ax_chart.xaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
 ax_chart.tick_params(axis='y', labelsize=15)
 ax_chart.tick_params(axis='x', labelsize=13)
 
-# Add ACH rates as annotations if available
 if not np.isnan(_auto_recent) and not np.isnan(_auto_active):
     ax_chart.text(0.98, 0.02,
                   f"Direct Deposit (ACH):  Recent {_auto_recent:.1f}%  |  "
