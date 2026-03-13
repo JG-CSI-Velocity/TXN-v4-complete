@@ -124,7 +124,7 @@ else:
                 ha='center', va='center', fontsize=32, fontweight='bold',
                 color=kpi['color'])
         ax.text(0.5, 0.16, kpi['sub'], transform=ax.transAxes,
-                ha='center', va='center', fontsize=13, fontweight='medium',
+                ha='center', va='center', fontsize=15, fontweight='medium',
                 color=GEN_COLORS['muted'])
 
     # -------------------------------------------------------------------
