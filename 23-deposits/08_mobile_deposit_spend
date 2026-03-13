@@ -30,17 +30,12 @@ else:
     ]
     _avail = [(f, l, fmt) for f, l, fmt in _compare if f in _df.columns]
 
-    # Filter to accounts with actual card activity for spend comparison
-    _spend_fields = [f for f, _, _ in _avail if 'spend' in f.lower() or 'swipe' in f.lower()]
-    if _spend_fields:
-        _card_filter = (_df[_spend_fields[0]].fillna(0) > 0)
-        for _sf in _spend_fields[1:]:
-            _card_filter = _card_filter | (_df[_sf].fillna(0) > 0)
-        _df = _df[_card_filter].copy()
-
     _groups = _df.groupby('_mobile_user')
     _group_names = ['Mobile Depositor', 'Non-Mobile']
     _group_names = [g for g in _group_names if g in _groups.groups]
+
+    # Count card activity for context (but do NOT filter — non-mobile $0 IS the signal)
+    _with_card = (_df['last 12-mon spend'].fillna(0) > 0).sum() if 'last 12-mon spend' in _df.columns else 0
 
     # ----- Conference-format summary table -----
     print(f"\n{'=' * 80}")
@@ -48,8 +43,8 @@ else:
     print(f"{'=' * 80}")
     print(f"  Source: deposits_personal_df (cross-source: ZAccounts + ODDD)")
     print(f"  Total personal accounts: {_pre_total:,}")
-    print(f"  With ZAccounts match: {_df[_mob_field].notna().sum() + (_pre_total - len(_df)):,}")
-    print(f"  With card activity: {len(_df):,}")
+    print(f"  With ZAccounts match: {len(_df):,}")
+    print(f"  With card activity: {_with_card:,}")
     print()
     _hdr = f"  {'Group':<22s}  {'N':>8s}"
     for _, lbl, _ in _avail:
@@ -107,7 +102,7 @@ else:
         fig.suptitle('Personal Accounts \u2014 Do Mobile Depositors Spend More?',
                      fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
         fig.text(0.5, -0.02,
-                 'Median values  |  Filtered to ZAccounts-matched accounts with card activity > 0',
+                 'Median values  |  ZAccounts-matched accounts  |  $0 spend included',
                  ha='center', fontsize=12, color=GEN_COLORS['muted'])
         plt.tight_layout()
         plt.show()
