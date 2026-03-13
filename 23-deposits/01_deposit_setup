@@ -141,7 +141,104 @@ else:
     print("    WARNING: Could not join ZAccounts -- using rewards_df only")
 
 # ---------------------------------------------------------------------------
-# 5. Auto-discover monthly columns from rewards_df
+# 5. Longitudinal join: bring all snapshots into deposits_df
+# ---------------------------------------------------------------------------
+# Each snapshot's rolling windows (33/66/99/365 days) cover DIFFERENT periods.
+# We suffix columns with the snapshot date so downstream cells can compare
+# accurately without confusing "365 days as of Dec 2025" with "365 days as
+# of Nov 2024".
+
+# Key deposit fields to bring from each snapshot
+_LONGITUDINAL_FIELDS = [
+    'DepCount33', 'DepAmt33', 'DepCount66', 'DepAmt66',
+    'DepCount99', 'DepAmt99', 'depCount365', 'depAmt365',
+    'avgdaysbetweendeposits', 'avgrepaymentrate',
+    'balance', 'AvgCollectedBalance',
+    'nsfodfeestodepositsratio90days',
+    'SIG_365', 'PIN_365', 'declines_365',
+    'Mobile_Deposits_90', 'autodeposit',
+    'RepaymentTrendCount33', 'DepositTrendCount33',
+    'WindfallTrendCount33', 'CashFlowTrendCount33',
+]
+
+# Build snapshot metadata: date labels and actual window coverage
+from datetime import datetime as _dt, timedelta as _td
+
+ZA_SNAPSHOT_META = OrderedDict()
+_snapshot_keys_sorted = sorted(ZA_SNAPSHOTS.keys())
+
+for _sk in _snapshot_keys_sorted:
+    _snap_date = _dt.strptime(_sk, '%Y%m%d')
+    _label = _snap_date.strftime('%b%y').lower()  # e.g., "dec25", "jun25", "nov24"
+    ZA_SNAPSHOT_META[_sk] = {
+        'date': _snap_date,
+        'label': _label,
+        'window_365': f"{(_snap_date - _td(days=365)).strftime('%b %y')} - {_snap_date.strftime('%b %y')}",
+        'window_99':  f"{(_snap_date - _td(days=99)).strftime('%b %y')} - {_snap_date.strftime('%b %y')}",
+        'window_66':  f"{(_snap_date - _td(days=66)).strftime('%b %y')} - {_snap_date.strftime('%b %y')}",
+        'window_33':  f"{(_snap_date - _td(days=33)).strftime('%b %y')} - {_snap_date.strftime('%b %y')}",
+    }
+
+if ZA_HAS_MULTIPLE:
+    print(f"\n    Longitudinal join: {len(_snapshot_keys_sorted)} snapshots")
+    for _sk in _snapshot_keys_sorted:
+        _meta = ZA_SNAPSHOT_META[_sk]
+        print(f"      {_meta['label']}: 365-day window = {_meta['window_365']}")
+
+    for _sk in _snapshot_keys_sorted:
+        _meta = ZA_SNAPSHOT_META[_sk]
+        _suffix = f"_{_meta['label']}"
+        _snap_df = ZA_SNAPSHOTS[_sk]
+
+        # Find join key in this snapshot
+        _snap_join = 'HASHED_ACCOUNT' if 'HASHED_ACCOUNT' in _snap_df.columns else None
+        if not _snap_join:
+            _possible = [c for c in _snap_df.columns
+                         if 'hashed' in c.lower() or 'account' in c.lower()]
+            _snap_join = _possible[0] if _possible else None
+
+        if not _snap_join:
+            print(f"      WARNING: No join key found in {_sk} snapshot, skipping")
+            continue
+
+        # Select only the fields that exist in this snapshot + join key
+        _avail = [c for c in _LONGITUDINAL_FIELDS if c in _snap_df.columns]
+        _subset = _snap_df[[_snap_join] + _avail].copy()
+        _subset = _subset.drop_duplicates(subset=[_snap_join], keep='last')
+
+        # Rename fields with snapshot suffix
+        _rename = {c: f"{c}{_suffix}" for c in _avail}
+        _subset = _subset.rename(columns=_rename)
+
+        # Skip if this is the latest snapshot (already joined as primary)
+        if _sk == _snapshot_keys_sorted[-1]:
+            # Latest is already in deposits_df without suffix; add suffixed copies
+            for _orig, _new in _rename.items():
+                if _orig in deposits_df.columns:
+                    deposits_df[_new] = deposits_df[_orig]
+            print(f"      {_meta['label']}: aliased {len(_avail)} fields (primary snapshot)")
+        else:
+            deposits_df = deposits_df.merge(
+                _subset,
+                left_on=_join_left,
+                right_on=_snap_join,
+                how='left',
+                suffixes=('', f'_dup_{_sk}')
+            )
+            # Drop duplicate join key if created
+            _dup_col = f"{_snap_join}_dup_{_sk}"
+            if _dup_col in deposits_df.columns:
+                deposits_df.drop(columns=[_dup_col], inplace=True)
+            _matched_snap = deposits_df[f"{_avail[0]}{_suffix}"].notna().sum()
+            print(f"      {_meta['label']}: joined {len(_avail)} fields, "
+                  f"{_matched_snap:,} matched")
+
+    print(f"    deposits_df now has {len(deposits_df.columns)} columns")
+else:
+    print(f"\n    Single snapshot -- no longitudinal join needed")
+
+# ---------------------------------------------------------------------------
+# 6. Auto-discover monthly columns from rewards_df
 # ---------------------------------------------------------------------------
 _month_order = {
     'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
@@ -211,13 +308,13 @@ if DEP_MONTHS:
     print(f"      Month span: {DEP_MONTHS[0]} to {DEP_MONTHS[-1]}")
 
 # ---------------------------------------------------------------------------
-# 6. Detect ICS fields
+# 7. Detect ICS fields
 # ---------------------------------------------------------------------------
 HAS_ICS = 'ICS_Account' in rewards_df.columns
 print(f"\n    ICS fields available: {HAS_ICS}")
 
 # ---------------------------------------------------------------------------
-# 7. Summary
+# 8. Summary
 # ---------------------------------------------------------------------------
 print(f"\n    === Deposit Analysis Setup Complete ===")
 print(f"    rewards_df:   {len(rewards_df):,} accounts, {len(rewards_df.columns)} fields")
@@ -225,3 +322,6 @@ print(f"    deposits_df:  {len(deposits_df):,} accounts, {len(deposits_df.column
 print(f"    zaccounts_df: {len(zaccounts_df):,} rows")
 print(f"    ztrends_df:   {len(ztrends_df):,} rows")
 print(f"    Monthly periods: {len(DEP_MONTHS)}")
+if ZA_HAS_MULTIPLE:
+    print(f"    Snapshot labels: {[ZA_SNAPSHOT_META[k]['label'] for k in sorted(ZA_SNAPSHOT_META)]}")
+    print(f"    Longitudinal fields: {len(_LONGITUDINAL_FIELDS)} per snapshot")

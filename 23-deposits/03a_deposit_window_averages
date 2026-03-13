@@ -1,0 +1,75 @@
+# ===========================================================================
+# DEPOSIT WINDOWS: Average Count and Amount by Time Window
+# ===========================================================================
+# Side-by-side bar chart comparing average deposit count and average
+# deposit amount across 33/66/99/365 day windows.
+#
+# Requires: 01_deposit_setup (zaccounts_df)
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import numpy as np
+
+# ---------------------------------------------------------------------------
+# Window metrics
+# ---------------------------------------------------------------------------
+_windows = ['33', '66', '99', '365']
+_count_cols = ['DepCount33', 'DepCount66', 'DepCount99', 'depCount365']
+_amt_cols = ['DepAmt33', 'DepAmt66', 'DepAmt99', 'depAmt365']
+
+_avg_counts = []
+_avg_amts = []
+
+for cc, ac in zip(_count_cols, _amt_cols):
+    if cc in zaccounts_df.columns:
+        _avg_counts.append(zaccounts_df[cc].mean())
+    else:
+        _avg_counts.append(0)
+
+    if ac in zaccounts_df.columns:
+        _avg_amts.append(zaccounts_df.loc[zaccounts_df[ac] > 0, ac].mean())
+    else:
+        _avg_amts.append(0)
+
+_window_labels = ['33 Days', '66 Days', '99 Days', '365 Days']
+_bar_colors = [GEN_COLORS['success'], GEN_COLORS['info'],
+               GEN_COLORS['warning'], GEN_COLORS['primary']]
+
+# ---------------------------------------------------------------------------
+# Chart: Average deposit count and amount by window
+# ---------------------------------------------------------------------------
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+fig.suptitle('Deposit Behavior by Time Window',
+             fontsize=20, fontweight='bold', color=GEN_COLORS['dark_text'])
+
+x = np.arange(len(_windows))
+_bar_w = 0.6
+
+bars1 = ax1.bar(x, _avg_counts, width=_bar_w, color=_bar_colors, edgecolor='white')
+ax1.set_title('Average Deposit Count', fontsize=16, fontweight='bold',
+              color=GEN_COLORS['dark_text'], pad=10)
+ax1.set_xticks(x)
+ax1.set_xticklabels(_window_labels, fontsize=14)
+ax1.set_ylabel('Avg Deposits', fontsize=14)
+ax1.tick_params(axis='y', labelsize=12)
+for bar, val in zip(bars1, _avg_counts):
+    ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.1,
+             f'{val:.1f}', ha='center', va='bottom', fontsize=14, fontweight='bold')
+gen_clean_axes(ax1)
+
+bars2 = ax2.bar(x, _avg_amts, width=_bar_w, color=_bar_colors, edgecolor='white')
+ax2.set_title('Average Deposit Amount (Depositors Only)', fontsize=16,
+              fontweight='bold', color=GEN_COLORS['dark_text'], pad=10)
+ax2.set_xticks(x)
+ax2.set_xticklabels(_window_labels, fontsize=14)
+ax2.set_ylabel('Avg Amount ($)', fontsize=14)
+ax2.tick_params(axis='y', labelsize=12)
+ax2.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+for bar, val in zip(bars2, _avg_amts):
+    ax2.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+             gen_fmt_dollar(val, None), ha='center', va='bottom',
+             fontsize=14, fontweight='bold')
+gen_clean_axes(ax2)
+
+plt.tight_layout()
+plt.show()

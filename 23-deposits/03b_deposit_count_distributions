@@ -1,0 +1,50 @@
+# ===========================================================================
+# DEPOSIT WINDOWS: Deposit Count Distributions (33 vs 365 Day)
+# ===========================================================================
+# Histograms showing how deposit counts are distributed across accounts
+# for the 33-day (recent) and 365-day (trailing year) windows.
+#
+# Requires: 01_deposit_setup (zaccounts_df)
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+fig.suptitle('Deposit Count Distributions',
+             fontsize=20, fontweight='bold', color=GEN_COLORS['dark_text'])
+
+if 'DepCount33' in zaccounts_df.columns:
+    _data_33 = zaccounts_df['DepCount33'].dropna()
+    _max_33 = int(min(_data_33.quantile(0.99), 20)) + 1
+    ax1.hist(_data_33.clip(upper=_max_33), bins=_max_33,
+             color=GEN_COLORS['success'], edgecolor='white', alpha=0.85)
+    ax1.set_title('Deposit Count (33 Days)', fontsize=16, fontweight='bold',
+                  color=GEN_COLORS['dark_text'])
+    ax1.set_xlabel('Number of Deposits', fontsize=14)
+    ax1.set_ylabel('Accounts', fontsize=14)
+    _med_33 = _data_33.median()
+    ax1.axvline(_med_33, color=GEN_COLORS['accent'], linestyle='--', linewidth=2)
+    ax1.text(_med_33, ax1.get_ylim()[1] * 0.9, f'  Median: {_med_33:.0f}',
+             fontsize=12, color=GEN_COLORS['accent'], fontweight='bold')
+ax1.tick_params(labelsize=12)
+gen_clean_axes(ax1)
+
+if 'depCount365' in zaccounts_df.columns:
+    _data_365 = zaccounts_df['depCount365'].dropna()
+    _max_365 = int(min(_data_365.quantile(0.99), 100)) + 1
+    _bins_365 = min(_max_365, 50)
+    ax2.hist(_data_365.clip(upper=_max_365), bins=_bins_365,
+             color=GEN_COLORS['primary'], edgecolor='white', alpha=0.85)
+    ax2.set_title('Deposit Count (365 Days)', fontsize=16, fontweight='bold',
+                  color=GEN_COLORS['dark_text'])
+    ax2.set_xlabel('Number of Deposits', fontsize=14)
+    ax2.set_ylabel('Accounts', fontsize=14)
+    _med_365 = _data_365.median()
+    ax2.axvline(_med_365, color=GEN_COLORS['accent'], linestyle='--', linewidth=2)
+    ax2.text(_med_365, ax2.get_ylim()[1] * 0.9, f'  Median: {_med_365:.0f}',
+             fontsize=12, color=GEN_COLORS['accent'], fontweight='bold')
+ax2.tick_params(labelsize=12)
+gen_clean_axes(ax2)
+
+plt.tight_layout()
+plt.show()

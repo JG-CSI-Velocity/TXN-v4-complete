@@ -1,0 +1,98 @@
+# ===========================================================================
+# DEPOSIT SNAPSHOT: Account-Level Movement (Improved / Declined / Flat)
+# ===========================================================================
+# For each account present in multiple snapshots, classify whether their
+# deposit behavior improved, declined, or stayed flat. Uses DepCount365
+# from earliest vs latest snapshot.
+#
+# IMPORTANT: The 365-day windows cover different periods at each snapshot.
+# E.g., Nov24 = Nov'23-Nov'24, Dec25 = Dec'24-Dec'25. We are comparing
+# "trailing year deposits" at two different points in time, which is a
+# valid measure of whether the account is depositing more or less over time.
+#
+# Requires: 01_deposit_setup (ZA_HAS_MULTIPLE, ZA_SNAPSHOT_META, deposits_df)
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+if not ZA_HAS_MULTIPLE:
+    print("    Single snapshot available -- skipping account movement analysis")
+else:
+    _snap_keys = sorted(ZA_SNAPSHOT_META.keys())
+    _earliest = ZA_SNAPSHOT_META[_snap_keys[0]]
+    _latest = ZA_SNAPSHOT_META[_snap_keys[-1]]
+
+    _col_early = f"depCount365_{_earliest['label']}"
+    _col_late = f"depCount365_{_latest['label']}"
+
+    if _col_early in deposits_df.columns and _col_late in deposits_df.columns:
+        # Filter to accounts with data in both snapshots
+        _both = deposits_df[[_col_early, _col_late]].dropna()
+        _n_both = len(_both)
+
+        if _n_both > 0:
+            _delta = _both[_col_late] - _both[_col_early]
+
+            # Classify: >=20% change is meaningful, else flat
+            _pct_change = _delta / _both[_col_early].replace(0, np.nan)
+
+            _improved = (_pct_change > 0.2).sum()
+            _declined = (_pct_change < -0.2).sum()
+            _flat = _n_both - _improved - _declined
+
+            _categories = ['Improved\n(>20% more deposits)',
+                           'Flat\n(within +/-20%)',
+                           'Declined\n(>20% fewer deposits)']
+            _counts = [_improved, _flat, _declined]
+            _colors = [GEN_COLORS['success'], GEN_COLORS['info'], GEN_COLORS['accent']]
+            _pcts = [c / _n_both * 100 for c in _counts]
+
+            fig, ax = plt.subplots(figsize=(12, 7))
+
+            bars = ax.barh(_categories, _counts, color=_colors,
+                           edgecolor='white', linewidth=1.5, height=0.5)
+
+            for bar, pct, count in zip(bars, _pcts, _counts):
+                ax.text(bar.get_width() + max(_counts) * 0.02,
+                        bar.get_y() + bar.get_height()/2,
+                        f"{count:,} ({pct:.1f}%)",
+                        ha='left', va='center',
+                        fontsize=15, fontweight='bold',
+                        color=GEN_COLORS['dark_text'])
+
+            ax.set_title('Account Deposit Movement: Earliest vs Latest Snapshot',
+                         fontsize=20, fontweight='bold', color=GEN_COLORS['dark_text'],
+                         pad=20)
+            ax.text(0.5, 1.01,
+                    f"Comparing 365-day deposit counts: "
+                    f"{_earliest['label'].upper()} ({_earliest['window_365']}) vs "
+                    f"{_latest['label'].upper()} ({_latest['window_365']})",
+                    transform=ax.transAxes, ha='center', va='bottom',
+                    fontsize=12, fontstyle='italic', color=GEN_COLORS['muted'])
+
+            ax.set_xlabel('Number of Accounts', fontsize=14, fontweight='bold')
+            ax.invert_yaxis()
+            gen_clean_axes(ax, keep_left=False)
+
+            plt.tight_layout()
+            plt.show()
+
+            # -----------------------------------------------------------
+            # Print summary stats
+            # -----------------------------------------------------------
+            print(f"\n    Account Movement Summary")
+            print(f"    {'='*50}")
+            print(f"    Accounts in both snapshots: {_n_both:,}")
+            print(f"    Improved (>20% more deposits): {_improved:,} ({_improved/_n_both*100:.1f}%)")
+            print(f"    Flat (within +/-20%):          {_flat:,} ({_flat/_n_both*100:.1f}%)")
+            print(f"    Declined (>20% fewer deposits):{_declined:,} ({_declined/_n_both*100:.1f}%)")
+            print(f"    ")
+            print(f"    Early snapshot ({_earliest['label']}): "
+                  f"365-day window = {_earliest['window_365']}")
+            print(f"    Late snapshot  ({_latest['label']}):  "
+                  f"365-day window = {_latest['window_365']}")
+        else:
+            print("    WARNING: No accounts found in both snapshots")
+    else:
+        print(f"    WARNING: Missing columns for movement analysis")
+        print(f"      Expected: {_col_early}, {_col_late}")
