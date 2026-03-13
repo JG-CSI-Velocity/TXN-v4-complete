@@ -4,6 +4,15 @@
 # Mirror of Section 23 cell 14 for business accounts.
 # Focus on swipes, spend, deposits (not repayment). Per-mailer breakdown
 # and sustained activity trend.
+#
+# ODDD mailer columns come in pairs:
+#   "MmmYY Mail" — offer type (SO=Single Offer, MO=Multiple Offer)
+#   "MmmYY Resp" — response type (SR=Single Response, MR=Multiple Response)
+# Non-null Mail = was mailed. Non-null Resp = responded.
+#
+# Cross-source: ODDD (Response Grouping, Mail/Resp cols, monthly spend)
+#             + ZAccounts (deposit fields)
+# Data: deposits_business_df
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
@@ -23,19 +32,27 @@ else:
     _total = len(_df)
     _top_groups = _resp_vals.head(4).index.tolist()
 
-    # Discover per-mailer columns
+    # ---- Discover paired Mail / Resp columns ----
     _mail_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Mail$')
+    _resp_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Resp$')
     _mail_cols = {}
+    _resp_cols = {}
     for col in _df.columns:
         m = _mail_pattern.match(col)
         if m:
             _mail_cols[m.group(1)] = col
+        m = _resp_pattern.match(col)
+        if m:
+            _resp_cols[m.group(1)] = col
 
+    # Sort chronologically
     _month_order = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
                     'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
     def _msort(k):
         return (int(k[3:])+2000, _month_order.get(k[:3], 0))
-    _mail_keys = sorted(_mail_cols.keys(), key=_msort)
+
+    # Only include periods that have both Mail and Resp columns
+    _mailer_keys = sorted([k for k in _mail_cols if k in _resp_cols], key=_msort)
 
     _compare = [
         ('last 12-mon spend', 'Card Spend (12mo)', gen_fmt_dollar),
@@ -45,14 +62,16 @@ else:
     ]
     _avail = [(f, l, fmt) for f, l, fmt in _compare if f in _df.columns]
 
-    # Conference-format summary
+    # ---- Conference-format summary table ----
     print(f"\n{'=' * 90}")
     print(f"  BUSINESS DEPOSITS — CAMPAIGN RESPONDER BEHAVIOR (Cell 14)")
     print(f"{'=' * 90}")
     print(f"  Source: deposits_business_df (cross-source: ODDD + ZAccounts)")
     print(f"  Accounts with response grouping: {_total:,}")
-    print(f"  Mailer columns found: {len(_mail_cols)}")
+    print(f"  Mailer periods found (Mail + Resp pairs): {len(_mailer_keys)}")
     print()
+
+    # Group summary
     _hdr = f"  {'Response Group':<24s}  {'N':>8s}"
     for _, lbl, _ in _avail:
         _hdr += f"  {'Med ' + lbl:>22s}"
@@ -72,22 +91,30 @@ else:
         print(_row)
     print(f"{'=' * 90}")
 
-    # Per-mailer response rate
-    if _mail_keys:
+    # ---- Per-mailer response rate table ----
+    # Mailed = non-null in Mail column (SO or MO = was offered)
+    # Responded = non-null in Resp column (SR or MR = responded)
+    if _mailer_keys:
         print(f"\n  PER-MAILER RESPONSE RATE")
-        print(f"  {'Mailer':<12s}  {'Mailed':>8s}  {'Responded':>10s}  {'Rate':>8s}")
-        print(f"  {'-'*12}  {'-'*8}  {'-'*10}  {'-'*8}")
-        for mk in _mail_keys:
-            _col = _mail_cols[mk]
-            # Mail column values: SO = Sent Only, SR = Sent & Responded
-            _vals = _df[_col].dropna()
-            if len(_vals) > 0:
-                _val_str = _vals.astype(str).str.strip().str.upper()
-                _mailed_count = (_val_str.isin(['SO', 'SR'])).sum()
-                _responded = (_val_str == 'SR').sum()
-                _rate = _responded / _mailed_count * 100 if _mailed_count > 0 else 0
-                _lbl = f"{mk[:3]} '{mk[3:]}"
-                print(f"  {_lbl:<12s}  {_mailed_count:>8,}  {_responded:>10,}  {_rate:>7.1f}%")
+        print(f"  {'Mailer':<12s}  {'Mailed':>8s}  {'Responded':>10s}  {'Rate':>8s}  {'Offer Types':>16s}  {'Resp Types':>16s}")
+        print(f"  {'-'*12}  {'-'*8}  {'-'*10}  {'-'*8}  {'-'*16}  {'-'*16}")
+        _mail_rates = []
+        for mk in _mailer_keys:
+            _m_col = _mail_cols[mk]
+            _r_col = _resp_cols[mk]
+            _mailed_count = _df[_m_col].notna().sum()
+            _responded_count = _df[_r_col].notna().sum()
+            _rate = _responded_count / _mailed_count * 100 if _mailed_count > 0 else 0
+            _mail_rates.append((mk, _mailed_count, _responded_count, _rate))
+
+            # Show the actual codes for transparency
+            _offer_codes = _df[_m_col].dropna().astype(str).str.strip().value_counts().head(3)
+            _resp_codes = _df[_r_col].dropna().astype(str).str.strip().value_counts().head(3)
+            _offer_str = ', '.join([f"{v}:{c}" for v, c in _offer_codes.items()])
+            _resp_str = ', '.join([f"{v}:{c}" for v, c in _resp_codes.items()]) if len(_resp_codes) > 0 else '--'
+
+            _lbl = f"{mk[:3]} '{mk[3:]}"
+            print(f"  {_lbl:<12s}  {_mailed_count:>8,}  {_responded_count:>10,}  {_rate:>7.1f}%  {_offer_str:>16s}  {_resp_str:>16s}")
         print()
 
     # Chart 1: metric comparison
