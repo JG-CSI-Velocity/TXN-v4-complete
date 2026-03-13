@@ -17,11 +17,37 @@ if 'DepCount33' in zaccounts_df.columns and 'DepAmt33' in zaccounts_df.columns:
     ].copy()
 
     if len(_scatter_df) > 0:
-        # Clip Y-axis at 99th percentile to keep chart readable
+        # --- Data decisions (printed so you know what's happening) ---
         _y_cap = _scatter_df['DepAmt33'].quantile(0.99)
         _plot_df = _scatter_df[_scatter_df['DepAmt33'] <= _y_cap]
         _clipped = len(_scatter_df) - len(_plot_df)
 
+        _plot_df = _plot_df.copy()
+        _count_support = _plot_df.groupby('DepCount33').size()
+        _min_support = 10
+        _trend_all = _plot_df.groupby('DepCount33')['DepAmt33'].median()
+        _trend = _trend_all[_count_support >= _min_support]
+
+        _max_count = int(_plot_df['DepCount33'].max())
+        _trend_max = int(_trend.index.max()) if len(_trend) > 0 else 0
+        _dropped_bins = len(_trend_all) - len(_trend)
+
+        print(f"    03c Data Decisions:")
+        print(f"      Total accounts with deposits in 33 days: {len(_scatter_df):,}")
+        print(f"      Y-axis cap: 99th percentile = {gen_fmt_dollar(_y_cap, None)}")
+        print(f"      Accounts excluded by cap: {_clipped:,} ({_clipped/len(_scatter_df)*100:.1f}%)")
+        print(f"      Accounts plotted: {len(_plot_df):,}")
+        print(f"      X-axis range: 1 to {_max_count} deposits")
+        print(f"      Trend line: median per deposit count, min {_min_support} accounts per bin")
+        print(f"      Trend line range: 1 to {_trend_max} deposits")
+        print(f"      Deposit counts with <{_min_support} accounts (no trend line): {_dropped_bins}")
+        if _dropped_bins > 0:
+            _thin_counts = _count_support[_count_support < _min_support]
+            print(f"      Thin bins: deposit counts {list(_thin_counts.index[:10])}"
+                  f"{'...' if len(_thin_counts) > 10 else ''}")
+        print()
+
+        # --- Chart ---
         fig, ax = plt.subplots(figsize=(12, 7))
         ax.scatter(
             _plot_df['DepCount33'],
@@ -29,12 +55,6 @@ if 'DepCount33' in zaccounts_df.columns and 'DepAmt33' in zaccounts_df.columns:
             alpha=0.25, s=20, color=GEN_COLORS['info'], edgecolors='none'
         )
 
-        # Add median trend line across the full deposit count range
-        _plot_df = _plot_df.copy()
-        _trend = _plot_df.groupby('DepCount33')['DepAmt33'].median()
-        # Filter to counts with enough data points for a stable median
-        _count_support = _plot_df.groupby('DepCount33').size()
-        _trend = _trend[_count_support >= 10]
         if len(_trend) >= 3:
             ax.plot(_trend.index, _trend.values,
                     color=GEN_COLORS['accent'], linewidth=3,
@@ -51,7 +71,8 @@ if 'DepCount33' in zaccounts_df.columns and 'DepAmt33' in zaccounts_df.columns:
 
         if _clipped > 0:
             ax.text(0.98, 0.02,
-                    f"{_clipped:,} outliers above {gen_fmt_dollar(_y_cap, None)} excluded",
+                    f"{_clipped:,} above {gen_fmt_dollar(_y_cap, None)} excluded | "
+                    f"trend line where >={_min_support} accounts per count",
                     transform=ax.transAxes, ha='right', va='bottom',
                     fontsize=11, fontstyle='italic', color=GEN_COLORS['muted'])
 
