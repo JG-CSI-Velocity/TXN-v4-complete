@@ -15,6 +15,9 @@ _field = 'autodeposit'
 if _field not in _df.columns:
     print(f"    WARNING: '{_field}' not available -- skipping")
 else:
+    # Filter to accounts that actually have ZAccounts data joined
+    _df = _df[_df[_field].notna()].copy()
+
     _ad = _df[_field].astype(str).str.strip().str.lower()
     _df['_has_ad'] = _ad.map(
         lambda v: 'Auto-Deposit' if v in ('yes', 'y', 'true', '1', '1.0') else 'No Auto-Deposit'

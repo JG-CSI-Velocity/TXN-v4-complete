@@ -62,10 +62,7 @@ else:
         for field, _, fmt in _avail:
             _med = _g_df[field].dropna().median()
             _mean = _g_df[field].dropna().mean()
-            if fmt == gen_fmt_dollar:
-                _row += f"  {'${:>,.0f}'.format(_med):>20s}  {'${:>,.0f}'.format(_mean):>20s}"
-            else:
-                _row += f"  {_med:>20,.0f}  {_mean:>20,.0f}"
+            _row += f"  {fmt(_med, None):>20s}  {fmt(_mean, None):>20s}"
         print(_row)
     print(f"{'=' * 80}")
 

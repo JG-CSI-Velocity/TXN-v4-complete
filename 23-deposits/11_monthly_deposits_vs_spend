@@ -47,7 +47,7 @@ else:
 
         ax.plot(x, [d / 1e6 for d in _dep_totals],
                 color=GEN_COLORS['primary'], linewidth=3, marker='o',
-                markersize=6, label='Deposits (MTD)', zorder=3)
+                markersize=6, label='Monthly Deposits', zorder=3)
         ax.plot(x, [s / 1e6 for s in _spend_totals],
                 color=GEN_COLORS['accent'], linewidth=3, marker='s',
                 markersize=6, label='Card Spend', zorder=3)
@@ -60,10 +60,16 @@ else:
 
         ax.set_title('Personal Accounts \u2014 Monthly Deposits vs Card Spend',
                      fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], pad=15)
-        ax.set_xlabel('Month', fontsize=16, fontweight='bold')
         ax.set_ylabel('Amount ($M)', fontsize=16, fontweight='bold')
-        ax.set_xticks(x)
-        ax.set_xticklabels(_labels, fontsize=12, rotation=45, ha='right')
+
+        # Show every Nth label to avoid crowding (aim for ~12-18 labels max)
+        _step = max(1, len(_labels) // 15)
+        _visible_ticks = list(range(0, len(_labels), _step))
+        if (len(_labels) - 1) not in _visible_ticks:
+            _visible_ticks.append(len(_labels) - 1)
+        ax.set_xticks([x[i] for i in _visible_ticks])
+        ax.set_xticklabels([_labels[i] for i in _visible_ticks],
+                           fontsize=13, rotation=30, ha='right')
         ax.tick_params(axis='y', labelsize=13)
         ax.legend(fontsize=14, loc='upper left')
 
@@ -71,6 +77,10 @@ else:
             lambda v, _: f"${v:.1f}M"))
 
         gen_clean_axes(ax)
+        fig.text(0.5, -0.02,
+                 f'ODDD monthly columns (MmmYY MTD = monthly deposit total, MmmYY Spend = card spend)  |  '
+                 f'{len(_labels)} months  |  {len(_df):,} accounts',
+                 ha='center', fontsize=12, color=GEN_COLORS['muted'])
         plt.tight_layout()
         plt.show()
     else:

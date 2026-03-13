@@ -144,6 +144,8 @@ else:
     # Chart: only show panels with meaningful data
     # ---------------------------------------------------------------------------
     _panels = []
+    # Always show deposit amount as baseline panel
+    _panels.append(('dep_median', 'Median Deposit Amt (365d)', lambda v: gen_fmt_dollar(v, None)))
     if _use_oddd_spend:
         _panels.append(('spend', 'Median Card Spend (12mo)', lambda v: gen_fmt_dollar(v, None)))
     if _swipe_source:

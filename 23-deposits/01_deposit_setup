@@ -367,13 +367,25 @@ if DEP_MONTHS:
     print(f"      Month span: {DEP_MONTHS[0]} to {DEP_MONTHS[-1]}")
 
 # ---------------------------------------------------------------------------
-# 7. Detect ICS fields
+# 7. Refresh personal/business DFs with longitudinal columns
+# ---------------------------------------------------------------------------
+# The personal/business split happened before the longitudinal join, so
+# those DFs are missing snapshot-suffixed columns. Rebuild from deposits_df.
+if HAS_BUSINESS_SPLIT:
+    deposits_personal_df = deposits_df[deposits_df['acct_type'] == 'Personal'].copy()
+    deposits_business_df = deposits_df[deposits_df['acct_type'] == 'Business'].copy()
+    print(f"\n    Refreshed personal/business DFs with {len(deposits_df.columns)} columns each")
+else:
+    deposits_personal_df = deposits_df.copy()
+
+# ---------------------------------------------------------------------------
+# 8. Detect ICS fields
 # ---------------------------------------------------------------------------
 HAS_ICS = 'ICS_Account' in rewards_df.columns
 print(f"\n    ICS fields available: {HAS_ICS}")
 
 # ---------------------------------------------------------------------------
-# 8. Summary
+# 9. Summary
 # ---------------------------------------------------------------------------
 print(f"\n    === Deposit Analysis Setup Complete ===")
 print(f"    rewards_df:   {len(rewards_df):,} accounts, {len(rewards_df.columns)} fields")
