@@ -1,9 +1,10 @@
 # ===========================================================================
-# PERSONAL DEPOSITS: Deposits vs Fees vs Swipes Triangle
+# PERSONAL DEPOSITS: Deposit Tier Profiling — Spend, Swipes & Fees
 # ===========================================================================
-# 365-day view: how do deposit amounts relate to fee pressure and swipe
-# activity? Tier accounts by deposit amount, show median fee ratio and
-# swipe count per tier.
+# 365-day view: tier accounts by deposit amount, show how card activity
+# (spend, swipes) and fee pressure vary across tiers.
+# Panels are only shown if they have meaningful non-zero data — empty
+# panels with all-zero bars are suppressed.
 # Cross-source: ZAccounts (depAmt365, fee ratio, SIG/PIN) + ODDD
 # Data: deposits_personal_df
 
@@ -41,21 +42,44 @@ else:
         GEN_COLORS['primary'],
     ]
 
-    # Determine swipe source: prefer SIG+PIN from ZAccounts, fall back to ODDD
-    _has_za_swipes = (_sig_field in _df.columns and _pin_field in _df.columns
-                      and _df[_sig_field].notna().sum() > 0)
-    _has_oddd_swipes = _oddd_swipes in _df.columns and _df[_oddd_swipes].notna().sum() > 0
-    _has_fees = _fee_field in _df.columns and _df[_fee_field].notna().sum() > 0
-    _has_oddd_spend = _oddd_spend in _df.columns and _df[_oddd_spend].notna().sum() > 0
+    # Check which data sources have meaningful (non-zero) medians
+    def _has_meaningful_data(field):
+        """True if at least 2 tiers have non-zero median values."""
+        if field not in _df.columns:
+            return False
+        _non_null = _df[field].notna().sum()
+        if _non_null == 0:
+            return False
+        _tiers_with_data = 0
+        for tier in _dep_tiers:
+            _tdf = _df[_df['dep_tier'] == tier]
+            _med = _tdf[field].dropna().median()
+            if not np.isnan(_med) and _med > 0:
+                _tiers_with_data += 1
+        return _tiers_with_data >= 2
 
-    if _has_za_swipes:
-        _swipe_label = 'Median Annual Swipes (SIG + PIN)'
+    def _has_meaningful_combo(f1, f2):
+        """True if SIG+PIN combo has at least 2 tiers with non-zero medians."""
+        if f1 not in _df.columns or f2 not in _df.columns:
+            return False
+        _tiers_with_data = 0
+        for tier in _dep_tiers:
+            _tdf = _df[_df['dep_tier'] == tier]
+            _med = (_tdf[f1].fillna(0) + _tdf[f2].fillna(0)).median()
+            if _med > 0:
+                _tiers_with_data += 1
+        return _tiers_with_data >= 2
+
+    _use_za_swipes = _has_meaningful_combo(_sig_field, _pin_field)
+    _use_oddd_swipes = not _use_za_swipes and _has_meaningful_data(_oddd_swipes)
+    _use_fees = _has_meaningful_data(_fee_field)
+    _use_oddd_spend = _has_meaningful_data(_oddd_spend)
+
+    if _use_za_swipes:
         _swipe_source = 'ZAccounts SIG_365 + PIN_365'
-    elif _has_oddd_swipes:
-        _swipe_label = 'Median Annual Swipes (12mo)'
+    elif _use_oddd_swipes:
         _swipe_source = 'ODDD last 12-mon swipes'
     else:
-        _swipe_label = None
         _swipe_source = None
 
     # Compute medians per tier
@@ -63,77 +87,70 @@ else:
     for tier in _dep_tiers:
         _tdf = _df[_df['dep_tier'] == tier]
         _row = {'tier': tier, 'count': len(_tdf)}
+        _row['dep_median'] = _tdf[_dep_field].dropna().median()
+        _row['fee_ratio'] = _tdf[_fee_field].dropna().median() if _use_fees else np.nan
 
-        # Fee ratio
-        _row['fee_ratio'] = _tdf[_fee_field].dropna().median() if _has_fees else np.nan
-
-        # Swipes
-        if _has_za_swipes:
+        if _use_za_swipes:
             _row['swipes'] = (_tdf[_sig_field].fillna(0) + _tdf[_pin_field].fillna(0)).median()
-        elif _has_oddd_swipes:
+        elif _use_oddd_swipes:
             _row['swipes'] = _tdf[_oddd_swipes].dropna().median()
         else:
             _row['swipes'] = np.nan
 
-        # Spend (ODDD fallback for fee panel if no fee data)
-        _row['spend'] = _tdf[_oddd_spend].dropna().median() if _has_oddd_spend else np.nan
-
-        _row['dep_median'] = _tdf[_dep_field].dropna().median()
+        _row['spend'] = _tdf[_oddd_spend].dropna().median() if _use_oddd_spend else np.nan
         _tier_data.append(_row)
 
     # ----- Conference-format summary table -----
     print(f"\n{'=' * 90}")
-    print(f"  PERSONAL DEPOSITS — DEPOSITS vs FEES vs SWIPES (Cell 09)")
+    print(f"  PERSONAL DEPOSITS — DEPOSIT TIER PROFILING (Cell 09)")
     print(f"{'=' * 90}")
     print(f"  Source: deposits_personal_df (cross-source: ZAccounts + ODDD)")
     print(f"  Accounts with 365d deposits > 0: {_total:,}")
-    print(f"  Fee data available: {_has_fees}  |  Swipe source: {_swipe_source or 'none'}")
-    print(f"  ODDD spend available: {_has_oddd_spend}")
+    print(f"  Fee panel: {'yes' if _use_fees else 'suppressed (all-zero medians)'}")
+    print(f"  Swipe panel: {_swipe_source or 'suppressed (all-zero medians)'}")
+    print(f"  Spend panel: {'yes' if _use_oddd_spend else 'suppressed (no data)'}")
     print()
     _hdr = f"  {'Deposit Tier':<16s}  {'N':>8s}  {'Med Deposit':>14s}"
-    if _has_fees:
+    if _use_fees:
         _hdr += f"  {'Med Fee Ratio':>14s}"
     if _swipe_source:
         _hdr += f"  {'Med Swipes':>12s}"
-    if _has_oddd_spend:
+    if _use_oddd_spend:
         _hdr += f"  {'Med Spend':>14s}"
     print(_hdr)
     _sep = f"  {'-'*16}  {'-'*8}  {'-'*14}"
-    if _has_fees:
+    if _use_fees:
         _sep += f"  {'-'*14}"
     if _swipe_source:
         _sep += f"  {'-'*12}"
-    if _has_oddd_spend:
+    if _use_oddd_spend:
         _sep += f"  {'-'*14}"
     print(_sep)
     for r in _tier_data:
         _row = f"  {r['tier']:<16s}  {r['count']:>8,}  {'${:>,.0f}'.format(r['dep_median']):>14s}"
-        if _has_fees:
+        if _use_fees:
             _fv = f"{r['fee_ratio']:.3f}" if not np.isnan(r['fee_ratio']) else 'N/A'
             _row += f"  {_fv:>14s}"
         if _swipe_source:
             _sv = f"{r['swipes']:>,.0f}" if not np.isnan(r['swipes']) else 'N/A'
             _row += f"  {_sv:>12s}"
-        if _has_oddd_spend:
+        if _use_oddd_spend:
             _spv = '${:>,.0f}'.format(r['spend']) if not np.isnan(r['spend']) else 'N/A'
             _row += f"  {_spv:>14s}"
         print(_row)
     print(f"{'=' * 90}")
 
     # ---------------------------------------------------------------------------
-    # Chart: determine which panels to show
+    # Chart: only show panels with meaningful data
     # ---------------------------------------------------------------------------
-    # Build panel list dynamically based on available data
     _panels = []
-    if _has_fees:
-        _panels.append(('fee_ratio', 'Median Fee-to-Deposit Ratio', lambda v: f"{v:.3f}"))
+    if _use_oddd_spend:
+        _panels.append(('spend', 'Median Card Spend (12mo)', lambda v: gen_fmt_dollar(v, None)))
     if _swipe_source:
-        _panels.append(('swipes', _swipe_label, lambda v: gen_fmt_count(v, None)))
-    if _has_oddd_spend and not _has_fees:
-        # Use spend as replacement panel if no fee data
-        _panels.append(('spend', 'Median Card Spend (12mo)', lambda v: gen_fmt_dollar(v, None)))
-    elif _has_oddd_spend:
-        _panels.append(('spend', 'Median Card Spend (12mo)', lambda v: gen_fmt_dollar(v, None)))
+        _swipe_lbl = 'Median Swipes (SIG + PIN)' if _use_za_swipes else 'Median Swipes (12mo)'
+        _panels.append(('swipes', _swipe_lbl, lambda v: gen_fmt_count(v, None)))
+    if _use_fees:
+        _panels.append(('fee_ratio', 'Median Fee-to-Deposit Ratio', lambda v: f"{v:.3f}"))
 
     if _panels:
         _np = len(_panels)
@@ -147,18 +164,23 @@ else:
             ax = axes[i]
             _vals = [r[key] if not np.isnan(r[key]) else 0 for r in _tier_data]
             bars = ax.bar(x, _vals, color=_tier_colors, edgecolor='white', width=0.6)
-            for bar, val in zip(bars, _vals):
+            for bar, val, r in zip(bars, _vals, _tier_data):
                 if val > 0:
                     ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
                             formatter(val), ha='center', va='bottom',
                             fontsize=14, fontweight='bold')
+                # Show N inside each bar
+                ax.text(bar.get_x() + bar.get_width() / 2,
+                        max(bar.get_height() * 0.5, 0),
+                        f"n={r['count']:,}", ha='center', va='center',
+                        fontsize=10, fontweight='bold', color='white')
             ax.set_title(title, fontsize=16, fontweight='bold',
                          color=GEN_COLORS['dark_text'])
             ax.set_xticks(x)
             ax.set_xticklabels(_dep_tiers, fontsize=12, rotation=15, ha='right')
             gen_clean_axes(ax)
 
-        fig.suptitle('Personal Accounts \u2014 Deposits vs Fees vs Swipes',
+        fig.suptitle('Personal Accounts \u2014 Deposit Tier Profiling',
                      fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
         fig.text(0.5, -0.02,
                  f'Tiered by 365-day deposit amount  |  {_total:,} accounts',

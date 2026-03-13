@@ -11,7 +11,7 @@ import numpy as np
 
 _df = deposits_personal_df.copy()
 _ad_field = 'autodeposit'
-_spend_fields = ['last 12-mon spend', 'last 12-mon swipes']
+_spend_fields = ['last 12-mon spend', 'last 12-mon swipes', 'depAmt365']
 
 _missing = [f for f in [_ad_field] + _spend_fields if f not in _df.columns]
 _avail_spend = [f for f in _spend_fields if f in _df.columns]
@@ -31,11 +31,14 @@ else:
     )
 
     # Filter to accounts with actual card spend activity (> 0)
+    # Only use spend/swipes fields for filtering, not depAmt365
+    _card_fields = [f for f in _avail_spend if f != 'depAmt365']
     _pre_filter = len(_df)
-    _spend_filter = (_df[_avail_spend[0]].fillna(0) > 0)
-    for _sf in _avail_spend[1:]:
-        _spend_filter = _spend_filter | (_df[_sf].fillna(0) > 0)
-    _df = _df[_spend_filter].copy()
+    if _card_fields:
+        _spend_filter = (_df[_card_fields[0]].fillna(0) > 0)
+        for _sf in _card_fields[1:]:
+            _spend_filter = _spend_filter | (_df[_sf].fillna(0) > 0)
+        _df = _df[_spend_filter].copy()
 
     _groups = _df.groupby('_has_ad')
     _group_names = ['Auto-Deposit', 'No Auto-Deposit']
@@ -44,10 +47,12 @@ else:
     _labels_map = {
         'last 12-mon spend': 'Spend (12mo)',
         'last 12-mon swipes': 'Swipes (12mo)',
+        'depAmt365': 'Deposits (365d)',
     }
     _fmt_map = {
         'last 12-mon spend': gen_fmt_dollar,
         'last 12-mon swipes': gen_fmt_count,
+        'depAmt365': gen_fmt_dollar,
     }
 
     # ----- Conference-format summary table -----
