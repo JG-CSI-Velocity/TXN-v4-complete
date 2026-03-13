@@ -38,9 +38,9 @@ if 'DepCount33' in zaccounts_df.columns and 'DepAmt33' in zaccounts_df.columns:
         print(f"      Accounts excluded by cap: {_clipped:,} ({_clipped/len(_scatter_df)*100:.1f}%)")
         print(f"      Accounts plotted: {len(_plot_df):,}")
         print(f"      X-axis range: 1 to {_max_count} deposits")
-        print(f"      Trend line: median per deposit count, min {_min_support} accounts per bin")
-        print(f"      Trend line range: 1 to {_trend_max} deposits")
-        print(f"      Deposit counts with <{_min_support} accounts (no trend line): {_dropped_bins}")
+        print(f"      Trend line: median per deposit count")
+        print(f"      Solid line: deposit counts with >={_min_support} accounts (1 to {_trend_max})")
+        print(f"      Faded/dashed: deposit counts with <{_min_support} accounts ({_dropped_bins} bins)")
         if _dropped_bins > 0:
             _thin_counts = _count_support[_count_support < _min_support]
             print(f"      Thin bins: deposit counts {list(_thin_counts.index[:10])}"
@@ -55,10 +55,32 @@ if 'DepCount33' in zaccounts_df.columns and 'DepAmt33' in zaccounts_df.columns:
             alpha=0.25, s=20, color=GEN_COLORS['info'], edgecolors='none'
         )
 
-        if len(_trend) >= 3:
-            ax.plot(_trend.index, _trend.values,
+        # Trend line: solid where >=min_support accounts, faded/dashed where thin
+        _trend_strong = _trend_all[_count_support >= _min_support]
+        _trend_thin = _trend_all[_count_support < _min_support]
+
+        if len(_trend_strong) >= 2:
+            ax.plot(_trend_strong.index, _trend_strong.values,
                     color=GEN_COLORS['accent'], linewidth=3,
-                    marker='o', markersize=6, label='Median per count')
+                    marker='o', markersize=6,
+                    label=f'Median (>={_min_support} accounts)')
+
+        if len(_trend_thin) >= 1:
+            ax.plot(_trend_thin.index, _trend_thin.values,
+                    color=GEN_COLORS['accent'], linewidth=1.5,
+                    linestyle='--', alpha=0.35,
+                    marker='o', markersize=4,
+                    label=f'Median (<{_min_support} accounts)')
+
+        # Connect the two segments if both exist
+        if len(_trend_strong) >= 1 and len(_trend_thin) >= 1:
+            _bridge_x = [_trend_strong.index[-1], _trend_thin.index[0]]
+            _bridge_y = [_trend_strong.values[-1], _trend_thin.values[0]]
+            ax.plot(_bridge_x, _bridge_y,
+                    color=GEN_COLORS['accent'], linewidth=1.5,
+                    linestyle='--', alpha=0.35)
+
+        if len(_trend_strong) >= 2 or len(_trend_thin) >= 1:
             ax.legend(fontsize=13)
 
         ax.set_title('Recent Deposits: Frequency vs Amount (33 Days)',
