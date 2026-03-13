@@ -19,59 +19,23 @@
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
-import re
 
 _df = deposits_personal_df.copy()
 
-# ---- Discover Mail/Resp columns ----
-_mail_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Mail$')
-_resp_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Resp$')
-_mail_cols = {}
-_resp_cols = {}
-for col in _df.columns:
-    m = _mail_pattern.match(col)
-    if m:
-        _mail_cols[m.group(1)] = col
-    m = _resp_pattern.match(col)
-    if m:
-        _resp_cols[m.group(1)] = col
+# Uses shared campaign classification from 01_deposit_setup:
+#   CAMP_MAIL_COLS, CAMP_RESP_COLS, CAMP_MAILER_KEYS,
+#   CAMP_MAIL_COL_LIST, CAMP_RESP_COL_LIST,
+#   camp_is_success(), camp_is_nu_partial(), HAS_CAMPAIGN_DATA
 
-_month_order = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
-                'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
-def _msort(k):
-    return (int(k[3:])+2000, _month_order.get(k[:3], 0))
-
-_mailer_keys = sorted([k for k in _mail_cols if k in _resp_cols], key=_msort)
-
-if not _mailer_keys:
+if not HAS_CAMPAIGN_DATA:
     print("    14f Skipped: no paired Mail/Resp columns")
 else:
-    # ---- Classification (same as Section 09 cell 01) ----
-    def _is_success(val):
-        if pd.isna(val):
-            return False
-        v = str(val).strip().upper()
-        if v.startswith('TH'):
-            return True
-        if v in ('NU 5+', 'NU5+', 'NU 5', 'NU 6', 'NU 7', 'NU 8', 'NU 9', 'NU 10'):
-            return True
-        return False
-
-    def _is_nu_partial(val):
-        if pd.isna(val):
-            return False
-        v = str(val).strip().upper()
-        return v in ('NU 1-4', 'NU1-4')
-
-    _resp_col_list = [_resp_cols[k] for k in _mailer_keys]
-    _mail_col_list = [_mail_cols[k] for k in _mailer_keys]
-
     # Build per-account stats (mirrors camp_acct from Section 09)
-    _df['_times_mailed'] = _df[_mail_col_list].notna().sum(axis=1)
-    _df['_times_responded'] = _df[_resp_col_list].apply(
-        lambda col: col.map(_is_success)).sum(axis=1)
-    _df['_times_nu14'] = _df[_resp_col_list].apply(
-        lambda col: col.map(_is_nu_partial)).sum(axis=1)
+    _df['_times_mailed'] = _df[CAMP_MAIL_COL_LIST].notna().sum(axis=1)
+    _df['_times_responded'] = _df[CAMP_RESP_COL_LIST].apply(
+        lambda col: col.map(campcamp_is_success)).sum(axis=1)
+    _df['_times_nu14'] = _df[CAMP_RESP_COL_LIST].apply(
+        lambda col: col.map(camp_is_nu_partial)).sum(axis=1)
 
     # Use ODDD # of Offers / # of Responses if available
     _has_offers = '# of Offers' in _df.columns
@@ -95,9 +59,9 @@ else:
             # ---- Build challenge outcome distribution per response group ----
             # For each responder, find their most recent successful Resp value
             _responders['_last_success'] = None
-            for mk in reversed(_mailer_keys):
-                _r_col = _resp_cols[mk]
-                _is_succ = _responders[_r_col].map(_is_success)
+            for mk in reversed(CAMP_MAILER_KEYS):
+                _r_col = CAMP_RESP_COLS[mk]
+                _is_succ = _responders[_r_col].map(camp_is_success)
                 _needs_val = _responders['_last_success'].isna() & _is_succ
                 _responders.loc[_needs_val, '_last_success'] = \
                     _responders.loc[_needs_val, _r_col].astype(str).str.strip().str.upper()
@@ -119,7 +83,7 @@ else:
             print(f"{'=' * 110}")
             print(f"  Source: deposits_personal_df (true responders only)")
             print(f"  Total responders: {_n_resp:,}")
-            print(f"  Mailer periods: {len(_mailer_keys)}")
+            print(f"  Mailer periods: {len(CAMP_MAILER_KEYS)}")
             print(f"  Response Grouping values: {len(_rg_groups)}")
             print()
 
@@ -216,7 +180,7 @@ else:
                 fig.suptitle('Personal Accounts \u2014 Deposits & Spend by Response Grouping',
                              fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
                 fig.text(0.5, -0.01,
-                         f'True responders (TH-* / NU 5+)  |  {len(_mailer_keys)} mailer periods  |  {_n_resp:,} accounts',
+                         f'True responders (TH-* / NU 5+)  |  {len(CAMP_MAILER_KEYS)} mailer periods  |  {_n_resp:,} accounts',
                          ha='center', fontsize=12, color=GEN_COLORS['muted'])
                 plt.tight_layout()
                 plt.show()

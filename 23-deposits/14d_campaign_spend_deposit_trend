@@ -15,57 +15,28 @@ import re
 
 _df = deposits_personal_df.copy()
 
-# ---- Discover column families ----
-_mail_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Mail$')
-_resp_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Resp$')
+# Uses shared campaign classification from 01_deposit_setup:
+#   CAMP_MAIL_COLS, CAMP_RESP_COLS, CAMP_MAILER_KEYS,
+#   CAMP_MAIL_COL_LIST, CAMP_RESP_COL_LIST,
+#   camp_is_success(), camp_is_nu_partial(), HAS_CAMPAIGN_DATA
+
+# Still need spend/mtd discovery locally (not campaign-specific)
 _spend_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Spend$')
 _mtd_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+MTD$')
-
-_mail_cols = {}
-_resp_cols = {}
 _spend_cols = {}
 _mtd_cols = {}
-
 for col in _df.columns:
-    for pat, target in [(_mail_pattern, _mail_cols), (_resp_pattern, _resp_cols),
-                        (_spend_pattern, _spend_cols), (_mtd_pattern, _mtd_cols)]:
+    for pat, target in [(_spend_pattern, _spend_cols), (_mtd_pattern, _mtd_cols)]:
         m = pat.match(col)
         if m:
             target[m.group(1)] = col
             break
 
-_month_order = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
-                'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
-def _msort(k):
-    return (int(k[3:])+2000, _month_order.get(k[:3], 0))
-
-_mailer_keys = sorted([k for k in _mail_cols if k in _resp_cols], key=_msort)
-
-# ---- Classification (same as cell 14) ----
-def _is_success(val):
-    if pd.isna(val):
-        return False
-    v = str(val).strip().upper()
-    if v.startswith('TH'):
-        return True
-    if v in ('NU 5+', 'NU5+', 'NU 5', 'NU 6', 'NU 7', 'NU 8', 'NU 9', 'NU 10'):
-        return True
-    return False
-
-def _is_nu_partial(val):
-    if pd.isna(val):
-        return False
-    v = str(val).strip().upper()
-    return v in ('NU 1-4', 'NU1-4')
-
-_resp_col_list = [_resp_cols[k] for k in _mailer_keys]
-_mail_col_list = [_mail_cols[k] for k in _mailer_keys]
-
-_times_mailed = _df[_mail_col_list].notna().sum(axis=1)
-_times_success = _df[_resp_col_list].apply(
-    lambda col: col.map(_is_success)).sum(axis=1)
-_times_nu14 = _df[_resp_col_list].apply(
-    lambda col: col.map(_is_nu_partial)).sum(axis=1)
+_times_mailed = _df[CAMP_MAIL_COL_LIST].notna().sum(axis=1)
+_times_success = _df[CAMP_RESP_COL_LIST].apply(
+    lambda col: col.map(camp_is_success)).sum(axis=1)
+_times_nu14 = _df[CAMP_RESP_COL_LIST].apply(
+    lambda col: col.map(camp_is_nu_partial)).sum(axis=1)
 
 _df['_camp_status'] = 'Never Mailed'
 _df.loc[_times_mailed > 0, '_camp_status'] = 'Non-Responder'
@@ -100,7 +71,7 @@ if (_has_spend or _has_mtd) and len(_camp_groups) >= 2:
             continue
         ax = axes[_chart_idx]
         _chart_idx += 1
-        _m_keys = sorted(_metric_cols.keys(), key=_msort)
+        _m_keys = sorted(_metric_cols.keys(), key=_camp_month_sort_key)
         _x_labels = [f"{mk[:3]} '{mk[3:]}" for mk in _m_keys]
 
         for g in _camp_groups:
@@ -115,7 +86,7 @@ if (_has_spend or _has_mtd) and len(_camp_groups) >= 2:
                     label=f"{g} (n={len(_g_df):,})")
 
         # Mark mailer periods
-        for mk in _mailer_keys:
+        for mk in CAMP_MAILER_KEYS:
             if mk in _m_keys:
                 _xi = _m_keys.index(mk)
                 ax.axvline(x=_xi, color=GEN_COLORS['accent'], alpha=0.3,

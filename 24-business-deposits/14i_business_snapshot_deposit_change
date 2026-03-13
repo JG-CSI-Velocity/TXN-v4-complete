@@ -1,0 +1,114 @@
+# ===========================================================================
+# BUSINESS DEPOSITS: Longitudinal Snapshot Deposit Change by Campaign Status
+# ===========================================================================
+# Mirror of Section 23 cell 14i for business accounts.
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+_df = deposits_business_df.copy()
+
+if len(_df) < _MIN_ACCOUNTS:
+    print(f"    14i Skipped: {len(_df)} business accounts (below {_MIN_ACCOUNTS} threshold)")
+elif not HAS_CAMPAIGN_DATA:
+    print("    14i Skipped: no campaign data")
+elif not ZA_HAS_MULTIPLE:
+    print("    14i: Trajectory requires 2+ ZAccounts snapshots")
+else:
+    _times_mailed = _df[CAMP_MAIL_COL_LIST].notna().sum(axis=1)
+    _times_success = _df[CAMP_RESP_COL_LIST].apply(
+        lambda col: col.map(camp_is_success)).sum(axis=1)
+    _df['_camp_status'] = 'Never Mailed'
+    _df.loc[_times_mailed > 0, '_camp_status'] = 'Non-Responder'
+    _df.loc[_times_success > 0, '_camp_status'] = 'Responder'
+
+    _snap_keys = sorted(ZA_SNAPSHOT_META.keys())
+    _earliest = ZA_SNAPSHOT_META[_snap_keys[0]]['label']
+    _latest = ZA_SNAPSHOT_META[_snap_keys[-1]]['label']
+
+    _delta_fields = [
+        ('depAmt365', 'Deposit Amt (365d)', gen_fmt_dollar),
+        ('depCount365', 'Deposit Count (365d)', gen_fmt_count),
+        ('balance', 'Balance', gen_fmt_dollar),
+        ('avgdaysbetweendeposits', 'Avg Days Between Deps', gen_fmt_count),
+    ]
+
+    _avail_fields = []
+    for field, label, fmt in _delta_fields:
+        _early_col = f"{field}_{_earliest}"
+        _late_col = f"{field}_{_latest}"
+        if _early_col in _df.columns and _late_col in _df.columns:
+            _delta_col = f"_delta_{field}"
+            _both_valid = _df[_early_col].notna() & _df[_late_col].notna()
+            _df[_delta_col] = np.nan
+            _df.loc[_both_valid, _delta_col] = _df.loc[_both_valid, _late_col] - _df.loc[_both_valid, _early_col]
+            _avail_fields.append((field, label, fmt, _delta_col))
+
+    if not _avail_fields:
+        print("    14i: No matching snapshot fields found")
+    else:
+        _camp_groups = ['Responder', 'Non-Responder', 'Never Mailed']
+        _camp_groups = [g for g in _camp_groups if g in _df['_camp_status'].values]
+
+        print(f"\n{'=' * 100}")
+        print(f"  BUSINESS DEPOSITS — SNAPSHOT DEPOSIT CHANGE BY CAMPAIGN STATUS (Cell 14i)")
+        print(f"{'=' * 100}")
+        print(f"  Snapshots: {_earliest} to {_latest}")
+        print()
+        _hdr = f"  {'Campaign Status':<20s}  {'N':>8s}"
+        for _, label, _, _ in _avail_fields:
+            _hdr += f"  {'Med \u0394 ' + label:>24s}"
+        print(_hdr)
+        print(f"  {'-'*20}  {'-'*8}" + (f"  {'-'*24}" * len(_avail_fields)))
+        for g in _camp_groups:
+            _g_df = _df[_df['_camp_status'] == g]
+            _row = f"  {g:<20s}  {len(_g_df):>8,}"
+            for _, _, fmt, delta_col in _avail_fields:
+                _med = _g_df[delta_col].dropna().median()
+                if pd.isna(_med):
+                    _row += f"  {'N/A':>24s}"
+                elif fmt == gen_fmt_dollar:
+                    _sign = '+' if _med >= 0 else ''
+                    _row += f"  {_sign + '${:,.0f}'.format(_med):>24s}"
+                else:
+                    _sign = '+' if _med >= 0 else ''
+                    _row += f"  {_sign + '{:,.0f}'.format(_med):>24s}"
+            print(_row)
+        print(f"{'=' * 100}")
+
+        if len(_camp_groups) >= 2 and _avail_fields:
+            _n_metrics = len(_avail_fields[:4])
+            fig, ax = plt.subplots(figsize=(max(12, _n_metrics * 3), 7))
+            x = np.arange(_n_metrics)
+            _w = 0.8 / len(_camp_groups)
+            _palette = {'Responder': GEN_COLORS['success'],
+                        'Non-Responder': GEN_COLORS['muted'],
+                        'Never Mailed': GEN_COLORS['info']}
+            for gi, g in enumerate(_camp_groups):
+                _g_df = _df[_df['_camp_status'] == g]
+                _vals = []
+                for _, _, _, delta_col in _avail_fields[:4]:
+                    _med = _g_df[delta_col].dropna().median()
+                    _vals.append(_med if not pd.isna(_med) else 0)
+                offset = -0.4 + gi * _w + _w / 2
+                bars = ax.bar(x + offset, _vals, _w,
+                              label=f"{g} (n={len(_g_df):,})",
+                              color=_palette.get(g, GEN_COLORS['warning']),
+                              edgecolor='white')
+                for bar, val in zip(bars, _vals):
+                    if val != 0:
+                        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                                gen_fmt_dollar(val, None), ha='center',
+                                va='bottom' if val >= 0 else 'top',
+                                fontsize=11, fontweight='bold')
+            ax.axhline(y=0, color=GEN_COLORS['muted'], linewidth=1)
+            ax.set_xticks(x)
+            ax.set_xticklabels([lbl for _, lbl, _, _ in _avail_fields[:4]], fontsize=12)
+            ax.legend(fontsize=12, frameon=False)
+            gen_clean_axes(ax)
+            fig.suptitle('Business Accounts \u2014 Deposit Change by Campaign Status',
+                         fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+            fig.text(0.5, -0.02,
+                     f'Snapshot delta: {_earliest} \u2192 {_latest}',
+                     ha='center', fontsize=12, color=GEN_COLORS['muted'])
+            plt.tight_layout(); plt.show()

@@ -1,0 +1,160 @@
+# ===========================================================================
+# PERSONAL DEPOSITS: Deposit Metrics by Challenge Tier
+# ===========================================================================
+# Break deposit metrics by specific challenge tier instead of lumping all
+# responders together. Do TH-25 members deposit more than NU 5+?
+#
+# Uses most-recent successful Resp value (matching 14f's _last_success pattern)
+# to assign each responder to a tier.
+#
+# Tier hierarchy: NU 5+ (1) < TH-10 < TH-15 < TH-20 < TH-25
+#
+# Cross-source: ODDD (Resp cols) + ZAccounts (deposit fields)
+# Data: deposits_personal_df
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+_df = deposits_personal_df.copy()
+_MIN_TIER_N = 10
+
+if not HAS_CAMPAIGN_DATA:
+    print("    14j Skipped: no campaign data")
+else:
+    # -----------------------------------------------------------------
+    # 1. Identify responders and assign tier from most recent success
+    # -----------------------------------------------------------------
+    _times_success = _df[CAMP_RESP_COL_LIST].apply(
+        lambda col: col.map(camp_is_success)).sum(axis=1)
+
+    _responders = _df[_times_success > 0].copy()
+    _n_resp = len(_responders)
+
+    if _n_resp < _MIN_TIER_N:
+        print(f"    14j Skipped: only {_n_resp} responders (need {_MIN_TIER_N}+)")
+    else:
+        # Find most recent successful Resp value per account
+        _responders['_last_success_val'] = None
+        _responders['_last_tier'] = 0
+        for mk in reversed(CAMP_MAILER_KEYS):
+            _r_col = CAMP_RESP_COLS[mk]
+            _is_succ = _responders[_r_col].map(camp_is_success)
+            _needs_val = _responders['_last_success_val'].isna() & _is_succ
+            _responders.loc[_needs_val, '_last_success_val'] = \
+                _responders.loc[_needs_val, _r_col].astype(str).str.strip().str.upper()
+            _responders.loc[_needs_val, '_last_tier'] = \
+                _responders.loc[_needs_val, _r_col].map(camp_challenge_tier)
+
+        # Map tier numbers to labels
+        _tier_label_map = {1: 'NU 5+', 10: 'TH-10', 15: 'TH-15', 20: 'TH-20', 25: 'TH-25'}
+        _tier_order = [1, 10, 15, 20, 25]
+        _responders['_tier_label'] = _responders['_last_tier'].map(
+            lambda t: _tier_label_map.get(t, f'TH-{t}' if t > 1 else 'Other'))
+
+        # Filter to known tiers
+        _tier_groups = []
+        for t in _tier_order:
+            _label = _tier_label_map.get(t, f'TH-{t}')
+            _t_df = _responders[_responders['_last_tier'] == t]
+            if len(_t_df) > 0:
+                _tier_groups.append((_label, _t_df, t))
+
+        # -----------------------------------------------------------------
+        # 2. Comparison metrics
+        # -----------------------------------------------------------------
+        _compare = [
+            ('depAmt365', 'Deposit Amt (365d)', gen_fmt_dollar),
+            ('depCount365', 'Deposit Count (365d)', gen_fmt_count),
+            ('balance', 'Balance', gen_fmt_dollar),
+            ('avgdaysbetweendeposits', 'Avg Days Btwn Deps', gen_fmt_count),
+            ('last 12-mon spend', 'Card Spend (12mo)', gen_fmt_dollar),
+            ('last 12-mon swipes', 'Card Swipes (12mo)', gen_fmt_count),
+        ]
+        _avail = [(f, l, fmt) for f, l, fmt in _compare if f in _df.columns]
+
+        # -----------------------------------------------------------------
+        # 3. Conference-format table
+        # -----------------------------------------------------------------
+        print(f"\n{'=' * 110}")
+        print(f"  PERSONAL DEPOSITS — DEPOSIT METRICS BY CHALLENGE TIER (Cell 14j)")
+        print(f"{'=' * 110}")
+        print(f"  Source: deposits_personal_df (responders only)")
+        print(f"  Total responders: {_n_resp:,}")
+        print(f"  Tier assignment: most recent successful Resp value")
+        print()
+        _hdr = f"  {'Tier':<10s}  {'N':>7s}  {'Share':>6s}"
+        for _, lbl, _ in _avail:
+            _hdr += f"  {'Med ' + lbl:>22s}"
+        print(_hdr)
+        print(f"  {'-'*10}  {'-'*7}  {'-'*6}" + (f"  {'-'*22}" * len(_avail)))
+
+        for label, t_df, tier_num in _tier_groups:
+            _pct = len(t_df) / _n_resp * 100
+            _asterisk = '*' if len(t_df) < _MIN_TIER_N else ''
+            _row = f"  {label + _asterisk:<10s}  {len(t_df):>7,}  {_pct:>5.1f}%"
+            for field, _, fmt in _avail:
+                _med = t_df[field].dropna().median()
+                if pd.isna(_med):
+                    _row += f"  {'N/A':>22s}"
+                elif fmt == gen_fmt_dollar:
+                    _row += f"  {'${:>,.0f}'.format(_med):>22s}"
+                elif fmt == gen_fmt_count:
+                    _row += f"  {_med:>22,.0f}"
+                else:
+                    _row += f"  {fmt(_med, None):>22s}"
+            print(_row)
+        print(f"{'=' * 110}")
+
+        # Narrative
+        _chart_tiers = [(l, d, t) for l, d, t in _tier_groups if len(d) >= _MIN_TIER_N]
+        if len(_chart_tiers) >= 2 and 'depAmt365' in _df.columns:
+            _first = _chart_tiers[0]
+            _last = _chart_tiers[-1]
+            _first_med = _first[1]['depAmt365'].dropna().median()
+            _last_med = _last[1]['depAmt365'].dropna().median()
+            if _first_med > 0:
+                _ratio = _last_med / _first_med
+                print(f"\n  {_last[0]} members deposit {_ratio:.1f}x more than {_first[0]} members")
+
+        # -----------------------------------------------------------------
+        # 4. Chart: tier-colored grouped bar
+        # -----------------------------------------------------------------
+        if len(_chart_tiers) >= 2 and _avail:
+            _chart_metrics = [(f, l, fmt) for f, l, fmt in _avail
+                              if f in ('depAmt365', 'depCount365', 'balance', 'last 12-mon spend')][:4]
+            _n_metrics = len(_chart_metrics)
+            _tier_colors = plt.cm.viridis(np.linspace(0.2, 0.9, len(_chart_tiers)))
+
+            fig, ax = plt.subplots(figsize=(max(12, _n_metrics * 3), 7))
+            x = np.arange(_n_metrics)
+            _w = 0.8 / len(_chart_tiers)
+
+            for ti, (tlabel, tdf, _) in enumerate(_chart_tiers):
+                _vals = []
+                for field, _, _ in _chart_metrics:
+                    _med = tdf[field].dropna().median()
+                    _vals.append(_med if not pd.isna(_med) else 0)
+                offset = -0.4 + ti * _w + _w / 2
+                bars = ax.bar(x + offset, _vals, _w,
+                              label=f"{tlabel} (n={len(tdf):,})",
+                              color=_tier_colors[ti], edgecolor='white')
+                for bar, val, (_, _, fmt) in zip(bars, _vals, _chart_metrics):
+                    if val > 0:
+                        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                                fmt(val, None), ha='center', va='bottom',
+                                fontsize=10, fontweight='bold')
+
+            ax.set_xticks(x)
+            ax.set_xticklabels([lbl for _, lbl, _ in _chart_metrics], fontsize=12)
+            ax.legend(fontsize=11, frameon=False, loc='upper left')
+            gen_clean_axes(ax)
+
+            fig.suptitle('Personal Accounts \u2014 Deposits by Challenge Tier',
+                         fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+            fig.text(0.5, -0.02,
+                     f'Tier = most recent successful response  |  {_n_resp:,} responders',
+                     ha='center', fontsize=12, color=GEN_COLORS['muted'])
+            plt.tight_layout()
+            plt.show()
+        elif len(_chart_tiers) < 2:
+            print("    Not enough tiers with 10+ accounts for chart")

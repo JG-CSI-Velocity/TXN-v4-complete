@@ -1,0 +1,235 @@
+# ===========================================================================
+# PERSONAL DEPOSITS: Deposit DiD Lift Analysis
+# ===========================================================================
+# For each mailer wave, compute the incremental deposit impact attributable
+# to the campaign using Difference-in-Differences (DiD) methodology.
+#
+# DID = (Resp_post - Resp_pre) - (NonResp_post - NonResp_pre)
+#
+# Uses MTD columns (monthly deposit totals) for pre/post windows.
+# Mirrors Section 09 cell 10 (cohort_lift_data) but for deposits.
+#
+# Cross-source: ODDD (Mail/Resp cols, MTD cols) + shared campaign classification
+# Data: deposits_personal_df
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import numpy as np
+
+_df = deposits_personal_df.copy()
+
+# Uses shared from 01_deposit_setup:
+#   CAMP_MAIL_COLS, CAMP_RESP_COLS, CAMP_MAILER_KEYS,
+#   camp_is_success(), _camp_month_sort_key(), HAS_CAMPAIGN_DATA,
+#   mtd_cols, DEP_MONTHS
+
+_MIN_DID_ACCOUNTS = 20
+
+if not HAS_CAMPAIGN_DATA:
+    print("    14g Skipped: no campaign data")
+elif not mtd_cols:
+    print("    14g Skipped: no MTD columns for deposit measurement")
+else:
+    # -----------------------------------------------------------------
+    # 1. Build WAVE_CONFIG for deposits (mirrors Section 09 pattern)
+    # -----------------------------------------------------------------
+    _all_mtd_keys = sorted(mtd_cols.keys(), key=_camp_month_sort_key)
+    _all_mtd_dates = {}
+    for mk in _all_mtd_keys:
+        _mo_map = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
+                   'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
+        _yr = int(mk[3:]) + 2000
+        _mn = _mo_map.get(mk[:3], 1)
+        _all_mtd_dates[mk] = (_yr, _mn)
+
+    _WAVE_CONFIG = {}
+    for wk in CAMP_MAILER_KEYS:
+        _mail_col = CAMP_MAIL_COLS[wk]
+        _resp_col = CAMP_RESP_COLS[wk]
+        _mo_map = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
+                   'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
+        _w_yr = int(wk[3:]) + 2000
+        _w_mn = _mo_map.get(wk[:3], 1)
+
+        _pre_months = []
+        _post_1mo = []
+        _post_3mo = []
+        _post_6mo = []
+
+        for mk in _all_mtd_keys:
+            _m_yr, _m_mn = _all_mtd_dates[mk]
+            _diff = (_w_yr - _m_yr) * 12 + (_w_mn - _m_mn)
+            if 1 <= _diff <= 3:
+                _pre_months.append(mk)
+            _diff_post = (_m_yr - _w_yr) * 12 + (_m_mn - _w_mn)
+            if _diff_post == 1:
+                _post_1mo.append(mk)
+            if 1 <= _diff_post <= 3:
+                _post_3mo.append(mk)
+            if 1 <= _diff_post <= 6:
+                _post_6mo.append(mk)
+
+        if len(_post_1mo) > 0 and len(_pre_months) >= 2:
+            _WAVE_CONFIG[wk] = {
+                'mail_col': _mail_col,
+                'resp_col': _resp_col,
+                'pre_months': _pre_months,
+                'post_1mo': _post_1mo,
+                'post_3mo': _post_3mo if len(_post_3mo) >= 2 else _post_1mo,
+                'post_6mo': _post_6mo if len(_post_6mo) >= 4 else None,
+            }
+
+    print(f"    14g Data Decisions:")
+    print(f"      Source: deposits_personal_df + MTD columns")
+    print(f"      Mailer waves: {len(CAMP_MAILER_KEYS)}")
+    print(f"      Waves with analyzable pre/post: {len(_WAVE_CONFIG)}")
+    for wl, wc in _WAVE_CONFIG.items():
+        _post_info = f"1mo={len(wc['post_1mo'])}, 3mo={len(wc['post_3mo'])}"
+        if wc['post_6mo']:
+            _post_info += f", 6mo={len(wc['post_6mo'])}"
+        print(f"        {wl}: pre={wc['pre_months']}, post=[{_post_info}]")
+
+    # -----------------------------------------------------------------
+    # 2. Compute DiD for each wave
+    # -----------------------------------------------------------------
+    _did_results = []
+
+    for wk, wc in _WAVE_CONFIG.items():
+        _mailed = _df[wc['mail_col']].notna()
+        _responded = _df[wc['resp_col']].map(camp_is_success)
+        _resp_mask = _mailed & _responded
+        _nonresp_mask = _mailed & ~_responded
+
+        _n_resp = int(_resp_mask.sum())
+        _n_nonresp = int(_nonresp_mask.sum())
+        _n_mailed = int(_mailed.sum())
+
+        if _n_resp < _MIN_DID_ACCOUNTS or _n_nonresp < _MIN_DID_ACCOUNTS:
+            print(f"      {wk}: Skipped (Resp={_n_resp}, NonResp={_n_nonresp}, need {_MIN_DID_ACCOUNTS}+)")
+            continue
+
+        # Pre-period average deposits per account
+        _pre_cols = [mtd_cols[m] for m in wc['pre_months'] if m in mtd_cols]
+        _post_cols = [mtd_cols[m] for m in wc['post_3mo'] if m in mtd_cols]
+
+        if not _pre_cols or not _post_cols:
+            continue
+
+        # For each account: mean of pre-period MTD, mean of post-period MTD
+        # Exclude accounts with all-NaN pre-period
+        _pre_vals = _df[_pre_cols]
+        _post_vals = _df[_post_cols]
+        _pre_valid = _pre_vals.notna().sum(axis=1) >= 2
+        _pre_mean = _pre_vals.mean(axis=1)
+        _post_mean = _post_vals.mean(axis=1)
+        _delta = _post_mean - _pre_mean
+
+        # Filter to valid pre-period accounts
+        _resp_delta = _delta[_resp_mask & _pre_valid]
+        _nonresp_delta = _delta[_nonresp_mask & _pre_valid]
+
+        if len(_resp_delta) < _MIN_DID_ACCOUNTS or len(_nonresp_delta) < _MIN_DID_ACCOUNTS:
+            continue
+
+        _resp_med_pre = _pre_mean[_resp_mask & _pre_valid].median()
+        _resp_med_post = _post_mean[_resp_mask & _pre_valid].median()
+        _nonresp_med_pre = _pre_mean[_nonresp_mask & _pre_valid].median()
+        _nonresp_med_post = _post_mean[_nonresp_mask & _pre_valid].median()
+
+        _resp_med_delta = _resp_delta.median()
+        _nonresp_med_delta = _nonresp_delta.median()
+        _did_lift = _resp_med_delta - _nonresp_med_delta
+
+        _rate = _n_resp / _n_mailed * 100 if _n_mailed > 0 else 0
+
+        _did_results.append({
+            'wave': wk,
+            'label': f"{wk[:3]} '{wk[3:]}",
+            'n_mailed': _n_mailed,
+            'n_resp': _n_resp,
+            'n_nonresp': _n_nonresp,
+            'rate': _rate,
+            'resp_pre': _resp_med_pre,
+            'resp_post': _resp_med_post,
+            'resp_delta': _resp_med_delta,
+            'nonresp_pre': _nonresp_med_pre,
+            'nonresp_post': _nonresp_med_post,
+            'nonresp_delta': _nonresp_med_delta,
+            'did_lift': _did_lift,
+        })
+
+    # -----------------------------------------------------------------
+    # 3. Conference-format table
+    # -----------------------------------------------------------------
+    if _did_results:
+        print(f"\n{'=' * 120}")
+        print(f"  PERSONAL DEPOSITS — DIFFERENCE-IN-DIFFERENCES DEPOSIT LIFT (Cell 14g)")
+        print(f"{'=' * 120}")
+        print(f"  Methodology: DID = (Resp_post - Resp_pre) - (NonResp_post - NonResp_pre)")
+        print(f"  Pre-period: 3 MTD months before wave  |  Post-period: 3 MTD months after wave")
+        print(f"  Minimum N per group: {_MIN_DID_ACCOUNTS}")
+        print()
+        _hdr = (f"  {'Wave':<10s}  {'Mailed':>8s}  {'Resp':>7s}  {'Rate':>6s}"
+                f"  {'Resp Pre':>12s}  {'Resp Post':>12s}"
+                f"  {'NR Pre':>12s}  {'NR Post':>12s}"
+                f"  {'DID Lift':>12s}")
+        print(_hdr)
+        _sep = (f"  {'-'*10}  {'-'*8}  {'-'*7}  {'-'*6}"
+                f"  {'-'*12}  {'-'*12}"
+                f"  {'-'*12}  {'-'*12}"
+                f"  {'-'*12}")
+        print(_sep)
+        for r in _did_results:
+            print(f"  {r['label']:<10s}  {r['n_mailed']:>8,}  {r['n_resp']:>7,}  {r['rate']:>5.1f}%"
+                  f"  {'${:>,.0f}'.format(r['resp_pre']):>12s}  {'${:>,.0f}'.format(r['resp_post']):>12s}"
+                  f"  {'${:>,.0f}'.format(r['nonresp_pre']):>12s}  {'${:>,.0f}'.format(r['nonresp_post']):>12s}"
+                  f"  {'${:>,.0f}'.format(r['did_lift']):>12s}")
+        print(f"{'=' * 120}")
+
+        # Aggregate DID across all waves
+        _avg_did = np.mean([r['did_lift'] for r in _did_results])
+        print(f"\n  Average DID lift across {len(_did_results)} waves: ${_avg_did:,.0f}/month")
+
+        # -----------------------------------------------------------------
+        # 4. Chart: DID lift per wave
+        # -----------------------------------------------------------------
+        fig, ax = plt.subplots(figsize=(max(12, len(_did_results) * 2.5), 7))
+
+        _wave_labels = [r['label'] for r in _did_results]
+        _did_vals = [r['did_lift'] for r in _did_results]
+        x = np.arange(len(_wave_labels))
+
+        _colors = [GEN_COLORS['success'] if v >= 0 else GEN_COLORS['warning'] for v in _did_vals]
+        bars = ax.bar(x, _did_vals, color=_colors, edgecolor='white', width=0.6)
+
+        for bar, val, r in zip(bars, _did_vals, _did_results):
+            _va = 'bottom' if val >= 0 else 'top'
+            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                    gen_fmt_dollar(val, None), ha='center', va=_va,
+                    fontsize=14, fontweight='bold')
+            ax.text(bar.get_x() + bar.get_width() / 2,
+                    max(bar.get_height() * 0.4, 0) if val >= 0 else min(bar.get_height() * 0.4, 0),
+                    f"n={r['n_resp']:,}", ha='center', va='center',
+                    fontsize=10, fontweight='bold', color='white')
+
+        ax.axhline(y=0, color=GEN_COLORS['muted'], linewidth=1, linestyle='-')
+        ax.set_xticks(x)
+        ax.set_xticklabels(_wave_labels, fontsize=13, rotation=20, ha='right')
+        ax.set_ylabel('DID Deposit Lift ($/month)', fontsize=14, fontweight='bold')
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+        gen_clean_axes(ax)
+
+        fig.suptitle('Personal Accounts \u2014 Deposit DiD Lift by Campaign Wave',
+                     fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+        fig.text(0.5, -0.02,
+                 f'DID = (Resp post-pre) - (NonResp post-pre)  |  '
+                 f'{len(_did_results)} waves  |  3-month pre/post windows',
+                 ha='center', fontsize=12, color=GEN_COLORS['muted'])
+        plt.tight_layout()
+        plt.show()
+
+        # Export for cell 14h
+        DEPOSIT_WAVE_DID = _did_results
+    else:
+        print("    14g: No waves had sufficient data for DiD analysis")
+        DEPOSIT_WAVE_DID = []

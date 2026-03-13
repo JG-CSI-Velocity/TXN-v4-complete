@@ -1,0 +1,204 @@
+# ===========================================================================
+# PERSONAL DEPOSITS: SO-SR Deposit Deep Dive
+# ===========================================================================
+# Single Offer, Single Response accounts are the cleanest attribution signal.
+# They received one offer, responded once — no confounds from multi-wave
+# exposure or graduated challenge complexity.
+#
+# This cell:
+#   1. Filters to SO-SR accounts (Response Grouping = 'SO-SR')
+#   2. Identifies the single wave they were mailed in
+#   3. Computes mini-DiD: pre/post MTD deposits for SO-SR responders vs
+#      SO-SR non-responders from the same wave
+#   4. Shows monthly deposit trend (pre/post) with vertical line at mail date
+#
+# Cross-source: ODDD (Response Grouping, Mail/Resp cols, MTD cols)
+# Data: deposits_personal_df
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import numpy as np
+
+_df = deposits_personal_df.copy()
+_MIN_SO_SR = 20
+_RESP_GRP_FIELD = 'Response Grouping'
+
+if not HAS_CAMPAIGN_DATA:
+    print("    14k Skipped: no campaign data")
+elif _RESP_GRP_FIELD not in _df.columns:
+    print(f"    14k Skipped: '{_RESP_GRP_FIELD}' column not found")
+elif not mtd_cols:
+    print("    14k Skipped: no MTD columns")
+else:
+    # -----------------------------------------------------------------
+    # 1. Filter to SO-SR accounts
+    # -----------------------------------------------------------------
+    _so_sr_vals = _df[_RESP_GRP_FIELD].dropna().unique()
+    _so_sr_match = [v for v in _so_sr_vals if 'SO' in str(v).upper() and 'SR' in str(v).upper()]
+    if not _so_sr_match:
+        _so_sr_match = [v for v in _so_sr_vals if str(v).strip().upper() == 'SO-SR']
+
+    if not _so_sr_match:
+        print(f"    14k Skipped: no SO-SR value found in Response Grouping")
+        print(f"    Available values: {list(_so_sr_vals)[:10]}")
+    else:
+        _so_sr_val = _so_sr_match[0]
+        _so_sr_df = _df[_df[_RESP_GRP_FIELD] == _so_sr_val].copy()
+        _n_so_sr = len(_so_sr_df)
+
+        if _n_so_sr < _MIN_SO_SR:
+            print(f"    14k Skipped: only {_n_so_sr} SO-SR accounts (need {_MIN_SO_SR}+)")
+        else:
+            # Classify SO-SR accounts as responder/non-responder
+            _times_success = _so_sr_df[CAMP_RESP_COL_LIST].apply(
+                lambda col: col.map(camp_is_success)).sum(axis=1)
+            _so_sr_df['_is_responder'] = _times_success > 0
+
+            _n_resp = int(_so_sr_df['_is_responder'].sum())
+            _n_nonresp = _n_so_sr - _n_resp
+
+            # Find the single wave for each SO-SR account (first mailed wave)
+            _so_sr_df['_wave'] = None
+            for mk in CAMP_MAILER_KEYS:
+                _m_col = CAMP_MAIL_COLS[mk]
+                _newly_mailed = _so_sr_df[_m_col].notna() & _so_sr_df['_wave'].isna()
+                _so_sr_df.loc[_newly_mailed, '_wave'] = mk
+
+            # -----------------------------------------------------------------
+            # 2. ZAccounts deposit comparison
+            # -----------------------------------------------------------------
+            _compare = [
+                ('depAmt365', 'Deposit Amt (365d)', gen_fmt_dollar),
+                ('depCount365', 'Deposit Count (365d)', gen_fmt_count),
+                ('balance', 'Balance', gen_fmt_dollar),
+                ('avgdaysbetweendeposits', 'Avg Days Between Deps', gen_fmt_count),
+                ('last 12-mon spend', 'Card Spend (12mo)', gen_fmt_dollar),
+                ('last 12-mon swipes', 'Card Swipes (12mo)', gen_fmt_count),
+            ]
+            _avail = [(f, l, fmt) for f, l, fmt in _compare if f in _so_sr_df.columns]
+
+            print(f"\n{'=' * 90}")
+            print(f"  PERSONAL DEPOSITS — SO-SR DEPOSIT DEEP DIVE (Cell 14k)")
+            print(f"{'=' * 90}")
+            print(f"  SO-SR = Single Offer, Single Response (cleanest attribution signal)")
+            print(f"  SO-SR accounts: {_n_so_sr:,}")
+            print(f"  Responders: {_n_resp:,}  |  Non-Responders: {_n_nonresp:,}")
+            _wave_dist = _so_sr_df['_wave'].value_counts()
+            if len(_wave_dist) > 0:
+                print(f"  Wave distribution: {dict(_wave_dist.head(5))}")
+            print()
+
+            _groups = {'SO-SR Responder': _so_sr_df[_so_sr_df['_is_responder']],
+                       'SO-SR Non-Responder': _so_sr_df[~_so_sr_df['_is_responder']]}
+            _group_names = [g for g in _groups if len(_groups[g]) > 0]
+
+            if _avail and len(_group_names) == 2:
+                _hdr = f"  {'Group':<24s}  {'N':>8s}"
+                for _, lbl, _ in _avail:
+                    _hdr += f"  {'Med ' + lbl:>22s}"
+                print(_hdr)
+                print(f"  {'-'*24}  {'-'*8}" + (f"  {'-'*22}" * len(_avail)))
+                for g in _group_names:
+                    _g_df = _groups[g]
+                    _row = f"  {g:<24s}  {len(_g_df):>8,}"
+                    for field, _, fmt in _avail:
+                        _med = _g_df[field].dropna().median()
+                        if pd.isna(_med):
+                            _row += f"  {'N/A':>22s}"
+                        elif fmt == gen_fmt_dollar:
+                            _row += f"  {'${:>,.0f}'.format(_med):>22s}"
+                        elif fmt == gen_fmt_count:
+                            _row += f"  {_med:>22,.0f}"
+                        else:
+                            _row += f"  {fmt(_med, None):>22s}"
+                    print(_row)
+                print(f"{'=' * 90}")
+
+            # -----------------------------------------------------------------
+            # 3. Monthly deposit trend: SO-SR Responders vs Non-Responders
+            # -----------------------------------------------------------------
+            _all_mtd_keys = sorted(mtd_cols.keys(), key=_camp_month_sort_key)
+
+            if len(_all_mtd_keys) >= 6 and _n_resp >= _MIN_SO_SR:
+                # Compute median monthly deposits per group
+                _resp_medians = []
+                _nonresp_medians = []
+                _labels = []
+                _resp_df = _so_sr_df[_so_sr_df['_is_responder']]
+                _nr_df = _so_sr_df[~_so_sr_df['_is_responder']]
+
+                for mk in _all_mtd_keys:
+                    _col = mtd_cols[mk]
+                    _resp_med = _resp_df[_col].dropna().median()
+                    _nr_med = _nr_df[_col].dropna().median()
+                    _resp_medians.append(_resp_med if not np.isnan(_resp_med) else 0)
+                    _nonresp_medians.append(_nr_med if not np.isnan(_nr_med) else 0)
+                    _labels.append(f"{mk[:3]} '{mk[3:]}")
+
+                # Find mail wave positions for vertical lines
+                _wave_positions = []
+                for mk in CAMP_MAILER_KEYS:
+                    if mk in _all_mtd_keys:
+                        _wave_positions.append(_all_mtd_keys.index(mk))
+
+                fig, ax = plt.subplots(figsize=(18, 8))
+                x = np.arange(len(_labels))
+
+                ax.plot(x, _resp_medians, color=GEN_COLORS['success'], linewidth=3,
+                        marker='o', markersize=5,
+                        label=f'SO-SR Responder (n={_n_resp:,})', zorder=3)
+                ax.plot(x, _nonresp_medians, color=GEN_COLORS['muted'], linewidth=3,
+                        marker='s', markersize=5,
+                        label=f'SO-SR Non-Responder (n={_n_nonresp:,})', zorder=3)
+
+                # Mark mail waves
+                for wp in _wave_positions:
+                    ax.axvline(x=wp, color=GEN_COLORS['accent'], alpha=0.4,
+                               linestyle='--', linewidth=1.5)
+
+                ax.fill_between(x, _resp_medians, alpha=0.08, color=GEN_COLORS['success'])
+                ax.fill_between(x, _nonresp_medians, alpha=0.08, color=GEN_COLORS['muted'])
+
+                # X-axis thinning
+                _step = max(1, len(_labels) // 15)
+                _visible = list(range(0, len(_labels), _step))
+                if (len(_labels) - 1) not in _visible:
+                    _visible.append(len(_labels) - 1)
+                ax.set_xticks([x[i] for i in _visible])
+                ax.set_xticklabels([_labels[i] for i in _visible],
+                                   fontsize=12, rotation=30, ha='right')
+
+                ax.set_ylabel('Median Monthly Deposits ($)', fontsize=14, fontweight='bold')
+                ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+                ax.legend(fontsize=13, frameon=False, loc='upper left')
+                gen_clean_axes(ax)
+
+                # DiD callout
+                # Find the most common wave for SO-SR accounts
+                _top_wave = _wave_dist.index[0] if len(_wave_dist) > 0 else None
+                if _top_wave and _top_wave in _all_mtd_keys:
+                    _wi = _all_mtd_keys.index(_top_wave)
+                    _pre_idx = max(0, _wi - 3)
+                    _post_idx = min(len(_all_mtd_keys), _wi + 4)
+                    _pre_r = np.mean(_resp_medians[_pre_idx:_wi]) if _wi > _pre_idx else 0
+                    _post_r = np.mean(_resp_medians[_wi+1:_post_idx]) if _post_idx > _wi+1 else 0
+                    _pre_n = np.mean(_nonresp_medians[_pre_idx:_wi]) if _wi > _pre_idx else 0
+                    _post_n = np.mean(_nonresp_medians[_wi+1:_post_idx]) if _post_idx > _wi+1 else 0
+                    _did = (_post_r - _pre_r) - (_post_n - _pre_n)
+                    ax.text(0.98, 0.95,
+                            f"DID \u2248 ${_did:,.0f}/mo",
+                            transform=ax.transAxes, ha='right', va='top',
+                            fontsize=16, fontweight='bold',
+                            color=GEN_COLORS['success'] if _did >= 0 else GEN_COLORS['warning'],
+                            bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                                      edgecolor=GEN_COLORS['muted'], alpha=0.9))
+
+                fig.suptitle('Personal Accounts \u2014 SO-SR Monthly Deposit Trend',
+                             fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+                fig.text(0.5, -0.02,
+                         f'Dashed lines = mailer waves  |  {_n_so_sr:,} SO-SR accounts',
+                         ha='center', fontsize=12, color=GEN_COLORS['muted'])
+                plt.tight_layout()
+                plt.show()
+            else:
+                print("    Not enough data for monthly trend chart")

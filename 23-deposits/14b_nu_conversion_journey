@@ -19,47 +19,17 @@
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
-import re
 
 _df = deposits_personal_df.copy()
 
-# ---- Discover Resp columns (contain challenge outcomes) ----
-_resp_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Resp$')
-_resp_cols = {}
-for col in _df.columns:
-    m = _resp_pattern.match(col)
-    if m:
-        _resp_cols[m.group(1)] = col
+# Uses shared campaign classification from 01_deposit_setup:
+#   CAMP_RESP_COLS, CAMP_MAILER_KEYS, camp_is_success(), camp_is_nu_partial()
 
-_month_order = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
-                'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
-def _msort(k):
-    return (int(k[3:])+2000, _month_order.get(k[:3], 0))
-
-_resp_keys = sorted(_resp_cols.keys(), key=_msort)
+_resp_keys = CAMP_MAILER_KEYS
 
 if not _resp_keys:
     print("    WARNING: No Resp columns found -- skipping NU conversion")
 else:
-    # Classification functions (same as Section 09 campaign code)
-    def _is_success(val):
-        """TH-* or NU 5+ = true responder."""
-        if pd.isna(val):
-            return False
-        v = str(val).strip().upper()
-        if v.startswith('TH'):
-            return True
-        if v in ('NU 5+', 'NU5+', 'NU 5', 'NU 6', 'NU 7', 'NU 8', 'NU 9', 'NU 10'):
-            return True
-        return False
-
-    def _is_nu14(val):
-        """NU 1-4 = showed activity but missed goal."""
-        if pd.isna(val):
-            return False
-        v = str(val).strip().upper()
-        return v in ('NU 1-4', 'NU1-4')
-
     # Track per-account: was ever NU 1-4, did ever convert to success
     _ever_nu14 = pd.Series(False, index=_df.index)
     _first_nu14_period = pd.Series(None, index=_df.index, dtype=object)
@@ -67,14 +37,14 @@ else:
     _success_segment = pd.Series(None, index=_df.index, dtype=object)
 
     for sk in _resp_keys:
-        _col = _resp_cols[sk]
-        _is_nu = _df[_col].map(_is_nu14)
+        _col = CAMP_RESP_COLS[sk]
+        _is_nu = _df[_col].map(camp_is_nu_partial)
         _new_nu = _is_nu & ~_ever_nu14
         _first_nu14_period = _first_nu14_period.where(~_new_nu, sk)
         _ever_nu14 = _ever_nu14 | _is_nu
 
         # Check for success in this period among accounts already flagged NU 1-4
-        _is_succ = _df[_col].map(_is_success)
+        _is_succ = _df[_col].map(camp_is_success)
         _converted = _ever_nu14 & _is_succ & ~_ever_success_after_nu14
         _ever_success_after_nu14 = _ever_success_after_nu14 | _converted
         _success_segment = _success_segment.where(
