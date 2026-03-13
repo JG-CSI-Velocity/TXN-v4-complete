@@ -25,6 +25,27 @@ else:
     for g in _group_names:
         print(f"      {g}: {(_df['_has_ad']==g).sum():,}")
 
+    # Deposit quality comparison (text table)
+    _has_rdi = 'rdi_rate' in _df.columns
+    _has_recency = 'days_since_last_dep' in _df.columns
+    if (_has_rdi or _has_recency) and len(_group_names) == 2:
+        print(f"\n      {'Group':<22s}", end="")
+        if _has_rdi:
+            print(f"  {'Med RDI Rate':>14s}", end="")
+        if _has_recency:
+            print(f"  {'Med Days Since Dep':>20s}", end="")
+        print()
+        for g in _group_names:
+            _g_df = _df[_df['_has_ad'] == g]
+            _row = f"      {g:<22s}"
+            if _has_rdi:
+                _rdi_med = _g_df['rdi_rate'].dropna().median()
+                _row += f"  {f'{_rdi_med:.1%}' if pd.notna(_rdi_med) else 'N/A':>14s}"
+            if _has_recency:
+                _rec_med = _g_df['days_since_last_dep'].dropna().median()
+                _row += f"  {f'{_rec_med:.0f}' if pd.notna(_rec_med) else 'N/A':>20s}"
+            print(_row)
+
     _compare = [
         ('depCount365', 'Deposits (365d)', gen_fmt_count),
         ('depAmt365', 'Deposit Amount (365d)', gen_fmt_dollar),

@@ -90,10 +90,11 @@ else:
 
             _dep_metric = 'depAmt365'
             _has_dep = _dep_metric in _df.columns
+            _has_rdi = 'rdi_rate' in _df.columns
 
-            print(f"\n{'=' * 100}")
+            print(f"\n{'=' * 110}")
             print(f"  BUSINESS DEPOSITS — DEPOSIT MOMENTUM INDICATORS (Cell 25)")
-            print(f"{'=' * 100}")
+            print(f"{'=' * 110}")
             print(f"  Available: {', '.join([info['label'] for info in _avail_trends.values()])}")
             print()
 
@@ -102,10 +103,13 @@ else:
                 _hdr += f"  {g + ' %':>16s}"
             if _has_dep:
                 _hdr += f"  {'Med depAmt365':>16s}"
+            if _has_rdi:
+                _hdr += f"  {'Med RDI Rate':>14s}"
             print(_hdr)
             print(f"  {'-'*20}  {'-'*7}  {'-'*6}" +
                   (f"  {'-'*16}" * len(_camp_groups)) +
-                  (f"  {'-'*16}" if _has_dep else ''))
+                  (f"  {'-'*16}" if _has_dep else '') +
+                  (f"  {'-'*14}" if _has_rdi else ''))
 
             for mom in _mom_order:
                 _m_df = _df[_df['_momentum'] == mom]
@@ -125,8 +129,14 @@ else:
                         _row += f"  {'N/A':>16s}"
                     else:
                         _row += f"  {'${:>,.0f}'.format(_med):>16s}"
+                if _has_rdi:
+                    _rdi_med = _m_df['rdi_rate'].dropna().median()
+                    if pd.isna(_rdi_med):
+                        _row += f"  {'N/A':>14s}"
+                    else:
+                        _row += f"  {f'{_rdi_med:.1%}':>14s}"
                 print(_row)
-            print(f"{'=' * 100}")
+            print(f"{'=' * 110}")
 
             if len(_mom_order) >= 2 and _has_dep:
                 fig, ax = plt.subplots(figsize=(max(12, len(_mom_order) * 3), 7))

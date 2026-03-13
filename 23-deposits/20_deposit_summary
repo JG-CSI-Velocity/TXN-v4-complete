@@ -72,6 +72,39 @@ if 'avgrepaymentrate' in _df.columns:
     _low_repay = (_repay < 0.5).sum()
     print(f"    Low repayment (<0.50): {_low_repay:,} of {len(_repay):,} w/ OD activity")
 
+# Deposit Quality (RDI)
+if 'rdi_rate' in _df.columns:
+    _rdi = _df['rdi_rate'].dropna()
+    if len(_rdi) > 0:
+        print(f"\n  DEPOSIT QUALITY (Return Deposit Items)")
+        _high_rdi = (_rdi > 0.05).sum()
+        print(f"    Accounts with RDI data: {len(_rdi):,}")
+        print(f"    Median RDI rate: {_rdi.median():.1%}")
+        print(f"    High RDI (>5%): {_high_rdi:,} ({_high_rdi/len(_rdi)*100:.1f}%) -- unreliable deposits")
+
+# Deposit Recency
+if 'days_since_last_dep' in _df.columns:
+    _recency = _df['days_since_last_dep'].dropna()
+    if len(_recency) > 0:
+        print(f"\n  DEPOSIT RECENCY")
+        print(f"    Accounts with deposit history: {len(_recency):,}")
+        print(f"    Median days since last deposit: {_recency.median():.0f}")
+        print(f"    Deposited <15d ago: {(_recency <= 15).sum():,}")
+        print(f"    Deposited 15-45d ago: {((_recency > 15) & (_recency <= 45)).sum():,}")
+        print(f"    Deposited >45d ago: {(_recency > 45).sum():,}")
+
+# Trend Signals
+if 'DepositTrendCount33' in _df.columns:
+    _trend = pd.to_numeric(_df['DepositTrendCount33'], errors='coerce').dropna()
+    if len(_trend) > 0:
+        _pos = (_trend > 0).sum()
+        _neg = (_trend < 0).sum()
+        _flat = (_trend == 0).sum()
+        print(f"\n  DEPOSIT TREND SIGNALS")
+        print(f"    Positive trend: {_pos:,} ({_pos/len(_trend)*100:.1f}%)")
+        print(f"    Flat: {_flat:,} ({_flat/len(_trend)*100:.1f}%)")
+        print(f"    Negative trend: {_neg:,} ({_neg/len(_trend)*100:.1f}%)")
+
 # Cross-Source
 if 'last 12-mon spend' in _df.columns and 'depAmt365' in _df.columns:
     _both = _df[(_df['last 12-mon spend'] > 0) & (_df['depAmt365'] > 0)]

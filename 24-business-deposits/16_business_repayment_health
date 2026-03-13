@@ -26,23 +26,44 @@ else:
     _seg_colors = [GEN_COLORS['accent'], GEN_COLORS['warning'], GEN_COLORS['success']]
 
     _seg_deps = []
+    _seg_dep_amt = []
+    _seg_rdi = []
+    _seg_trend = []
+    _has_dep_amt = 'depAmt365' in _df.columns
+    _has_rdi = 'rdi_rate' in _df.columns
+    _has_trend = 'DepositTrendCount33' in _df.columns
     for lbl in _labels:
         _sdf = _df[_df['repay_segment'] == lbl]
         _seg_deps.append(_sdf['depCount365'].median() if 'depCount365' in _sdf.columns and len(_sdf) > 0 else 0)
+        _seg_dep_amt.append(_sdf['depAmt365'].median() if _has_dep_amt and len(_sdf) > 0 else np.nan)
+        _seg_rdi.append(_sdf['rdi_rate'].dropna().median() if _has_rdi and len(_sdf) > 0 else np.nan)
+        _seg_trend.append(_sdf['DepositTrendCount33'].dropna().median() if _has_trend and len(_sdf) > 0 else np.nan)
 
     print(f"    16 Data Decisions:")
     print(f"      Source: deposits_business_df")
     print(f"      Accounts: {_total:,}")
-    for lbl, cnt, dep in zip(_labels, _seg_counts, _seg_deps):
-        print(f"        {lbl}: {cnt:,} | median deposits: {dep:.0f}")
+    for i, (lbl, cnt, dep) in enumerate(zip(_labels, _seg_counts, _seg_deps)):
+        _extra = ""
+        if _has_dep_amt and pd.notna(_seg_dep_amt[i]):
+            _extra += f"  |  depAmt365: ${_seg_dep_amt[i]:,.0f}"
+        if _has_rdi and pd.notna(_seg_rdi[i]):
+            _extra += f"  |  RDI: {_seg_rdi[i]:.1%}"
+        if _has_trend and pd.notna(_seg_trend[i]):
+            _extra += f"  |  DepTrend: {_seg_trend[i]:.1f}"
+        print(f"        {lbl}: {cnt:,} | median deposits: {dep:.0f}{_extra}")
 
     fig, ax = plt.subplots(figsize=(14, 6))
     _bars = ax.barh(_labels[::-1], _seg_counts.values[::-1], color=_seg_colors[::-1], edgecolor='white', height=0.5)
-    for bar, val, dep in zip(_bars, _seg_counts.values[::-1], _seg_deps[::-1]):
+    for idx_r, (bar, val, dep) in enumerate(zip(_bars, _seg_counts.values[::-1], _seg_deps[::-1])):
         _pct = val / _total * 100
+        _annot = f"{val:,}  ({_pct:.1f}%)  |  {dep:.0f} deps/yr"
+        _ri = len(_labels) - 1 - idx_r
+        if _has_dep_amt and pd.notna(_seg_dep_amt[_ri]):
+            _annot += f"  |  ${_seg_dep_amt[_ri]:,.0f}"
+        if _has_rdi and pd.notna(_seg_rdi[_ri]):
+            _annot += f"  |  RDI {_seg_rdi[_ri]:.1%}"
         ax.text(bar.get_width() + max(1, _total*0.01), bar.get_y()+bar.get_height()/2,
-                f"{val:,}  ({_pct:.1f}%)  |  {dep:.0f} deposits/yr",
-                ha='left', va='center', fontsize=14, fontweight='bold', color=GEN_COLORS['dark_text'])
+                _annot, ha='left', va='center', fontsize=13, fontweight='bold', color=GEN_COLORS['dark_text'])
     ax.set_title('Business Accounts \u2014 Repayment Health',
                  fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], pad=15)
     ax.set_xlabel('Number of Accounts', fontsize=16, fontweight='bold')

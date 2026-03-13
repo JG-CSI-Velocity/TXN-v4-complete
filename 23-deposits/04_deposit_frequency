@@ -32,6 +32,14 @@ else:
     if _has_amt:
         _seg_median_amt = _df.groupby('freq_segment', observed=False)[_amt_field].median().reindex(_labels).fillna(0)
 
+    # Median RDI rate and days since last deposit per segment
+    _has_rdi = 'rdi_rate' in _df.columns
+    _has_recency = 'days_since_last_dep' in _df.columns
+    if _has_rdi:
+        _seg_median_rdi = _df.groupby('freq_segment', observed=False)['rdi_rate'].median().reindex(_labels)
+    if _has_recency:
+        _seg_median_recency = _df.groupby('freq_segment', observed=False)['days_since_last_dep'].median().reindex(_labels)
+
     _seg_colors = [
         GEN_COLORS['success'],   # Weekly
         GEN_COLORS['info'],      # Biweekly
@@ -46,7 +54,15 @@ else:
     print(f"      Median days between deposits: {_df[_field].median():.1f}")
     for lbl, cnt in zip(_labels, _seg_counts):
         _amt_str = f"  |  Median 33d deposits: ${_seg_median_amt[lbl]:,.0f}" if _has_amt else ""
-        print(f"        {lbl}: {cnt:,} ({cnt / _total * 100:.1f}%){_amt_str}")
+        _rdi_str = ""
+        if _has_rdi:
+            _rdi_val = _seg_median_rdi[lbl]
+            _rdi_str = f"  |  RDI: {_rdi_val:.1%}" if pd.notna(_rdi_val) else "  |  RDI: N/A"
+        _rec_str = ""
+        if _has_recency:
+            _rec_val = _seg_median_recency[lbl]
+            _rec_str = f"  |  Days since dep: {_rec_val:.0f}" if pd.notna(_rec_val) else "  |  Days since dep: N/A"
+        print(f"        {lbl}: {cnt:,} ({cnt / _total * 100:.1f}%){_amt_str}{_rdi_str}{_rec_str}")
 
     # ---------------------------------------------------------------------------
     # Chart: Horizontal bar

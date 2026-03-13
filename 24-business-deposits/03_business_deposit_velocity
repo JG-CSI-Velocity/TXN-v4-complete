@@ -32,31 +32,77 @@ else:
         _vel_order = ['Accelerating', 'Stable', 'Decelerating']
         _vel_colors = {'Accelerating': GEN_COLORS['success'], 'Stable': GEN_COLORS['info'], 'Decelerating': GEN_COLORS['accent']}
 
+        # Amount-based velocity (inline — only this cell uses it)
+        _has_amt_vel = all(f in _df.columns for f in ['DepAmt33', 'depAmt365'])
+        if _has_amt_vel:
+            _df['amt_rate_33'] = _df['DepAmt33'] / 33
+            _df['amt_rate_365'] = _df['depAmt365'] / 365
+            _amt_ratio = _df['amt_rate_33'] / np.where(
+                _df['depAmt365'] > 0, _df['amt_rate_365'], np.nan
+            )
+            _df['amt_velocity'] = np.where(
+                _amt_ratio > 1.2, 'Accelerating',
+                np.where(_amt_ratio < 0.8, 'Decelerating', 'Stable')
+            )
+            _df.loc[(_df['DepAmt33'] == 0) & (_df['depAmt365'] > 0), 'amt_velocity'] = 'Decelerating'
+            _amt_vel_counts = _df['amt_velocity'].value_counts()
+
         print(f"    03 Data Decisions:")
         print(f"      Source: deposits_business_df")
         print(f"      Accounts with 365d deposits: {_total:,}")
+        print(f"      Count Velocity (33d rate vs 365d rate, 20% threshold):")
         for v in _vel_order:
             _cnt = _vel_counts.get(v, 0)
             print(f"        {v}: {_cnt:,} ({_cnt/_total*100:.1f}%)")
+        if _has_amt_vel:
+            print(f"      Amount Velocity (33d amt rate vs 365d amt rate, 20% threshold):")
+            for v in _vel_order:
+                _cnt = _amt_vel_counts.get(v, 0)
+                print(f"        {v}: {_cnt:,} ({_cnt/_total*100:.1f}%)")
 
-        fig, ax = plt.subplots(figsize=(14, 5))
-        _vals = [_vel_counts.get(v, 0) for v in _vel_order]
-        _colors = [_vel_colors[v] for v in _vel_order]
-        _bars = ax.barh(_vel_order[::-1], _vals[::-1], color=_colors[::-1], edgecolor='white', height=0.7)
+        fig, ax = plt.subplots(figsize=(14, 6))
 
-        for bar, val in zip(_bars, _vals[::-1]):
-            _pct = val / _total * 100
-            ax.text(bar.get_width() + _total * 0.01, bar.get_y() + bar.get_height() / 2,
-                    f"{val:,}  ({_pct:.1f}%)", ha='left', va='center',
-                    fontsize=16, fontweight='bold', color=GEN_COLORS['dark_text'])
+        _y = np.arange(len(_vel_order))
+        _h = 0.35 if _has_amt_vel else 0.7
 
+        _count_vals = [_vel_counts.get(v, 0) for v in _vel_order][::-1]
+        _count_colors = [_vel_colors[v] for v in _vel_order][::-1]
+
+        if _has_amt_vel:
+            _amt_vals = [_amt_vel_counts.get(v, 0) for v in _vel_order][::-1]
+            _bars1 = ax.barh(_y + _h/2, _count_vals, _h,
+                             color=_count_colors, edgecolor='white', label='Count Velocity')
+            _bars2 = ax.barh(_y - _h/2, _amt_vals, _h,
+                             color=_count_colors, edgecolor='white', alpha=0.55, label='Amount Velocity')
+            for bar, val in zip(_bars1, _count_vals):
+                _pct = val / _total * 100
+                ax.text(bar.get_width() + _total * 0.01, bar.get_y() + bar.get_height() / 2,
+                        f"{val:,} ({_pct:.1f}%)", ha='left', va='center',
+                        fontsize=14, fontweight='bold', color=GEN_COLORS['dark_text'])
+            for bar, val in zip(_bars2, _amt_vals):
+                _pct = val / _total * 100
+                ax.text(bar.get_width() + _total * 0.01, bar.get_y() + bar.get_height() / 2,
+                        f"{val:,} ({_pct:.1f}%)", ha='left', va='center',
+                        fontsize=13, color=GEN_COLORS['muted'])
+            ax.legend(fontsize=13, frameon=False, loc='lower right')
+        else:
+            _bars = ax.barh(_vel_order[::-1], _count_vals,
+                            color=_count_colors, edgecolor='white', height=0.7)
+            for bar, val in zip(_bars, _count_vals):
+                _pct = val / _total * 100
+                ax.text(bar.get_width() + _total * 0.01, bar.get_y() + bar.get_height() / 2,
+                        f"{val:,}  ({_pct:.1f}%)", ha='left', va='center',
+                        fontsize=16, fontweight='bold', color=GEN_COLORS['dark_text'])
+
+        ax.set_yticks(_y)
+        ax.set_yticklabels(_vel_order[::-1])
         ax.set_title('Business Accounts \u2014 Deposit Velocity',
                      fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], pad=15)
         ax.set_xlabel('Number of Accounts', fontsize=16, fontweight='bold')
         ax.xaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
         ax.tick_params(axis='y', labelsize=16)
         ax.tick_params(axis='x', labelsize=14)
-        ax.text(0.5, -0.22, 'Compares 33-day deposit rate to 365-day rate  |  >20% faster = Accelerating  |  >20% slower = Decelerating',
+        ax.text(0.5, -0.18, 'Compares 33-day rate to 365-day rate  |  >20% faster = Accelerating  |  >20% slower = Decelerating',
                 transform=ax.transAxes, ha='center', fontsize=12, color=GEN_COLORS['muted'])
         gen_clean_axes(ax)
         plt.tight_layout()

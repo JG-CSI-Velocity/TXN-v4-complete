@@ -55,6 +55,8 @@ else:
         ('depCount365', 'Deposit Count (365d)', gen_fmt_count),
         ('balance', 'Balance', gen_fmt_dollar),
         ('last 12-mon spend', 'Card Spend (12mo)', gen_fmt_dollar),
+        ('rdi_rate', 'RDI Rate', gen_fmt_pct),
+        ('days_since_last_dep', 'Days Since Dep', gen_fmt_count),
     ]
     _avail = [(f, l, fmt) for f, l, fmt in _compare if f in _df.columns]
 

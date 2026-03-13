@@ -56,6 +56,24 @@ else:
     _avg_dep = (_df.loc[_active_mask & (_df['depAmt365'] > 0), 'depAmt365'].mean()
                 if 'depAmt365' in _df.columns else np.nan)
 
+    # Deposit quality (RDI rate) — scoped to depositors
+    _RDI_GREEN = 0.02
+    _RDI_YELLOW = 0.05
+    _median_rdi = np.nan
+    if 'rdi_rate' in _df.columns:
+        _rdi_data = _df.loc[_active_mask, 'rdi_rate'].dropna()
+        if len(_rdi_data) > 0:
+            _median_rdi = _rdi_data.median()
+
+    # Days since last deposit — scoped to accounts with deposit history
+    _RECENCY_GREEN = 15
+    _RECENCY_YELLOW = 45
+    _median_recency = np.nan
+    if 'days_since_last_dep' in _df.columns:
+        _recency_data = _df.loc[_active_mask, 'days_since_last_dep'].dropna()
+        if len(_recency_data) > 0:
+            _median_recency = _recency_data.median()
+
     _median_freq = (_df.loc[_active_mask, 'avgdaysbetweendeposits'].median()
                     if 'avgdaysbetweendeposits' in _df.columns else np.nan)
     if not np.isnan(_median_freq):
@@ -74,7 +92,7 @@ else:
     # -------------------------------------------------------------------
     # Dashboard layout — left 1/3, right 2/3
     # -------------------------------------------------------------------
-    fig = plt.figure(figsize=(22, 9))
+    fig = plt.figure(figsize=(22, 13))
     fig.suptitle('Business Accounts \u2014 Deposit Health Dashboard',
                  fontsize=24, fontweight='bold',
                  color=_CLR_NEUTRAL, y=0.98)
@@ -126,9 +144,21 @@ else:
             'sub': f"{_freq_label}\nACH rate: {_ach_pct:.1f}%",
             'color': _signal_color(_median_freq, 16, 35, higher_is_better=False) if not np.isnan(_median_freq) else _CLR_NEUTRAL,
         },
+        {
+            'label': 'Deposit Quality',
+            'value': f"{_median_rdi:.1%}" if not np.isnan(_median_rdi) else 'N/A',
+            'sub': f"RDI rate (returned deposits)\n<{_RDI_GREEN:.0%} healthy, >{_RDI_YELLOW:.0%} problem",
+            'color': _signal_color(_median_rdi, _RDI_GREEN, _RDI_YELLOW, higher_is_better=False) if not np.isnan(_median_rdi) else _CLR_NEUTRAL,
+        },
+        {
+            'label': 'Days Since Deposit',
+            'value': f"{_median_recency:.0f}d" if not np.isnan(_median_recency) else 'N/A',
+            'sub': f"Among active depositors\n<{_RECENCY_GREEN}d recent, >{_RECENCY_YELLOW}d stale",
+            'color': _signal_color(_median_recency, _RECENCY_GREEN, _RECENCY_YELLOW, higher_is_better=False) if not np.isnan(_median_recency) else _CLR_NEUTRAL,
+        },
     ]
 
-    _gs_cards = gridspec.GridSpecFromSubplotSpec(2, 2, subplot_spec=_gs_left[0, 0],
+    _gs_cards = gridspec.GridSpecFromSubplotSpec(3, 2, subplot_spec=_gs_left[0, 0],
                                                  hspace=0.25, wspace=0.2)
     for idx, kpi in enumerate(_kpis):
         ax = fig.add_subplot(_gs_cards[idx])

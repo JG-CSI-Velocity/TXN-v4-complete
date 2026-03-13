@@ -40,6 +40,23 @@ if not _labels and 'depCount365' in _df.columns:
         _medians.append(_vals.median())
         _counts.append(len(_vals))
 
+# ----- RDI trajectory per snapshot -----
+_rdi_medians = []
+_rdi_labels = []
+if ZA_HAS_MULTIPLE and _snap_keys:
+    for sk in _snap_keys:
+        _meta = ZA_SNAPSHOT_META[sk]
+        _rdi_col = f"RDI33_{_meta['label']}"
+        _dc_col = f"DepCount33_{_meta['label']}"
+        if _rdi_col in _df.columns and _dc_col in _df.columns:
+            _has_dc = _df[_dc_col].fillna(0) > 0
+            _snap_rdi = np.where(_has_dc, _df[_rdi_col] / _df[_dc_col], np.nan)
+            _snap_rdi_series = pd.Series(_snap_rdi, index=_df.index)
+            _rdi_med = _snap_rdi_series.dropna().median()
+            if pd.notna(_rdi_med):
+                _rdi_medians.append(_rdi_med)
+                _rdi_labels.append(_meta['label'].upper())
+
 # ----- Conference-format summary table -----
 print(f"\n{'=' * 70}")
 print(f"  PERSONAL DEPOSITS — DEPOSIT COUNT TRAJECTORY (Cell 12)")
@@ -47,11 +64,18 @@ print(f"{'=' * 70}")
 print(f"  Source: deposits_personal_df (ZAccounts snapshots)")
 print(f"  Snapshots available: {len(_labels)}")
 print()
+_has_rdi_traj = len(_rdi_medians) >= 2
 _hdr = f"  {'Snapshot':<12s}  {'N':>8s}  {'Median depCount365':>22s}"
+if _has_rdi_traj:
+    _hdr += f"  {'Median RDI Rate':>18s}"
 print(_hdr)
-print(f"  {'-'*12}  {'-'*8}  {'-'*22}")
-for lbl, med, cnt in zip(_labels, _medians, _counts):
-    print(f"  {lbl:<12s}  {cnt:>8,}  {med:>22.1f}")
+print(f"  {'-'*12}  {'-'*8}  {'-'*22}" + (f"  {'-'*18}" if _has_rdi_traj else ""))
+for i, (lbl, med, cnt) in enumerate(zip(_labels, _medians, _counts)):
+    _row = f"  {lbl:<12s}  {cnt:>8,}  {med:>22.1f}"
+    if _has_rdi_traj and lbl in _rdi_labels:
+        _ri = _rdi_labels.index(lbl)
+        _row += f"  {_rdi_medians[_ri]:>17.1%}"
+    print(_row)
 if len(_labels) >= 2:
     _change = _medians[-1] - _medians[0]
     _pct = (_change / _medians[0] * 100) if _medians[0] != 0 else 0
@@ -94,6 +118,21 @@ if len(_labels) >= 2:
     ax.set_xticks(x)
     ax.set_xticklabels(_labels, fontsize=15)
     ax.tick_params(axis='y', labelsize=13)
+
+    # RDI trajectory overlay (secondary axis)
+    if _has_rdi_traj and len(_rdi_labels) == len(_labels):
+        ax2 = ax.twinx()
+        ax2.plot(x, _rdi_medians, 'o-', color=GEN_COLORS['accent'],
+                 linewidth=2.5, markersize=8, label='RDI Rate', zorder=5)
+        for xi, rv in zip(x, _rdi_medians):
+            ax2.text(xi, rv + 0.002, f"{rv:.1%}", ha='center', va='bottom',
+                     fontsize=11, fontweight='bold', color=GEN_COLORS['accent'])
+        ax2.set_ylabel('Median RDI Rate', fontsize=14, fontweight='bold',
+                        color=GEN_COLORS['accent'])
+        ax2.tick_params(axis='y', labelsize=12, colors=GEN_COLORS['accent'])
+        ax2.spines['right'].set_color(GEN_COLORS['accent'])
+        ax2.spines['top'].set_visible(False)
+
     gen_clean_axes(ax)
     plt.tight_layout()
     plt.show()

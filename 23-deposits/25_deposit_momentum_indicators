@@ -124,16 +124,21 @@ else:
         _dep_metric = 'depAmt365'
         _dep_label = 'Med depAmt365'
         _has_dep = _dep_metric in _df.columns
+        _has_rdi = 'rdi_rate' in _df.columns
 
         _hdr = f"  {'Momentum':<20s}  {'N':>7s}  {'Share':>6s}"
         for g in _camp_groups:
             _hdr += f"  {g + ' %':>16s}"
         if _has_dep:
             _hdr += f"  {_dep_label:>16s}"
+        if _has_rdi:
+            _hdr += f"  {'Med RDI Rate':>14s}"
         print(_hdr)
+        _sep_width = 20 + 2 + 7 + 2 + 6 + (18 * len(_camp_groups)) + (18 if _has_dep else 0) + (16 if _has_rdi else 0)
         print(f"  {'-'*20}  {'-'*7}  {'-'*6}" +
               (f"  {'-'*16}" * len(_camp_groups)) +
-              (f"  {'-'*16}" if _has_dep else ''))
+              (f"  {'-'*16}" if _has_dep else '') +
+              (f"  {'-'*14}" if _has_rdi else ''))
 
         for mom in _mom_order:
             _m_df = _df[_df['_momentum'] == mom]
@@ -153,8 +158,14 @@ else:
                     _row += f"  {'N/A':>16s}"
                 else:
                     _row += f"  {'${:>,.0f}'.format(_med):>16s}"
+            if _has_rdi:
+                _rdi_med = _m_df['rdi_rate'].dropna().median()
+                if pd.isna(_rdi_med):
+                    _row += f"  {'N/A':>14s}"
+                else:
+                    _row += f"  {f'{_rdi_med:.1%}':>14s}"
             print(_row)
-        print(f"{'=' * 110}")
+        print(f"{'=' * 120}")
 
         # -----------------------------------------------------------------
         # 4. Chart: grouped bar by momentum category

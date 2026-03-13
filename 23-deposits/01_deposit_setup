@@ -24,6 +24,7 @@
 
 import re
 import glob
+import numpy as np
 from collections import OrderedDict
 from pathlib import Path
 
@@ -236,6 +237,7 @@ _LONGITUDINAL_FIELDS = [
     'Mobile_Deposits_90', 'autodeposit',
     'RepaymentTrendCount33', 'DepositTrendCount33',
     'WindfallTrendCount33', 'CashFlowTrendCount33',
+    'lastdepdate', 'RDI33', 'RDIAmt33',
 ]
 
 # Build snapshot metadata: date labels and actual window coverage
@@ -313,6 +315,71 @@ if ZA_HAS_MULTIPLE:
     print(f"    deposits_df now has {len(deposits_df.columns)} columns")
 else:
     print(f"\n    Single snapshot -- no longitudinal join needed")
+
+# ---------------------------------------------------------------------------
+# 5b. Derived deposit quality columns and shared helpers
+# ---------------------------------------------------------------------------
+# ANALYSIS_DATE = latest snapshot date (point-in-time reference for recency)
+ANALYSIS_DATE = ZA_SNAPSHOT_META[sorted(ZA_SNAPSHOT_META.keys())[-1]]['date']
+print(f"\n    ANALYSIS_DATE: {ANALYSIS_DATE.strftime('%Y-%m-%d')}")
+
+# Parse lastdepdate to datetime (once here, not per cell)
+if 'lastdepdate' in deposits_df.columns:
+    deposits_df['lastdepdate'] = pd.to_datetime(
+        deposits_df['lastdepdate'], errors='coerce'
+    )
+    for _sk in _snapshot_keys_sorted:
+        _lbl = ZA_SNAPSHOT_META[_sk]['label']
+        _col = f'lastdepdate_{_lbl}'
+        if _col in deposits_df.columns:
+            deposits_df[_col] = pd.to_datetime(
+                deposits_df[_col], errors='coerce'
+            )
+
+# Days since last deposit (relative to latest snapshot, not today)
+if 'lastdepdate' in deposits_df.columns:
+    deposits_df['days_since_last_dep'] = (
+        ANALYSIS_DATE - deposits_df['lastdepdate']
+    ).dt.days
+
+# RDI rate: proportion of deposits that were returned (bounced checks, returned ACH)
+# NaN when DepCount33 == 0 (no deposits = no meaningful RDI rate)
+if 'RDI33' in deposits_df.columns and 'DepCount33' in deposits_df.columns:
+    deposits_df['rdi_rate'] = np.where(
+        deposits_df['DepCount33'] > 0,
+        deposits_df['RDI33'] / deposits_df['DepCount33'],
+        np.nan
+    )
+
+# Validation
+for _derived, _min in [('rdi_rate', 50), ('days_since_last_dep', 50)]:
+    if _derived in deposits_df.columns:
+        _valid = deposits_df[_derived].notna().sum()
+        if _valid < _min:
+            print(f"    WARNING: {_derived} has only {_valid} valid values")
+        else:
+            print(f"    {_derived}: {_valid:,} valid values")
+
+# Shared helpers for downstream cells
+def dep_safe_median(df, field):
+    """Return median of field if it exists and has data, else np.nan."""
+    if field not in df.columns:
+        return np.nan
+    return df[field].dropna().median()
+
+def dep_signal_color(value, thresholds, colors=None):
+    """Return signal color based on threshold breakpoints.
+    thresholds: (green_max, yellow_max) -- above yellow_max = red.
+    """
+    if colors is None:
+        colors = (GEN_COLORS['success'], GEN_COLORS['warning'], GEN_COLORS['danger'])
+    if pd.isna(value):
+        return GEN_COLORS['muted']
+    if value <= thresholds[0]:
+        return colors[0]
+    if value <= thresholds[1]:
+        return colors[1]
+    return colors[2]
 
 # ---------------------------------------------------------------------------
 # 6. Auto-discover ODDD monthly columns from rewards_df (card/OD data, NOT deposits)
