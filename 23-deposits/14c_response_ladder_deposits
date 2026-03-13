@@ -103,8 +103,9 @@ else:
     _move_counts = {m: _movements.count(m) for m in ['Up', 'Same', 'Down']}
 
     _compare = [
-        ('depAmt365', 'Deposit Amount (365d)', gen_fmt_dollar),
-        ('depCount365', 'Deposits (365d)', gen_fmt_count),
+        ('depAmt365', 'Deposit Amt (365d)', gen_fmt_dollar),
+        ('depCount365', 'Deposit Count (365d)', gen_fmt_count),
+        ('balance', 'Balance', gen_fmt_dollar),
         ('last 12-mon spend', 'Card Spend (12mo)', gen_fmt_dollar),
     ]
     _avail = [(f, l, fmt) for f, l, fmt in _compare if f in _df.columns]
