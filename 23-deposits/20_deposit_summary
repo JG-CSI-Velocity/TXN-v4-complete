@@ -1,0 +1,83 @@
+# ===========================================================================
+# PERSONAL DEPOSITS: Key Findings Summary
+# ===========================================================================
+# Styled text summary of deposit analysis findings. No chart.
+# Aggregates key metrics from cells 02-19 into a conference-ready narrative.
+# Data: deposits_personal_df
+
+import numpy as np
+
+_df = deposits_personal_df.copy()
+_total = len(_df)
+
+print("=" * 80)
+print("  PERSONAL ACCOUNT DEPOSITS \u2014 KEY FINDINGS SUMMARY")
+print("=" * 80)
+
+# Portfolio Size
+print(f"\n  PORTFOLIO")
+print(f"    Open personal accounts: {_total:,}")
+if 'depCount365' in _df.columns:
+    _active = (_df['depCount365'] > 0).sum()
+    print(f"    Active depositors (365d): {_active:,} ({_active/_total*100:.1f}%)")
+if 'DepCount33' in _df.columns:
+    _recent = (_df['DepCount33'] > 0).sum()
+    print(f"    Recent depositors (33d): {_recent:,} ({_recent/_total*100:.1f}%)")
+
+# Velocity
+if all(f in _df.columns for f in ['DepCount33', 'depCount365']):
+    _active_df = _df[_df['depCount365'] > 0].copy()
+    _r33 = _active_df['DepCount33'] / 33
+    _r365 = _active_df['depCount365'] / 365
+    _ratio = _r33 / _r365.replace(0, np.nan)
+    _accel = (_ratio > 1.2).sum() + ((_active_df['DepCount33'] == 0) & (_active_df['depCount365'] > 0)).sum()
+    _accel = (_ratio > 1.2).sum()
+    _decel = ((_ratio < 0.8) | ((_active_df['DepCount33'] == 0) & (_active_df['depCount365'] > 0))).sum()
+    _stable = len(_active_df) - _accel - _decel
+    print(f"\n  VELOCITY")
+    print(f"    Accelerating: {_accel:,} ({_accel/len(_active_df)*100:.1f}%)")
+    print(f"    Stable: {_stable:,} ({_stable/len(_active_df)*100:.1f}%)")
+    print(f"    Decelerating: {_decel:,} ({_decel/len(_active_df)*100:.1f}%)")
+
+# Frequency
+if 'avgdaysbetweendeposits' in _df.columns:
+    _freq = _df['avgdaysbetweendeposits'].dropna()
+    _freq = _freq[_freq > 0]
+    print(f"\n  FREQUENCY")
+    print(f"    Median days between deposits: {_freq.median():.0f}")
+    print(f"    Weekly or better (<=7d): {(_freq <= 7).sum():,}")
+    print(f"    Biweekly (8-16d): {((_freq > 7) & (_freq <= 16)).sum():,}")
+    print(f"    Monthly (17-35d): {((_freq > 16) & (_freq <= 35)).sum():,}")
+    print(f"    Infrequent (36d+): {(_freq > 35).sum():,}")
+
+# Engagement
+if 'autodeposit' in _df.columns:
+    _ad = _df['autodeposit'].astype(str).str.strip().str.lower()
+    _ad_count = _ad.isin(['yes', 'y', 'true', '1', '1.0']).sum()
+    print(f"\n  ENGAGEMENT")
+    print(f"    Auto-deposit: {_ad_count:,} ({_ad_count/_total*100:.1f}%)")
+if 'Mobile_Deposits_90' in _df.columns:
+    _mob = (_df['Mobile_Deposits_90'] > 0).sum()
+    print(f"    Mobile depositors (90d): {_mob:,} ({_mob/_total*100:.1f}%)")
+
+# Risk
+if 'nsfodfeestodepositsratio90days' in _df.columns:
+    _fee = _df['nsfodfeestodepositsratio90days'].dropna()
+    _high_fee = (_fee > 0.20).sum()
+    print(f"\n  RISK SIGNALS")
+    print(f"    High fee pressure (>20%): {_high_fee:,} ({_high_fee/_total*100:.1f}%)")
+if 'avgrepaymentrate' in _df.columns:
+    _repay = _df['avgrepaymentrate'].dropna()
+    _low_repay = (_repay < 0.5).sum()
+    print(f"    Low repayment (<0.50): {_low_repay:,} ({_low_repay/_total*100:.1f}%)")
+
+# Cross-Source
+if 'Total Spend' in _df.columns and 'depAmt365' in _df.columns:
+    _both = _df[(_df['Total Spend'] > 0) & (_df['depAmt365'] > 0)]
+    _corr = _both['depAmt365'].corr(_both['Total Spend'])
+    print(f"\n  CROSS-SOURCE (DEPOSITS x CARD SPEND)")
+    print(f"    Deposit-Spend correlation: {_corr:.3f}")
+    print(f"    Median annual deposit: ${_both['depAmt365'].median():,.0f}")
+    print(f"    Median total spend: ${_both['Total Spend'].median():,.0f}")
+
+print(f"\n{'=' * 80}")

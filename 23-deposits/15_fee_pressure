@@ -1,0 +1,71 @@
+# ===========================================================================
+# PERSONAL DEPOSITS: Fee Pressure Distribution
+# ===========================================================================
+# NSF/OD fees to deposits ratio. Who is under fee pressure?
+# Histogram with risk thresholds.
+# Data: deposits_personal_df (ZAccounts: nsfodfeestodepositsratio90days)
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import numpy as np
+
+_df = deposits_personal_df.copy()
+_field = 'nsfodfeestodepositsratio90days'
+
+if _field not in _df.columns:
+    print(f"    WARNING: '{_field}' not available -- skipping")
+else:
+    _df = _df[_df[_field].notna()].copy()
+    _total = len(_df)
+
+    # Cap at 99th percentile for display
+    _cap = _df[_field].quantile(0.99)
+    _df['_fee_plot'] = _df[_field].clip(upper=_cap)
+
+    # Risk segments
+    _low = (_df[_field] <= 0.05).sum()
+    _moderate = ((_df[_field] > 0.05) & (_df[_field] <= 0.20)).sum()
+    _high = (_df[_field] > 0.20).sum()
+
+    print(f"    15 Data Decisions:")
+    print(f"      Source: deposits_personal_df (open personal accounts)")
+    print(f"      Field: {_field}")
+    print(f"      Accounts with fee data: {_total:,}")
+    print(f"      Display cap (99th pctl): {_cap:.3f}")
+    print(f"      Low pressure (<=5%): {_low:,} ({_low/_total*100:.1f}%)")
+    print(f"      Moderate (5-20%): {_moderate:,} ({_moderate/_total*100:.1f}%)")
+    print(f"      High pressure (>20%): {_high:,} ({_high/_total*100:.1f}%)")
+
+    # ---------------------------------------------------------------------------
+    # Chart: Histogram with threshold lines
+    # ---------------------------------------------------------------------------
+    fig, ax = plt.subplots(figsize=(16, 7))
+
+    _bins = np.linspace(0, _cap, 40)
+    ax.hist(_df['_fee_plot'], bins=_bins, color=GEN_COLORS['primary'],
+            edgecolor='white', alpha=0.85)
+
+    # Threshold lines
+    ax.axvline(0.05, color=GEN_COLORS['warning'], linewidth=2.5,
+               linestyle='--', label=f'Moderate threshold (5%)', zorder=5)
+    ax.axvline(0.20, color=GEN_COLORS['accent'], linewidth=2.5,
+               linestyle='--', label=f'High pressure threshold (20%)', zorder=5)
+
+    ax.set_title('Personal Accounts \u2014 Fee-to-Deposit Ratio Distribution',
+                 fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], pad=15)
+    ax.set_xlabel('NSF/OD Fees to Deposits Ratio (90 days)', fontsize=16, fontweight='bold')
+    ax.set_ylabel('Number of Accounts', fontsize=16, fontweight='bold')
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
+    ax.tick_params(axis='both', labelsize=13)
+    ax.legend(fontsize=13, loc='upper right')
+
+    # Summary annotation
+    _summary = (f"Low: {_low:,} ({_low/_total*100:.0f}%)  |  "
+                f"Moderate: {_moderate:,} ({_moderate/_total*100:.0f}%)  |  "
+                f"High: {_high:,} ({_high/_total*100:.0f}%)")
+    ax.text(0.5, -0.12, _summary, transform=ax.transAxes, ha='center',
+            fontsize=13, fontweight='bold', color=GEN_COLORS['dark_text'])
+
+    gen_clean_axes(ax)
+    plt.tight_layout()
+    plt.show()

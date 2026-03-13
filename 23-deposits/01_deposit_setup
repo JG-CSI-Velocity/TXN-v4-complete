@@ -141,9 +141,21 @@ else:
     print("    WARNING: Could not join ZAccounts -- using rewards_df only")
 
 # ---------------------------------------------------------------------------
-# 4b. Filter: Open accounts only (Stat Code = 'O')
+# 4b. Preserve closed/chargeoff accounts BEFORE filtering (for cell 18)
 # ---------------------------------------------------------------------------
 _stat_field = 'Stat Code'
+if _stat_field in deposits_df.columns:
+    deposits_closed_df = deposits_df[
+        deposits_df[_stat_field].astype(str).str.strip().str.upper() != 'O'
+    ].copy()
+    print(f"    Closed/chargeoff accounts preserved: {len(deposits_closed_df):,}")
+else:
+    deposits_closed_df = pd.DataFrame()
+    print(f"    WARNING: '{_stat_field}' not found -- no closed account data preserved")
+
+# ---------------------------------------------------------------------------
+# 4c. Filter: Open accounts only (Stat Code = 'O')
+# ---------------------------------------------------------------------------
 if _stat_field in deposits_df.columns:
     _before = len(deposits_df)
     _stat_dist = deposits_df[_stat_field].value_counts()
@@ -162,7 +174,7 @@ else:
     print(f"\n    WARNING: '{_stat_field}' not found -- no status filter applied")
 
 # ---------------------------------------------------------------------------
-# 4c. Segment: Personal vs Business (Business? field)
+# 4d. Segment: Personal vs Business (Business? field)
 # ---------------------------------------------------------------------------
 _biz_field = 'Business?'
 if _biz_field in deposits_df.columns:

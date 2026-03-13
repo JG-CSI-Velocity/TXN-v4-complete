@@ -1,0 +1,48 @@
+# ===========================================================================
+# BUSINESS DEPOSITS: Deposit-Spend Correlation Scatter
+# ===========================================================================
+# Mirror of Section 23 cell 10 for business accounts.
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import numpy as np
+
+_df = deposits_business_df.copy()
+_dep_field = 'depAmt365'
+_spend_field = 'Total Spend'
+
+if len(_df) < _MIN_ACCOUNTS:
+    print(f"    10 Skipped: {len(_df)} business accounts (below {_MIN_ACCOUNTS} threshold)")
+elif _dep_field not in _df.columns or _spend_field not in _df.columns:
+    print(f"    WARNING: Missing '{_dep_field}' or '{_spend_field}' -- skipping")
+else:
+    _df = _df[(_df[_dep_field] > 0) & (_df[_spend_field] > 0)].copy()
+    _total = len(_df)
+
+    _dep_cap = _df[_dep_field].quantile(0.99)
+    _spend_cap = _df[_spend_field].quantile(0.99)
+    _df['_dep_plot'] = _df[_dep_field].clip(upper=_dep_cap)
+    _df['_spend_plot'] = _df[_spend_field].clip(upper=_spend_cap)
+    _corr = _df[_dep_field].corr(_df[_spend_field])
+
+    print(f"    10 Data Decisions:")
+    print(f"      Source: deposits_business_df (cross-source)")
+    print(f"      Accounts with both > 0: {_total:,}")
+    print(f"      Correlation: {_corr:.3f}")
+
+    fig, ax = plt.subplots(figsize=(14, 9))
+    ax.scatter(_df['_dep_plot'], _df['_spend_plot'], alpha=0.4, s=30,
+              color=GEN_COLORS['primary'], edgecolors='none')
+    ax.set_title('Business Accounts \u2014 Deposit Amount vs Card Spend',
+                 fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], pad=15)
+    ax.set_xlabel('Annual Deposit Amount (365d)', fontsize=16, fontweight='bold')
+    ax.set_ylabel('Total Card Spend', fontsize=16, fontweight='bold')
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+    ax.tick_params(axis='both', labelsize=13)
+    ax.text(0.98, 0.02, f"r = {_corr:.3f}  |  n = {_total:,}",
+            transform=ax.transAxes, ha='right', va='bottom', fontsize=13, color=GEN_COLORS['muted'],
+            bbox=dict(boxstyle='round,pad=0.3', facecolor=GEN_COLORS['light_bg'], edgecolor=GEN_COLORS['grid']))
+    gen_clean_axes(ax)
+    plt.tight_layout()
+    plt.show()

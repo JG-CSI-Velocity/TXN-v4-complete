@@ -1,0 +1,95 @@
+# ===========================================================================
+# PERSONAL DEPOSITS: Deposit-Spend Correlation Scatter
+# ===========================================================================
+# Scatter plot: annual deposit amount (ZAccounts) vs annual spend (ODDD).
+# Are heavy depositors also heavy spenders?
+# Cross-source: ZAccounts (depAmt365) + ODDD (Total Spend)
+# Data: deposits_personal_df
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import numpy as np
+
+_df = deposits_personal_df.copy()
+_dep_field = 'depAmt365'
+_spend_field = 'Total Spend'
+
+if _dep_field not in _df.columns or _spend_field not in _df.columns:
+    print(f"    WARNING: Missing '{_dep_field}' or '{_spend_field}' -- skipping")
+else:
+    # Filter to accounts with both deposit and spend activity
+    _df = _df[(_df[_dep_field] > 0) & (_df[_spend_field] > 0)].copy()
+    _total = len(_df)
+
+    # Cap outliers at 99th percentile for visual clarity
+    _dep_cap = _df[_dep_field].quantile(0.99)
+    _spend_cap = _df[_spend_field].quantile(0.99)
+    _df['_dep_plot'] = _df[_dep_field].clip(upper=_dep_cap)
+    _df['_spend_plot'] = _df[_spend_field].clip(upper=_spend_cap)
+
+    # Color by velocity if available
+    _has_velocity = all(f in _df.columns for f in ['DepCount33', 'depCount365'])
+    if _has_velocity:
+        _ratio = (_df['DepCount33'] / 33) / (_df['depCount365'] / 365).replace(0, np.nan)
+        _df['_vel'] = np.where(
+            _ratio > 1.2, 'Accelerating',
+            np.where(_ratio < 0.8, 'Decelerating', 'Stable')
+        )
+        _df.loc[(_df['DepCount33'] == 0) & (_df['depCount365'] > 0), '_vel'] = 'Decelerating'
+        _vel_colors = {
+            'Accelerating': GEN_COLORS['success'],
+            'Stable': GEN_COLORS['info'],
+            'Decelerating': GEN_COLORS['accent'],
+        }
+    else:
+        _df['_vel'] = 'All'
+        _vel_colors = {'All': GEN_COLORS['primary']}
+
+    _corr = _df[_dep_field].corr(_df[_spend_field])
+
+    print(f"    10 Data Decisions:")
+    print(f"      Source: deposits_personal_df (cross-source: ZAccounts + ODDD)")
+    print(f"      Accounts with both deposit + spend > 0: {_total:,}")
+    print(f"      Deposit cap (99th pctl): ${_dep_cap:,.0f}")
+    print(f"      Spend cap (99th pctl): ${_spend_cap:,.0f}")
+    print(f"      Correlation (Pearson): {_corr:.3f}")
+    if _has_velocity:
+        for v in ['Accelerating', 'Stable', 'Decelerating']:
+            _cnt = (_df['_vel'] == v).sum()
+            print(f"      {v}: {_cnt:,}")
+
+    # ---------------------------------------------------------------------------
+    # Chart: Scatter
+    # ---------------------------------------------------------------------------
+    fig, ax = plt.subplots(figsize=(14, 9))
+
+    for vel_label in ['Decelerating', 'Stable', 'Accelerating'] if _has_velocity else ['All']:
+        _subset = _df[_df['_vel'] == vel_label]
+        ax.scatter(
+            _subset['_dep_plot'], _subset['_spend_plot'],
+            alpha=0.3, s=20,
+            color=_vel_colors[vel_label],
+            label=vel_label,
+            edgecolors='none',
+        )
+
+    ax.set_title('Personal Accounts \u2014 Deposit Amount vs Card Spend',
+                 fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], pad=15)
+    ax.set_xlabel('Annual Deposit Amount (365d)', fontsize=16, fontweight='bold')
+    ax.set_ylabel('Total Card Spend', fontsize=16, fontweight='bold')
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+    ax.tick_params(axis='both', labelsize=13)
+
+    if _has_velocity:
+        ax.legend(fontsize=14, loc='upper left', markerscale=3)
+
+    ax.text(0.98, 0.02, f"r = {_corr:.3f}  |  n = {_total:,}",
+            transform=ax.transAxes, ha='right', va='bottom',
+            fontsize=13, color=GEN_COLORS['muted'],
+            bbox=dict(boxstyle='round,pad=0.3', facecolor=GEN_COLORS['light_bg'],
+                      edgecolor=GEN_COLORS['grid']))
+
+    gen_clean_axes(ax)
+    plt.tight_layout()
+    plt.show()

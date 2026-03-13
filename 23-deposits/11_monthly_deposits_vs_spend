@@ -1,0 +1,77 @@
+# ===========================================================================
+# PERSONAL DEPOSITS: Monthly Deposits vs Spend (Dual Trend)
+# ===========================================================================
+# Dual-line chart: monthly aggregate deposit total (MTD) vs monthly
+# aggregate spend over the full period. Do deposits and spend move together?
+# Data: deposits_personal_df + mtd_cols + spend_cols (auto-discovered)
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import numpy as np
+
+_df = deposits_personal_df.copy()
+
+if not mtd_cols or not spend_cols:
+    print("    WARNING: No monthly MTD or Spend columns found -- skipping")
+else:
+    # Build monthly aggregates
+    _months = sorted(
+        set(mtd_cols.keys()) & set(spend_cols.keys()),
+        key=lambda m: (int(m[3:]) + 2000, {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
+                                             'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}[m[:3]])
+    )
+
+    _dep_totals = []
+    _spend_totals = []
+    _labels = []
+
+    for m in _months:
+        _mtd_col = mtd_cols[m]
+        _spend_col = spend_cols[m]
+        if _mtd_col in _df.columns and _spend_col in _df.columns:
+            _dep_totals.append(_df[_mtd_col].sum())
+            _spend_totals.append(_df[_spend_col].sum())
+            _labels.append(f"{m[:3]} '{m[3:]}")
+
+    print(f"    11 Data Decisions:")
+    print(f"      Source: deposits_personal_df (ODDD monthly columns)")
+    print(f"      Months with both MTD + Spend: {len(_labels)}")
+    print(f"      Period: {_labels[0]} to {_labels[-1]}" if _labels else "      No data")
+    print(f"      Total deposits over period: ${sum(_dep_totals):,.0f}")
+    print(f"      Total spend over period: ${sum(_spend_totals):,.0f}")
+
+    if len(_labels) >= 3:
+        fig, ax = plt.subplots(figsize=(18, 8))
+
+        x = np.arange(len(_labels))
+
+        ax.plot(x, [d / 1e6 for d in _dep_totals],
+                color=GEN_COLORS['primary'], linewidth=3, marker='o',
+                markersize=6, label='Deposits (MTD)', zorder=3)
+        ax.plot(x, [s / 1e6 for s in _spend_totals],
+                color=GEN_COLORS['accent'], linewidth=3, marker='s',
+                markersize=6, label='Card Spend', zorder=3)
+
+        # Fill area between
+        ax.fill_between(x, [d / 1e6 for d in _dep_totals],
+                        alpha=0.08, color=GEN_COLORS['primary'])
+        ax.fill_between(x, [s / 1e6 for s in _spend_totals],
+                        alpha=0.08, color=GEN_COLORS['accent'])
+
+        ax.set_title('Personal Accounts \u2014 Monthly Deposits vs Card Spend',
+                     fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], pad=15)
+        ax.set_xlabel('Month', fontsize=16, fontweight='bold')
+        ax.set_ylabel('Amount ($M)', fontsize=16, fontweight='bold')
+        ax.set_xticks(x)
+        ax.set_xticklabels(_labels, fontsize=12, rotation=45, ha='right')
+        ax.tick_params(axis='y', labelsize=13)
+        ax.legend(fontsize=14, loc='upper left')
+
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(
+            lambda v, _: f"${v:.1f}M"))
+
+        gen_clean_axes(ax)
+        plt.tight_layout()
+        plt.show()
+    else:
+        print("    Not enough months for trend chart")

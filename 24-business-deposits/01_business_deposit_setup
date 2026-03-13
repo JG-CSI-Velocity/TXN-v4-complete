@@ -1,0 +1,22 @@
+# ===========================================================================
+# BUSINESS DEPOSITS: Setup
+# ===========================================================================
+# Lightweight setup: confirm business account count from deposits_business_df,
+# set working DataFrame and label constants.
+# Depends on: 23-deposits/01_deposit_setup (creates deposits_business_df)
+
+_biz_df = deposits_business_df
+_BIZ_TOTAL = len(_biz_df)
+_ACCT_LABEL = "Business Accounts"
+_MIN_ACCOUNTS = 50
+
+print(f"    === Section 24: Business Account Deposits ===")
+print(f"    Working DataFrame: deposits_business_df")
+print(f"    Business accounts: {_BIZ_TOTAL:,}")
+print(f"    Minimum threshold: {_MIN_ACCOUNTS}")
+
+if _BIZ_TOTAL < _MIN_ACCOUNTS:
+    print(f"\n    WARNING: Only {_BIZ_TOTAL} business accounts (below {_MIN_ACCOUNTS} threshold)")
+    print(f"    Some cells may auto-skip due to insufficient data")
+else:
+    print(f"    Ready for analysis")

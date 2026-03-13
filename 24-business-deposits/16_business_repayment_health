@@ -1,0 +1,54 @@
+# ===========================================================================
+# BUSINESS DEPOSITS: Repayment Health
+# ===========================================================================
+# Mirror of Section 23 cell 16 for business accounts.
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import numpy as np
+
+_df = deposits_business_df.copy()
+_field = 'avgrepaymentrate'
+
+if len(_df) < _MIN_ACCOUNTS:
+    print(f"    16 Skipped: {len(_df)} business accounts (below {_MIN_ACCOUNTS} threshold)")
+elif _field not in _df.columns:
+    print(f"    WARNING: '{_field}' not available -- skipping")
+else:
+    _df = _df[_df[_field].notna()].copy()
+    _total = len(_df)
+
+    _bins = [-float('inf'), 0.5, 0.8, float('inf')]
+    _labels = ['Low (<0.50)', 'Moderate (0.50-0.80)', 'Strong (>0.80)']
+    _df['repay_segment'] = pd.cut(_df[_field], bins=_bins, labels=_labels)
+    _seg_counts = _df['repay_segment'].value_counts().reindex(_labels).fillna(0).astype(int)
+    _seg_colors = [GEN_COLORS['accent'], GEN_COLORS['warning'], GEN_COLORS['success']]
+
+    _seg_deps = []
+    for lbl in _labels:
+        _sdf = _df[_df['repay_segment'] == lbl]
+        _seg_deps.append(_sdf['depCount365'].median() if 'depCount365' in _sdf.columns and len(_sdf) > 0 else 0)
+
+    print(f"    16 Data Decisions:")
+    print(f"      Source: deposits_business_df")
+    print(f"      Accounts: {_total:,}")
+    for lbl, cnt, dep in zip(_labels, _seg_counts, _seg_deps):
+        print(f"        {lbl}: {cnt:,} | median deposits: {dep:.0f}")
+
+    fig, ax = plt.subplots(figsize=(14, 6))
+    _bars = ax.barh(_labels[::-1], _seg_counts.values[::-1], color=_seg_colors[::-1], edgecolor='white', height=0.5)
+    for bar, val, dep in zip(_bars, _seg_counts.values[::-1], _seg_deps[::-1]):
+        _pct = val / _total * 100
+        ax.text(bar.get_width() + max(1, _total*0.01), bar.get_y()+bar.get_height()/2,
+                f"{val:,}  ({_pct:.1f}%)  |  {dep:.0f} deposits/yr",
+                ha='left', va='center', fontsize=14, fontweight='bold', color=GEN_COLORS['dark_text'])
+    ax.set_title('Business Accounts \u2014 Repayment Health',
+                 fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], pad=15)
+    ax.set_xlabel('Number of Accounts', fontsize=16, fontweight='bold')
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
+    ax.tick_params(axis='y', labelsize=15)
+    ax.text(0.5, -0.10, 'Repayment rate: how quickly OD balances return to positive  |  Higher = healthier',
+            transform=ax.transAxes, ha='center', fontsize=12, color=GEN_COLORS['muted'])
+    gen_clean_axes(ax)
+    plt.tight_layout()
+    plt.show()

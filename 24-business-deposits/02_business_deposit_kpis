@@ -1,0 +1,63 @@
+# ===========================================================================
+# BUSINESS DEPOSITS: Portfolio-Level KPI Cards
+# ===========================================================================
+# Same analysis as Section 23 cell 02, using deposits_business_df.
+# Data: deposits_business_df (open business accounts, ZAccounts + ODDD merged)
+
+import matplotlib.pyplot as plt
+from matplotlib.patches import FancyBboxPatch
+import numpy as np
+
+_df = deposits_business_df
+_total = len(_df)
+
+if _total < _MIN_ACCOUNTS:
+    print(f"    02 Skipped: {_total} business accounts (below {_MIN_ACCOUNTS} threshold)")
+else:
+    print(f"    02 Data Decisions:")
+    print(f"      Source: deposits_business_df (open business accounts)")
+    print(f"      Accounts: {_total:,}")
+
+    _dep_33 = (_df['DepCount33'] > 0).sum() if 'DepCount33' in _df.columns else 0
+    _dep_365 = (_df['depCount365'] > 0).sum() if 'depCount365' in _df.columns else 0
+    _median_freq = _df['avgdaysbetweendeposits'].median() if 'avgdaysbetweendeposits' in _df.columns else np.nan
+    _avg_dep_amt = _df.loc[_df['depAmt365'] > 0, 'depAmt365'].mean() if 'depAmt365' in _df.columns else np.nan
+    _median_bal = _df['balance'].median() if 'balance' in _df.columns else np.nan
+    _auto_rate = (
+        (_df['autodeposit'].astype(str).str.strip().str.lower().isin(
+            ['yes', 'y', 'true', '1', '1.0'])).mean() * 100
+        if 'autodeposit' in _df.columns else np.nan
+    )
+    _mobile_dep = (_df['Mobile_Deposits_90'] > 0).sum() if 'Mobile_Deposits_90' in _df.columns else 0
+    _avg_repay = _df['avgrepaymentrate'].mean() if 'avgrepaymentrate' in _df.columns else np.nan
+
+    _kpis = [
+        {'label': 'Business Accounts', 'value': f"{_total:,}", 'sub': 'Open accounts in portfolio', 'color': GEN_COLORS['primary']},
+        {'label': 'Active (33 Days)', 'value': f"{_dep_33:,}", 'sub': f"{_dep_33/_total*100:.1f}% deposited recently" if _total else '', 'color': GEN_COLORS['success']},
+        {'label': 'Active (365 Days)', 'value': f"{_dep_365:,}", 'sub': f"{_dep_365/_total*100:.1f}% deposited in year" if _total else '', 'color': GEN_COLORS['info']},
+        {'label': 'Median Days Between', 'value': f"{_median_freq:.0f}" if not np.isnan(_median_freq) else 'N/A', 'sub': 'Deposit frequency (days)', 'color': GEN_COLORS['warning']},
+        {'label': 'Avg Deposit (365d)', 'value': f"${_avg_dep_amt:,.0f}" if not np.isnan(_avg_dep_amt) else 'N/A', 'sub': 'Among depositors', 'color': GEN_COLORS['accent']},
+        {'label': 'Median Balance', 'value': f"${_median_bal:,.0f}" if not np.isnan(_median_bal) else 'N/A', 'sub': 'Current balance', 'color': GEN_COLORS['primary']},
+        {'label': 'Auto-Deposit Rate', 'value': f"{_auto_rate:.1f}%" if not np.isnan(_auto_rate) else 'N/A', 'sub': f"{int(_total*_auto_rate/100):,} accounts" if not np.isnan(_auto_rate) else '', 'color': GEN_COLORS['success']},
+        {'label': 'Avg Repayment Rate', 'value': f"{_avg_repay:.2f}" if not np.isnan(_avg_repay) else 'N/A', 'sub': 'OD repayment strength', 'color': GEN_COLORS['info']},
+    ]
+
+    fig, axes = plt.subplots(2, 4, figsize=(20, 7))
+    fig.suptitle('Business Accounts \u2014 Deposit Portfolio KPIs',
+                 fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+
+    for idx, ax in enumerate(axes.flatten()):
+        ax.set_xlim(0, 1); ax.set_ylim(0, 1); ax.axis('off')
+        if idx < len(_kpis):
+            kpi = _kpis[idx]
+            ax.add_patch(FancyBboxPatch((0.05, 0.05), 0.9, 0.9, boxstyle="round,pad=0.05",
+                         facecolor=GEN_COLORS['light_bg'], edgecolor=kpi['color'], linewidth=3))
+            ax.text(0.5, 0.78, kpi['label'], transform=ax.transAxes, ha='center', va='center',
+                    fontsize=14, fontweight='bold', color=GEN_COLORS['muted'])
+            ax.text(0.5, 0.47, kpi['value'], transform=ax.transAxes, ha='center', va='center',
+                    fontsize=28, fontweight='bold', color=kpi['color'])
+            ax.text(0.5, 0.18, kpi['sub'], transform=ax.transAxes, ha='center', va='center',
+                    fontsize=12, color=GEN_COLORS['muted'])
+
+    plt.tight_layout()
+    plt.show()
