@@ -35,26 +35,22 @@ else:
     else:
         _bal_recent = _bal_active_nr = _bal_inactive = np.nan
 
-    # Frequency — among 365d active depositors only
     _median_freq = (
         _df.loc[_active_mask, 'avgdaysbetweendeposits'].median()
         if 'avgdaysbetweendeposits' in _df.columns else np.nan
     )
 
-    # Avg deposit — among 365d active depositors only
     _avg_dep_amt = (
         _df.loc[_active_mask & (_df['depAmt365'] > 0), 'depAmt365'].mean()
         if 'depAmt365' in _df.columns else np.nan
     )
 
-    # Direct deposit (ACH)
     _auto_rate = (
         (_df['autodeposit'].astype(str).str.strip().str.lower().isin(
             ['yes', 'y', 'true', '1', '1.0'])).mean() * 100
         if 'autodeposit' in _df.columns else np.nan
     )
 
-    # Direct deposit by segment
     if 'autodeposit' in _df.columns:
         _auto_col = _df['autodeposit'].astype(str).str.strip().str.lower().isin(['yes', 'y', 'true', '1', '1.0'])
         _auto_recent = _auto_col[_recent_mask].mean() * 100 if _recent_mask.sum() > 0 else np.nan
@@ -63,25 +59,34 @@ else:
         _auto_recent = _auto_active = np.nan
 
     # -------------------------------------------------------------------
-    # Dashboard layout
+    # Dashboard layout — equal halves with center divider
     # -------------------------------------------------------------------
     fig = plt.figure(figsize=(22, 9))
     fig.suptitle('Business Accounts \u2014 Deposit Portfolio Dashboard',
                  fontsize=24, fontweight='bold',
                  color=GEN_COLORS['dark_text'], y=0.98)
 
-    gs = gridspec.GridSpec(2, 2, figure=fig, width_ratios=[1, 1.1],
-                           hspace=0.35, wspace=0.08,
+    gs = gridspec.GridSpec(1, 2, figure=fig, width_ratios=[1, 1],
+                           wspace=0.12,
                            left=0.04, right=0.96, top=0.88, bottom=0.06)
 
-    # Faint vertical divider
+    # Center divider — exactly at 0.50
     fig.add_artist(plt.Line2D(
-        [0.48, 0.48], [0.08, 0.90],
+        [0.50, 0.50], [0.06, 0.92],
         transform=fig.transFigure, color=GEN_COLORS['muted'],
-        linewidth=0.8, alpha=0.3))
+        linewidth=1.5, alpha=0.45))
+
+    # Section titles — aligned at same y position
+    _title_y = 0.905
+    fig.text(0.27, _title_y, '365-Day Deposit Overview',
+             fontsize=20, fontweight='bold',
+             color=GEN_COLORS['dark_text'], ha='center', va='center')
+    fig.text(0.73, _title_y, 'Account Composition by Deposit Activity',
+             fontsize=20, fontweight='bold',
+             color=GEN_COLORS['dark_text'], ha='center', va='center')
 
     # -------------------------------------------------------------------
-    # KPI Cards (left column — 2x2)
+    # KPI Cards (left half — 2x2)
     # -------------------------------------------------------------------
     _kpis = [
         {
@@ -93,30 +98,25 @@ else:
         {
             'label': 'Median Days Between',
             'value': f"{_median_freq:.0f}" if not np.isnan(_median_freq) else 'N/A',
-            'sub': f"Among {_dep_365:,} active depositors",
+            'sub': f"Among {_dep_365:,}\nactive depositors",
             'color': GEN_COLORS['warning'],
         },
         {
             'label': 'Avg Annual Deposit',
             'value': f"${_avg_dep_amt:,.0f}" if not np.isnan(_avg_dep_amt) else 'N/A',
-            'sub': f"Among {_dep_365:,} active depositors",
+            'sub': f"Among {_dep_365:,}\nactive depositors",
             'color': GEN_COLORS['success'],
         },
         {
             'label': 'Direct Deposit (ACH)',
             'value': f"{_auto_rate:.1f}%" if not np.isnan(_auto_rate) else 'N/A',
-            'sub': (f"{int(_total * _auto_rate / 100):,} accounts w/ recurring ACH"
+            'sub': (f"{int(_total * _auto_rate / 100):,} accounts\nw/ recurring ACH"
                     if not np.isnan(_auto_rate) else ''),
             'color': GEN_COLORS['info'],
         },
     ]
 
-    # Left-side title aligned with chart title
-    fig.text(0.26, 0.90, '365-Day Deposit Overview',
-             fontsize=20, fontweight='bold',
-             color=GEN_COLORS['dark_text'], ha='center', va='center')
-
-    _gs_cards = gridspec.GridSpecFromSubplotSpec(2, 2, subplot_spec=gs[:, 0],
+    _gs_cards = gridspec.GridSpecFromSubplotSpec(2, 2, subplot_spec=gs[0, 0],
                                                  hspace=0.25, wspace=0.2)
     for idx, kpi in enumerate(_kpis):
         ax = fig.add_subplot(_gs_cards[idx])
@@ -128,20 +128,20 @@ else:
             boxstyle="round,pad=0.05",
             facecolor=GEN_COLORS['light_bg'],
             edgecolor=kpi['color'], linewidth=3))
-        ax.text(0.5, 0.80, kpi['label'], transform=ax.transAxes,
+        ax.text(0.5, 0.82, kpi['label'], transform=ax.transAxes,
                 ha='center', va='center', fontsize=16, fontweight='bold',
                 color=GEN_COLORS['muted'])
-        ax.text(0.5, 0.48, kpi['value'], transform=ax.transAxes,
+        ax.text(0.5, 0.50, kpi['value'], transform=ax.transAxes,
                 ha='center', va='center', fontsize=32, fontweight='bold',
                 color=kpi['color'])
-        ax.text(0.5, 0.16, kpi['sub'], transform=ax.transAxes,
-                ha='center', va='center', fontsize=15, fontweight='medium',
-                color=GEN_COLORS['muted'])
+        ax.text(0.5, 0.18, kpi['sub'], transform=ax.transAxes,
+                ha='center', va='center', fontsize=16, fontweight='medium',
+                color=GEN_COLORS['muted'], linespacing=1.3)
 
     # -------------------------------------------------------------------
-    # Account Composition Chart (right column)
+    # Account Composition Chart (right half)
     # -------------------------------------------------------------------
-    ax_chart = fig.add_subplot(gs[:, 1])
+    ax_chart = fig.add_subplot(gs[0, 1])
 
     _segments = ['Recent Depositors\n(33 days)', 'Active, Not Recent\n(34\u2013365 days)', 'Inactive\n(No deposits 365d)']
     _counts = [_dep_33, _active_not_recent, _inactive_365]
@@ -154,42 +154,34 @@ else:
 
     _x_max = max(_counts) if max(_counts) > 0 else 1
 
-    for bar, val, bal, clr in zip(_bars, _counts[::-1], _bals[::-1], _seg_colors[::-1]):
+    for bar, val, bal in zip(_bars, _counts[::-1], _bals[::-1]):
         _pct = val / _total * 100 if _total else 0
+        _bar_mid_y = bar.get_y() + bar.get_height() / 2
 
-        # Count + percentage INSIDE the bar (white text for contrast)
         if val > _x_max * 0.15:
-            ax_chart.text(bar.get_width() - _x_max * 0.02,
-                          bar.get_y() + bar.get_height() / 2,
-                          f"{val:,}  ({_pct:.1f}%)",
+            ax_chart.text(bar.get_width() - _x_max * 0.02, _bar_mid_y,
+                          f"{val:,}\n({_pct:.1f}%)",
                           ha='right', va='center',
-                          fontsize=15, fontweight='bold', color='white')
+                          fontsize=14, fontweight='bold', color='white',
+                          linespacing=1.2)
+            _label_outside_x = bar.get_width() + _x_max * 0.02
         else:
-            ax_chart.text(bar.get_width() + _x_max * 0.01,
-                          bar.get_y() + bar.get_height() / 2,
-                          f"{val:,}  ({_pct:.1f}%)",
+            ax_chart.text(bar.get_width() + _x_max * 0.01, _bar_mid_y,
+                          f"{val:,}\n({_pct:.1f}%)",
                           ha='left', va='center',
-                          fontsize=15, fontweight='bold',
-                          color=GEN_COLORS['dark_text'])
+                          fontsize=14, fontweight='bold',
+                          color=GEN_COLORS['dark_text'],
+                          linespacing=1.2)
+            _label_outside_x = bar.get_width() + _x_max * 0.18
 
-        # Median balance OUTSIDE the bar
         if not np.isnan(bal):
-            _outside_x = bar.get_width() + _x_max * 0.02
-            if val <= _x_max * 0.15:
-                _label_w = len(f"{val:,}  ({_pct:.1f}%)") * _x_max * 0.007
-                _outside_x = bar.get_width() + _label_w + _x_max * 0.03
-            ax_chart.text(_outside_x,
-                          bar.get_y() + bar.get_height() / 2,
+            ax_chart.text(_label_outside_x, _bar_mid_y,
                           f"Median bal: ${bal:,.0f}",
                           ha='left', va='center',
-                          fontsize=14, fontweight='medium',
-                          color=GEN_COLORS['muted'])
+                          fontsize=14, fontweight='bold',
+                          color=GEN_COLORS['dark_text'])
 
-    ax_chart.set_xlim(0, _x_max * 1.55)
-
-    ax_chart.set_title('Account Composition by Deposit Activity',
-                       fontsize=20, fontweight='bold',
-                       color=GEN_COLORS['dark_text'], pad=15)
+    ax_chart.set_xlim(0, _x_max * 1.65)
     ax_chart.set_xlabel('Number of Accounts', fontsize=16, fontweight='bold')
     ax_chart.xaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
     ax_chart.tick_params(axis='y', labelsize=15)
