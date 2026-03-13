@@ -79,7 +79,7 @@ else:
     ax.tick_params(axis='x', labelsize=14)
 
     # Add explanatory subtitle
-    ax.text(0.5, -0.12,
+    ax.text(0.5, -0.18,
             'Compares 33-day deposit rate to 365-day rate  |  >20% faster = Accelerating  |  >20% slower = Decelerating',
             transform=ax.transAxes, ha='center', fontsize=12,
             color=GEN_COLORS['muted'])

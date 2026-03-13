@@ -56,7 +56,7 @@ else:
         ax.xaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
         ax.tick_params(axis='y', labelsize=16)
         ax.tick_params(axis='x', labelsize=14)
-        ax.text(0.5, -0.12, 'Compares 33-day deposit rate to 365-day rate  |  >20% faster = Accelerating  |  >20% slower = Decelerating',
+        ax.text(0.5, -0.18, 'Compares 33-day deposit rate to 365-day rate  |  >20% faster = Accelerating  |  >20% slower = Decelerating',
                 transform=ax.transAxes, ha='center', fontsize=12, color=GEN_COLORS['muted'])
         gen_clean_axes(ax)
         plt.tight_layout()
