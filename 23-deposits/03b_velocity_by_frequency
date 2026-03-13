@@ -21,15 +21,24 @@ else:
     _df = _df[(_df['depCount365'] > 0) & _df['avgdaysbetweendeposits'].notna() & (_df['avgdaysbetweendeposits'] > 0)].copy()
     _total = len(_df)
 
-    # Velocity classification (same as cell 03)
+    # Velocity classification (enhanced for cross-tab)
+    # Uses both a 20% ratio threshold AND a minimum absolute deviation
+    # of 2 deposits to avoid misclassifying accounts where small count
+    # swings (e.g., 1 vs 0.7 expected) produce misleading ratios.
+    _MIN_DEV = 2
     _df['rate_33'] = _df['DepCount33'] / 33
     _df['rate_365'] = _df['depCount365'] / 365
+    _df['expected_33'] = _df['rate_365'] * 33
+    _df['deviation'] = _df['DepCount33'] - _df['expected_33']
     _ratio = _df['rate_33'] / _df['rate_365'].replace(0, np.nan)
     _df['velocity'] = np.where(
-        _ratio > 1.2, 'Accelerating',
-        np.where(_ratio < 0.8, 'Decelerating', 'Stable')
+        (_ratio > 1.2) & (_df['deviation'] >= _MIN_DEV), 'Accelerating',
+        np.where(
+            (_ratio < 0.8) & (_df['deviation'] <= -_MIN_DEV), 'Decelerating',
+            'Stable'
+        )
     )
-    _df.loc[(_df['DepCount33'] == 0) & (_df['depCount365'] > 0), 'velocity'] = 'Decelerating'
+    _df.loc[(_df['DepCount33'] == 0) & (_df['depCount365'] > 0) & (_df['expected_33'] >= _MIN_DEV), 'velocity'] = 'Decelerating'
 
     # Frequency segmentation (same bins as cell 04)
     _bins = [0, 7, 16, 33, float('inf')]
@@ -101,7 +110,7 @@ else:
               ncol=3, fontsize=14, frameon=False)
 
     ax.text(0.5, -0.25,
-            'Velocity: 33-day deposit rate vs 365-day rate  |  Frequency: avgdaysbetweendeposits',
+            f'Velocity: 33d vs 365d rate (>20% change AND \u22652 deposit deviation)  |  Frequency: avgdaysbetweendeposits',
             transform=ax.transAxes, ha='center', fontsize=12,
             color=GEN_COLORS['muted'])
 
