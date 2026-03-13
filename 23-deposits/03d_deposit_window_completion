@@ -1,11 +1,14 @@
 # ===========================================================================
-# DEPOSIT WINDOWS: Active Depositor Rates by Window
+# DEPOSIT WINDOWS: Deposit Intensity by Window
 # ===========================================================================
-# Horizontal bar chart: what percentage of accounts have at least one
-# deposit in each time window (33/66/99/365 days). Shows where accounts
-# drop off -- big gaps between windows mean irregular depositors.
+# How many deposits do accounts make in each window? Shows median and
+# mean deposit counts for 33/66/99/365 day windows, plus the percentage
+# of ODDD accounts that have NO Z file match (no deposit data at all).
 #
-# Requires: 01_deposit_setup (zaccounts_df)
+# Uses deposits_df (full ODDD joined to ZAccounts) so we see the complete
+# portfolio, not just accounts already in the Z file.
+#
+# Requires: 01_deposit_setup (deposits_df, zaccounts_df)
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -13,49 +16,70 @@ import numpy as np
 _count_cols = ['DepCount33', 'DepCount66', 'DepCount99', 'depCount365']
 _window_labels = ['33 Days', '66 Days', '99 Days', '365 Days']
 
-_rates = []
-_totals = []
+# Use deposits_df so we include accounts with no Z file match
+_medians = []
+_means = []
+_zeros = []
+_total_accts = len(deposits_df)
+
 for cc in _count_cols:
-    if cc in zaccounts_df.columns:
-        _active = (zaccounts_df[cc] > 0).sum()
-        _total = zaccounts_df[cc].notna().sum()
-        _rates.append(_active / _total * 100 if _total > 0 else 0)
-        _totals.append(_active)
+    if cc in deposits_df.columns:
+        _vals = deposits_df[cc].fillna(0)
+        _medians.append(_vals.median())
+        _means.append(_vals.mean())
+        _zeros.append((_vals == 0).sum())
     else:
-        _rates.append(0)
-        _totals.append(0)
+        _medians.append(0)
+        _means.append(0)
+        _zeros.append(_total_accts)
 
-_bar_colors = [GEN_COLORS['success'], GEN_COLORS['info'],
-               GEN_COLORS['warning'], GEN_COLORS['primary']]
+# -----------------------------------------------------------------------
+# Chart: Median and mean deposit counts per window
+# -----------------------------------------------------------------------
+fig, ax = plt.subplots(figsize=(12, 7))
 
-fig, ax = plt.subplots(figsize=(12, 5))
+x = np.arange(len(_window_labels))
+width = 0.35
 
-bars = ax.barh(_window_labels, _rates, color=_bar_colors,
-               edgecolor='white', linewidth=1.5, height=0.5)
+bars_med = ax.bar(x - width/2, _medians, width,
+                  color=GEN_COLORS['info'], label='Median',
+                  edgecolor='white', linewidth=1.5)
+bars_mean = ax.bar(x + width/2, _means, width,
+                   color=GEN_COLORS['success'], label='Mean',
+                   edgecolor='white', linewidth=1.5)
 
-for bar, rate, total in zip(bars, _rates, _totals):
-    ax.text(bar.get_width() + 1, bar.get_y() + bar.get_height()/2,
-            f"{rate:.1f}%  ({total:,} accounts)",
-            ha='left', va='center',
-            fontsize=15, fontweight='bold', color=GEN_COLORS['dark_text'])
+for bar in bars_med:
+    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.3,
+            f"{bar.get_height():.1f}", ha='center', va='bottom',
+            fontsize=14, fontweight='bold', color=GEN_COLORS['info'])
+for bar in bars_mean:
+    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.3,
+            f"{bar.get_height():.1f}", ha='center', va='bottom',
+            fontsize=14, fontweight='bold', color=GEN_COLORS['success'])
 
-ax.set_title('Active Depositors by Time Window',
+ax.set_title('How Many Deposits Per Window?',
              fontsize=20, fontweight='bold', color=GEN_COLORS['dark_text'],
-             pad=15)
-ax.set_xlabel('% of Accounts with at Least One Deposit', fontsize=14,
-              fontweight='bold')
-ax.set_xlim(0, 110)
-ax.invert_yaxis()
-gen_clean_axes(ax, keep_left=False)
+             pad=20)
+ax.set_xticks(x)
+ax.set_xticklabels(_window_labels, fontsize=14)
+ax.set_ylabel('Deposit Count', fontsize=14, fontweight='bold')
+ax.legend(fontsize=13)
+gen_clean_axes(ax)
 
-# Highlight the drop-off between windows
-if len(_rates) >= 2 and _rates[-1] > 0:
-    _drop = _rates[-1] - _rates[0]
-    ax.text(0.98, 0.05,
-            f"{_rates[0]:.0f}% deposited in 33 days vs {_rates[-1]:.0f}% in 365 days\n"
-            f"{_rates[-1] - _rates[0]:.0f} percentage point gap",
-            transform=ax.transAxes, ha='right', va='bottom',
-            fontsize=12, fontstyle='italic', color=GEN_COLORS['muted'])
+# Zero-deposit annotation
+_zero_33 = _zeros[0]
+_zero_365 = _zeros[-1]
+_no_match = deposits_df[_count_cols[0]].isna().sum() if _count_cols[0] in deposits_df.columns else 0
+ax.text(0.98, 0.95,
+        f"Accounts with 0 deposits:\n"
+        f"  33 days: {_zero_33:,} ({_zero_33/_total_accts*100:.1f}%)\n"
+        f"  365 days: {_zero_365:,} ({_zero_365/_total_accts*100:.1f}%)\n"
+        f"  No Z file match: {_no_match:,} ({_no_match/_total_accts*100:.1f}%)\n"
+        f"  Total portfolio: {_total_accts:,}",
+        transform=ax.transAxes, ha='right', va='top',
+        fontsize=12, color=GEN_COLORS['dark_text'],
+        bbox=dict(boxstyle='round,pad=0.5', facecolor='white',
+                  edgecolor=GEN_COLORS['grid'], alpha=0.95))
 
 plt.tight_layout()
 plt.show()
