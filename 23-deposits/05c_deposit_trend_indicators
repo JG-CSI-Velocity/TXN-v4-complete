@@ -1,0 +1,96 @@
+# ===========================================================================
+# DEPOSIT BEHAVIOR: Trend Indicators (Growing / Declining / Flat)
+# ===========================================================================
+# The Z file has 33-day trend count fields that indicate whether deposit,
+# repayment, windfall, and cash flow behavior is trending up or down.
+# This cell shows what percentage of accounts are improving vs declining.
+#
+# Requires: 01_deposit_setup (deposits_df)
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+_trend_fields = [
+    ('DepositTrendCount33', 'Deposit Trend'),
+    ('RepaymentTrendCount33', 'Repayment Trend'),
+    ('CashFlowTrendCount33', 'Cash Flow Trend'),
+    ('WindfallTrendCount33', 'Windfall Trend'),
+]
+
+_avail_trends = [(f, l) for f, l in _trend_fields if f in deposits_df.columns]
+
+if not _avail_trends:
+    print("    WARNING: No trend indicator fields found -- skipping")
+else:
+    print(f"    05c Data Decisions:")
+    print(f"      Trend fields found: {len(_avail_trends)}")
+    for f, l in _avail_trends:
+        _vals = pd.to_numeric(deposits_df[f], errors='coerce').dropna()
+        print(f"      {l} ({f}): {len(_vals):,} accounts, "
+              f"min={_vals.min():.0f}, max={_vals.max():.0f}, "
+              f"median={_vals.median():.1f}, mean={_vals.mean():.1f}")
+    print()
+
+    # Classify each trend: positive = improving, negative = declining, zero = flat
+    _trend_data = {}
+    for f, l in _avail_trends:
+        _vals = pd.to_numeric(deposits_df[f], errors='coerce').fillna(0)
+        _improving = (_vals > 0).sum()
+        _flat = (_vals == 0).sum()
+        _declining = (_vals < 0).sum()
+        _total = len(_vals)
+        _trend_data[l] = {
+            'Improving': _improving,
+            'Flat': _flat,
+            'Declining': _declining,
+            'total': _total,
+        }
+
+    # Stacked horizontal bar chart
+    _labels = [l for _, l in _avail_trends]
+    _improving_pcts = [_trend_data[l]['Improving'] / _trend_data[l]['total'] * 100 for l in _labels]
+    _flat_pcts = [_trend_data[l]['Flat'] / _trend_data[l]['total'] * 100 for l in _labels]
+    _declining_pcts = [_trend_data[l]['Declining'] / _trend_data[l]['total'] * 100 for l in _labels]
+
+    fig, ax = plt.subplots(figsize=(14, 6))
+
+    y = np.arange(len(_labels))
+    height = 0.5
+
+    bars_imp = ax.barh(y, _improving_pcts, height,
+                       color=GEN_COLORS['success'], label='Improving', edgecolor='white')
+    bars_flat = ax.barh(y, _flat_pcts, height, left=_improving_pcts,
+                        color=GEN_COLORS['muted'], label='Flat', edgecolor='white')
+    _left_dec = [i + f for i, f in zip(_improving_pcts, _flat_pcts)]
+    bars_dec = ax.barh(y, _declining_pcts, height, left=_left_dec,
+                       color=GEN_COLORS['accent'], label='Declining', edgecolor='white')
+
+    # Labels inside bars
+    for bars, pcts in [(bars_imp, _improving_pcts), (bars_flat, _flat_pcts), (bars_dec, _declining_pcts)]:
+        for bar, pct in zip(bars, pcts):
+            if pct > 8:
+                ax.text(bar.get_x() + bar.get_width()/2,
+                        bar.get_y() + bar.get_height()/2,
+                        f"{pct:.0f}%", ha='center', va='center',
+                        fontsize=13, fontweight='bold', color='white')
+
+    ax.set_yticks(y)
+    ax.set_yticklabels(_labels, fontsize=14)
+    ax.set_xlabel('% of Accounts', fontsize=14, fontweight='bold')
+    ax.set_title('33-Day Trend Indicators: Improving vs Declining',
+                 fontsize=20, fontweight='bold', color=GEN_COLORS['dark_text'],
+                 pad=15)
+    ax.set_xlim(0, 100)
+    ax.invert_yaxis()
+    ax.legend(fontsize=13, loc='lower right')
+    gen_clean_axes(ax, keep_left=False)
+
+    plt.tight_layout()
+    plt.show()
+
+    # Print summary
+    print(f"\n    Trend Summary:")
+    for l in _labels:
+        d = _trend_data[l]
+        print(f"      {l}: {d['Improving']:,} improving, "
+              f"{d['Flat']:,} flat, {d['Declining']:,} declining")
