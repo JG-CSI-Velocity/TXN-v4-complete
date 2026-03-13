@@ -1,7 +1,12 @@
 # ===========================================================================
-# BUSINESS DEPOSITS: Portfolio KPI Dashboard
+# BUSINESS DEPOSITS: Deposit Health Dashboard
 # ===========================================================================
-# Split layout: 4 KPI cards (left) + account composition chart (right).
+# Three-row executive dashboard (mirror of Section 23 cell 02):
+#   Row 1 — Portfolio Health: 5 signal metrics with traffic-light colors
+#   Row 2 — Activity Segmentation: where accounts + money live
+#   Row 3 — Deposit Concentration: who holds the deposits
+#
+# Color rules: green=healthy, yellow=caution, red=problem, blue=neutral
 # Data: deposits_business_df (open business accounts, ZAccounts + ODDD merged)
 
 import matplotlib.pyplot as plt
@@ -19,6 +24,33 @@ else:
     print(f"      Source: deposits_business_df (open business accounts)")
     print(f"      Accounts: {_total:,}")
 
+    # Signal color rules
+    _CLR_HEALTHY = '#27ae60'
+    _CLR_CAUTION = '#f39c12'
+    _CLR_PROBLEM = '#e74c3c'
+    _CLR_NEUTRAL = '#2c3e50'
+
+    def _signal_color(value, good_thresh, warn_thresh, higher_is_better=True):
+        if np.isnan(value):
+            return _CLR_NEUTRAL
+        if higher_is_better:
+            if value >= good_thresh:
+                return _CLR_HEALTHY
+            elif value >= warn_thresh:
+                return _CLR_CAUTION
+            else:
+                return _CLR_PROBLEM
+        else:
+            if value <= good_thresh:
+                return _CLR_HEALTHY
+            elif value <= warn_thresh:
+                return _CLR_CAUTION
+            else:
+                return _CLR_PROBLEM
+
+    # -------------------------------------------------------------------
+    # Calculate everything
+    # -------------------------------------------------------------------
     _dep_33 = (_df['DepCount33'] > 0).sum() if 'DepCount33' in _df.columns else 0
     _dep_365 = (_df['depCount365'] > 0).sum() if 'depCount365' in _df.columns else 0
     _inactive_365 = _total - _dep_365
@@ -26,176 +58,287 @@ else:
 
     _active_mask = _df['depCount365'] > 0 if 'depCount365' in _df.columns else pd.Series(False, index=_df.index)
     _recent_mask = _df['DepCount33'] > 0 if 'DepCount33' in _df.columns else pd.Series(False, index=_df.index)
+    _inactive_mask = ~_active_mask
+    _active_nr_mask = _active_mask & ~_recent_mask
 
-    # Balances by segment
-    if 'balance' in _df.columns:
-        _bal_recent = _df.loc[_recent_mask, 'balance'].median() if _recent_mask.sum() > 0 else np.nan
-        _bal_active_nr = _df.loc[_active_mask & ~_recent_mask, 'balance'].median() if (_active_mask & ~_recent_mask).sum() > 0 else np.nan
-        _bal_inactive = _df.loc[~_active_mask, 'balance'].median() if (~_active_mask).sum() > 0 else np.nan
+    _active_pct = _dep_365 / _total * 100 if _total else 0
+
+    _auto_flag = (_df['autodeposit'].astype(str).str.strip().str.lower().isin(
+        ['yes', 'y', 'true', '1', '1.0'])) if 'autodeposit' in _df.columns else pd.Series(False, index=_df.index)
+    _ach_pct = _auto_flag.mean() * 100
+
+    _median_bal = _df.loc[_active_mask, 'balance'].median() if 'balance' in _df.columns else np.nan
+    _avg_dep = (_df.loc[_active_mask & (_df['depAmt365'] > 0), 'depAmt365'].mean()
+                if 'depAmt365' in _df.columns else np.nan)
+
+    _median_freq = (_df.loc[_active_mask, 'avgdaysbetweendeposits'].median()
+                    if 'avgdaysbetweendeposits' in _df.columns else np.nan)
+    if not np.isnan(_median_freq):
+        if _median_freq <= 7:
+            _freq_label = 'Weekly'
+        elif _median_freq <= 16:
+            _freq_label = 'Biweekly'
+        elif _median_freq <= 35:
+            _freq_label = 'Monthly'
+        else:
+            _freq_label = 'Infrequent'
     else:
-        _bal_recent = _bal_active_nr = _bal_inactive = np.nan
+        _freq_label = ''
 
-    _median_freq = (
-        _df.loc[_active_mask, 'avgdaysbetweendeposits'].median()
-        if 'avgdaysbetweendeposits' in _df.columns else np.nan
-    )
-
-    _avg_dep_amt = (
-        _df.loc[_active_mask & (_df['depAmt365'] > 0), 'depAmt365'].mean()
-        if 'depAmt365' in _df.columns else np.nan
-    )
-
-    _auto_rate = (
-        (_df['autodeposit'].astype(str).str.strip().str.lower().isin(
-            ['yes', 'y', 'true', '1', '1.0'])).mean() * 100
-        if 'autodeposit' in _df.columns else np.nan
-    )
-
-    if 'autodeposit' in _df.columns:
-        _auto_col = _df['autodeposit'].astype(str).str.strip().str.lower().isin(['yes', 'y', 'true', '1', '1.0'])
-        _auto_recent = _auto_col[_recent_mask].mean() * 100 if _recent_mask.sum() > 0 else np.nan
-        _auto_active = _auto_col[_active_mask].mean() * 100 if _active_mask.sum() > 0 else np.nan
+    if all(c in _df.columns for c in ['DepCount33', 'depCount365']):
+        _active_df = _df[_active_mask].copy()
+        _r33 = _active_df['DepCount33'] / 33
+        _r365 = _active_df['depCount365'] / 365
+        _ratio = _r33 / _r365.replace(0, np.nan)
+        _accel_pct = (_ratio > 1.2).mean() * 100
+        _decel_pct = ((_ratio < 0.8) | ((_active_df['DepCount33'] == 0) & (_active_df['depCount365'] > 2))).mean() * 100
+        _freq_trend = _accel_pct - _decel_pct
     else:
-        _auto_recent = _auto_active = np.nan
+        _freq_trend = np.nan
+
+    _bal_recent = _df.loc[_recent_mask, 'balance'].median() if 'balance' in _df.columns and _recent_mask.sum() > 0 else np.nan
+    _bal_active_nr = _df.loc[_active_nr_mask, 'balance'].median() if 'balance' in _df.columns and _active_nr_mask.sum() > 0 else np.nan
+    _bal_inactive = _df.loc[_inactive_mask, 'balance'].median() if 'balance' in _df.columns and _inactive_mask.sum() > 0 else np.nan
+
+    _total_deps = _df['depAmt365'].sum() if 'depAmt365' in _df.columns else 0
+    if _total_deps > 0:
+        _conc_recent = _df.loc[_recent_mask, 'depAmt365'].sum() / _total_deps * 100
+        _conc_active_nr = _df.loc[_active_nr_mask, 'depAmt365'].sum() / _total_deps * 100
+        _conc_ach = _df.loc[_auto_flag, 'depAmt365'].sum() / _total_deps * 100
+        _conc_mobile = (_df.loc[_df['Mobile_Deposits_90'] > 0, 'depAmt365'].sum() / _total_deps * 100
+                        if 'Mobile_Deposits_90' in _df.columns else np.nan)
+    else:
+        _conc_recent = _conc_active_nr = _conc_ach = _conc_mobile = np.nan
+
+    _mobile_count = (_df['Mobile_Deposits_90'] > 0).sum() if 'Mobile_Deposits_90' in _df.columns else 0
+    _mobile_pct = _mobile_count / _total * 100 if _total else 0
 
     # -------------------------------------------------------------------
-    # Dashboard layout — equal halves with center divider
+    # Dashboard layout: 3 rows
     # -------------------------------------------------------------------
-    fig = plt.figure(figsize=(22, 9))
-    fig.suptitle('Business Accounts \u2014 Deposit Portfolio Dashboard',
-                 fontsize=24, fontweight='bold',
-                 color=GEN_COLORS['dark_text'], y=0.98)
+    fig = plt.figure(figsize=(22, 12))
+    fig.suptitle('Business Accounts \u2014 Deposit Health Dashboard',
+                 fontsize=26, fontweight='bold',
+                 color=_CLR_NEUTRAL, y=0.97)
 
-    gs = gridspec.GridSpec(1, 2, figure=fig, width_ratios=[1, 2],
-                           wspace=0.15,
-                           left=0.03, right=0.97, top=0.88, bottom=0.06)
+    gs = gridspec.GridSpec(3, 1, figure=fig, height_ratios=[1, 2.2, 1.3],
+                           hspace=0.28,
+                           left=0.04, right=0.96, top=0.91, bottom=0.04)
 
-    # Divider line — between the two panels
-    _divider_x = 0.36
-    fig.add_artist(plt.Line2D(
-        [_divider_x, _divider_x], [0.06, 0.92],
-        transform=fig.transFigure, color=GEN_COLORS['muted'],
-        linewidth=1.5, alpha=0.45))
+    # ===============================================================
+    # ROW 1: Portfolio Health Strip
+    # ===============================================================
+    _gs_health = gridspec.GridSpecFromSubplotSpec(1, 5, subplot_spec=gs[0],
+                                                  wspace=0.15)
 
-    # Section titles — aligned at same y position
-    _title_y = 0.905
-    fig.text(0.19, _title_y, '365-Day Deposit\nOverview',
-             fontsize=18, fontweight='bold',
-             color=GEN_COLORS['dark_text'], ha='center', va='center',
-             linespacing=1.2)
-    fig.text(0.68, _title_y, 'Account Composition by Deposit Activity',
-             fontsize=20, fontweight='bold',
-             color=GEN_COLORS['dark_text'], ha='center', va='center')
-
-    # -------------------------------------------------------------------
-    # KPI Cards (left half — 2x2)
-    # -------------------------------------------------------------------
-    _kpis = [
+    _health_metrics = [
         {
-            'label': 'Open Accounts',
+            'label': 'Accounts',
             'value': f"{_total:,}",
-            'sub': f"Active: {_dep_365:,} | Inactive: {_inactive_365:,}",
-            'color': GEN_COLORS['primary'],
+            'signal': f"Active: {_dep_365:,}",
+            'color': _CLR_NEUTRAL,
         },
         {
-            'label': 'Median Days Between',
-            'value': f"{_median_freq:.0f}" if not np.isnan(_median_freq) else 'N/A',
-            'sub': f"Among {_dep_365:,}\nactive depositors",
-            'color': GEN_COLORS['warning'],
+            'label': 'Active Rate',
+            'value': f"{_active_pct:.1f}%",
+            'signal': f"{_dep_365:,} of {_total:,}",
+            'color': _signal_color(_active_pct, 70, 50),
+        },
+        {
+            'label': 'ACH / Direct Deposit',
+            'value': f"{_ach_pct:.1f}%",
+            'signal': f"{_auto_flag.sum():,} accounts",
+            'color': _signal_color(_ach_pct, 40, 20),
+        },
+        {
+            'label': 'Median Balance',
+            'value': f"${_median_bal:,.0f}" if not np.isnan(_median_bal) else 'N/A',
+            'signal': 'Active depositors (365d)',
+            'color': _CLR_NEUTRAL,
         },
         {
             'label': 'Avg Annual Deposit',
-            'value': f"${_avg_dep_amt:,.0f}" if not np.isnan(_avg_dep_amt) else 'N/A',
-            'sub': f"Among {_dep_365:,}\nactive depositors",
-            'color': GEN_COLORS['success'],
-        },
-        {
-            'label': 'Direct Deposit (ACH)',
-            'value': f"{_auto_rate:.1f}%" if not np.isnan(_auto_rate) else 'N/A',
-            'sub': (f"{int(_total * _auto_rate / 100):,} accounts\nw/ recurring ACH"
-                    if not np.isnan(_auto_rate) else ''),
-            'color': GEN_COLORS['info'],
+            'value': f"${_avg_dep:,.0f}" if not np.isnan(_avg_dep) else 'N/A',
+            'signal': 'Active depositors (365d)',
+            'color': _CLR_NEUTRAL,
         },
     ]
 
-    _gs_cards = gridspec.GridSpecFromSubplotSpec(2, 2, subplot_spec=gs[0, 0],
-                                                 hspace=0.25, wspace=0.2)
-    for idx, kpi in enumerate(_kpis):
-        ax = fig.add_subplot(_gs_cards[idx])
+    for idx, m in enumerate(_health_metrics):
+        ax = fig.add_subplot(_gs_health[idx])
         ax.set_xlim(0, 1)
         ax.set_ylim(0, 1)
         ax.axis('off')
         ax.add_patch(FancyBboxPatch(
-            (0.03, 0.03), 0.94, 0.94,
-            boxstyle="round,pad=0.05",
-            facecolor=GEN_COLORS['light_bg'],
-            edgecolor=kpi['color'], linewidth=3))
-        ax.text(0.5, 0.82, kpi['label'], transform=ax.transAxes,
-                ha='center', va='center', fontsize=16, fontweight='bold',
+            (0.02, 0.02), 0.96, 0.96,
+            boxstyle="round,pad=0.04",
+            facecolor='white', edgecolor=m['color'], linewidth=3.5))
+        ax.add_patch(FancyBboxPatch(
+            (0.02, 0.02), 0.06, 0.96,
+            boxstyle="round,pad=0.01",
+            facecolor=m['color'], edgecolor='none'))
+        ax.text(0.55, 0.78, m['label'], transform=ax.transAxes,
+                ha='center', va='center', fontsize=14, fontweight='bold',
                 color=GEN_COLORS['muted'])
-        ax.text(0.5, 0.50, kpi['value'], transform=ax.transAxes,
-                ha='center', va='center', fontsize=32, fontweight='bold',
-                color=kpi['color'])
-        ax.text(0.5, 0.18, kpi['sub'], transform=ax.transAxes,
-                ha='center', va='center', fontsize=16, fontweight='medium',
-                color=GEN_COLORS['muted'], linespacing=1.3)
+        ax.text(0.55, 0.45, m['value'], transform=ax.transAxes,
+                ha='center', va='center', fontsize=26, fontweight='bold',
+                color=m['color'])
+        ax.text(0.55, 0.15, m['signal'], transform=ax.transAxes,
+                ha='center', va='center', fontsize=12, fontweight='medium',
+                color=GEN_COLORS['muted'])
 
-    # -------------------------------------------------------------------
-    # Account Composition Chart (right half)
-    # -------------------------------------------------------------------
-    ax_chart = fig.add_subplot(gs[0, 1])
+    # ===============================================================
+    # ROW 2: Activity Segmentation
+    # ===============================================================
+    ax_seg = fig.add_subplot(gs[1])
 
-    _segments = ['Recent Depositors\n(33 days)', 'Active, Not Recent\n(34\u2013365 days)', 'Inactive\n(No deposits 365d)']
-    _counts = [_dep_33, _active_not_recent, _inactive_365]
-    _seg_colors = [GEN_COLORS['success'], GEN_COLORS['info'], GEN_COLORS['accent']]
-    _bals = [_bal_recent, _bal_active_nr, _bal_inactive]
+    _seg_data = [
+        {
+            'label': 'Recent Depositors (33d)',
+            'count': _dep_33,
+            'bal': _bal_recent,
+            'color': _CLR_HEALTHY,
+            'dep_share': _conc_recent,
+        },
+        {
+            'label': 'Active, Not Recent (34\u2013365d)',
+            'count': _active_not_recent,
+            'bal': _bal_active_nr,
+            'color': _CLR_CAUTION,
+            'dep_share': _conc_active_nr,
+        },
+        {
+            'label': 'Inactive (No deposits 365d)',
+            'count': _inactive_365,
+            'bal': _bal_inactive,
+            'color': _CLR_PROBLEM,
+            'dep_share': 0.0,
+        },
+    ]
 
-    _bars = ax_chart.barh(_segments[::-1], _counts[::-1],
-                          color=_seg_colors[::-1], edgecolor='white',
-                          height=0.55, linewidth=2)
+    _labels = [s['label'] for s in _seg_data][::-1]
+    _counts = [s['count'] for s in _seg_data][::-1]
+    _colors = [s['color'] for s in _seg_data][::-1]
+
+    _bars = ax_seg.barh(_labels, _counts, color=_colors, edgecolor='white',
+                        height=0.55, linewidth=2)
 
     _x_max = max(_counts) if max(_counts) > 0 else 1
 
-    for bar, val, bal in zip(_bars, _counts[::-1], _bals[::-1]):
-        _pct = val / _total * 100 if _total else 0
-        _bar_mid_y = bar.get_y() + bar.get_height() / 2
+    for bar, seg in zip(_bars, _seg_data[::-1]):
+        _pct = seg['count'] / _total * 100 if _total else 0
+        _mid_y = bar.get_y() + bar.get_height() / 2
 
-        if val > _x_max * 0.15:
-            ax_chart.text(bar.get_width() - _x_max * 0.02, _bar_mid_y,
-                          f"{val:,}\n({_pct:.1f}%)",
-                          ha='right', va='center',
-                          fontsize=14, fontweight='bold', color='white',
-                          linespacing=1.2)
-            _label_outside_x = bar.get_width() + _x_max * 0.02
-        else:
-            ax_chart.text(bar.get_width() + _x_max * 0.01, _bar_mid_y,
-                          f"{val:,}\n({_pct:.1f}%)",
-                          ha='left', va='center',
-                          fontsize=14, fontweight='bold',
-                          color=GEN_COLORS['dark_text'],
-                          linespacing=1.2)
-            _label_outside_x = bar.get_width() + _x_max * 0.18
+        if seg['count'] > _x_max * 0.12:
+            ax_seg.text(bar.get_width() * 0.5, _mid_y,
+                        f"{_pct:.0f}%",
+                        ha='center', va='center',
+                        fontsize=22, fontweight='bold', color='white')
 
-        if not np.isnan(bal):
-            ax_chart.text(_label_outside_x, _bar_mid_y,
-                          f"Median bal: ${bal:,.0f}",
-                          ha='left', va='center',
-                          fontsize=14, fontweight='bold',
-                          color=GEN_COLORS['dark_text'])
+        _parts = [f"{seg['count']:,} accounts"]
+        if not np.isnan(seg['bal']):
+            _parts.append(f"Median: ${seg['bal']:,.0f}")
+        if seg['dep_share'] and not np.isnan(seg['dep_share']) and seg['dep_share'] > 0:
+            _parts.append(f"{seg['dep_share']:.1f}% of deposits")
+        _annotation = '   |   '.join(_parts)
 
-    ax_chart.set_xlim(0, _x_max * 1.65)
-    ax_chart.set_xlabel('Number of Accounts', fontsize=16, fontweight='bold')
-    ax_chart.xaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
-    ax_chart.tick_params(axis='y', labelsize=15)
-    ax_chart.tick_params(axis='x', labelsize=13)
+        ax_seg.text(bar.get_width() + _x_max * 0.01, _mid_y,
+                    _annotation,
+                    ha='left', va='center',
+                    fontsize=14, fontweight='bold',
+                    color=_CLR_NEUTRAL)
 
-    if not np.isnan(_auto_recent) and not np.isnan(_auto_active):
-        ax_chart.text(0.98, 0.02,
-                      f"Direct Deposit (ACH):  Recent {_auto_recent:.1f}%  |  "
-                      f"All Active {_auto_active:.1f}%",
-                      transform=ax_chart.transAxes, ha='right', va='bottom',
-                      fontsize=13, fontweight='medium', color=GEN_COLORS['muted'],
-                      style='italic')
+    _insight_parts = []
+    if not np.isnan(_conc_recent) and _conc_recent > 50:
+        _insight_parts.append(f"Recent depositors hold {_conc_recent:.0f}% of all deposit volume")
+    elif not np.isnan(_conc_recent):
+        _combined = _conc_recent + (_conc_active_nr if not np.isnan(_conc_active_nr) else 0)
+        _insight_parts.append(f"Recent + active depositors hold {_combined:.0f}% of deposit volume")
+    if _inactive_365 / _total * 100 > 30 if _total else False:
+        _insight_parts.append(f"{_inactive_365 / _total * 100:.0f}% of accounts generate no deposits")
 
-    gen_clean_axes(ax_chart)
+    if _insight_parts:
+        ax_seg.text(0.5, -0.08, ' // '.join(_insight_parts),
+                    transform=ax_seg.transAxes, ha='center', va='top',
+                    fontsize=14, fontweight='bold', color=_CLR_PROBLEM,
+                    style='italic')
+
+    ax_seg.set_xlim(0, _x_max * 1.85)
+    ax_seg.set_title('Where Do Accounts & Money Live?',
+                     fontsize=20, fontweight='bold', color=_CLR_NEUTRAL, pad=12)
+    ax_seg.set_xlabel('Number of Accounts', fontsize=14, fontweight='bold')
+    ax_seg.xaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
+    ax_seg.tick_params(axis='y', labelsize=15)
+    ax_seg.tick_params(axis='x', labelsize=12)
+    gen_clean_axes(ax_seg)
+
+    # ===============================================================
+    # ROW 3: Deposit Concentration
+    # ===============================================================
+    _gs_conc = gridspec.GridSpecFromSubplotSpec(1, 5, subplot_spec=gs[2],
+                                                wspace=0.15)
+
+    _conc_metrics = [
+        {
+            'label': 'Recent Depositors',
+            'value': f"{_conc_recent:.1f}%" if not np.isnan(_conc_recent) else 'N/A',
+            'sub': f"of deposits from\n{_dep_33:,} accounts (33d)",
+            'color': _CLR_HEALTHY,
+        },
+        {
+            'label': 'Active, Not Recent',
+            'value': f"{_conc_active_nr:.1f}%" if not np.isnan(_conc_active_nr) else 'N/A',
+            'sub': f"of deposits from\n{_active_not_recent:,} accounts",
+            'color': _CLR_CAUTION,
+        },
+        {
+            'label': 'ACH / Direct Deposit',
+            'value': f"{_conc_ach:.1f}%" if not np.isnan(_conc_ach) else 'N/A',
+            'sub': f"of deposits from\n{_auto_flag.sum():,} ACH accounts",
+            'color': _CLR_HEALTHY if (not np.isnan(_conc_ach) and _conc_ach > 50) else _CLR_NEUTRAL,
+        },
+        {
+            'label': 'Mobile Depositors',
+            'value': f"{_conc_mobile:.1f}%" if not np.isnan(_conc_mobile) else 'N/A',
+            'sub': f"of deposits from\n{_mobile_count:,} mobile users (90d)",
+            'color': _CLR_NEUTRAL,
+        },
+        {
+            'label': 'Deposit Frequency',
+            'value': f"{_median_freq:.0f} days" if not np.isnan(_median_freq) else 'N/A',
+            'sub': (f"{_freq_label}" +
+                    (f"\nTrend: {'accelerating' if _freq_trend > 5 else 'decelerating' if _freq_trend < -5 else 'stable'}"
+                     if not np.isnan(_freq_trend) else '')),
+            'color': (_signal_color(_freq_trend, 5, -5)
+                      if not np.isnan(_freq_trend) else _CLR_NEUTRAL),
+        },
+    ]
+
+    for idx, m in enumerate(_conc_metrics):
+        ax = fig.add_subplot(_gs_conc[idx])
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.axis('off')
+        ax.add_patch(FancyBboxPatch(
+            (0.02, 0.02), 0.96, 0.96,
+            boxstyle="round,pad=0.04",
+            facecolor='white', edgecolor=m['color'], linewidth=3.5))
+        ax.add_patch(FancyBboxPatch(
+            (0.02, 0.02), 0.06, 0.96,
+            boxstyle="round,pad=0.01",
+            facecolor=m['color'], edgecolor='none'))
+        ax.text(0.55, 0.80, m['label'], transform=ax.transAxes,
+                ha='center', va='center', fontsize=13, fontweight='bold',
+                color=GEN_COLORS['muted'])
+        ax.text(0.55, 0.50, m['value'], transform=ax.transAxes,
+                ha='center', va='center', fontsize=24, fontweight='bold',
+                color=m['color'])
+        ax.text(0.55, 0.17, m['sub'], transform=ax.transAxes,
+                ha='center', va='center', fontsize=12, fontweight='medium',
+                color=GEN_COLORS['muted'], linespacing=1.3)
+
+    fig.text(0.5, 0.37, 'Deposit Concentration \u2014 Where the Money Flows From',
+             fontsize=20, fontweight='bold', color=_CLR_NEUTRAL,
+             ha='center', va='center')
+
     plt.show()
