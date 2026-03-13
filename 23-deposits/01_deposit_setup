@@ -141,6 +141,53 @@ else:
     print("    WARNING: Could not join ZAccounts -- using rewards_df only")
 
 # ---------------------------------------------------------------------------
+# 4b. Filter: Open accounts only (Stat Code = 'O')
+# ---------------------------------------------------------------------------
+_stat_field = 'Stat Code'
+if _stat_field in deposits_df.columns:
+    _before = len(deposits_df)
+    _stat_dist = deposits_df[_stat_field].value_counts()
+    deposits_df = deposits_df[
+        deposits_df[_stat_field].astype(str).str.strip().str.upper() == 'O'
+    ].copy()
+    _after = len(deposits_df)
+    print(f"\n    Account Status Filter:")
+    print(f"      Before: {_before:,} accounts")
+    for stat, cnt in _stat_dist.items():
+        _marker = " <-- kept" if str(stat).strip().upper() == 'O' else ""
+        print(f"        {stat}: {cnt:,}{_marker}")
+    print(f"      After (open only): {_after:,} accounts "
+          f"(removed {_before - _after:,})")
+else:
+    print(f"\n    WARNING: '{_stat_field}' not found -- no status filter applied")
+
+# ---------------------------------------------------------------------------
+# 4c. Segment: Personal vs Business (Business? field)
+# ---------------------------------------------------------------------------
+_biz_field = 'Business?'
+if _biz_field in deposits_df.columns:
+    _bf = deposits_df[_biz_field].astype(str).str.strip().str.lower()
+    deposits_df['acct_type'] = _bf.map(
+        lambda v: 'Business' if v in ('yes', 'y', 'true', '1', '1.0') else 'Personal'
+    )
+    _type_dist = deposits_df['acct_type'].value_counts()
+    print(f"\n    Account Type Segmentation:")
+    for t, cnt in _type_dist.items():
+        print(f"      {t}: {cnt:,} ({cnt/len(deposits_df)*100:.1f}%)")
+    print(f"      Field 'acct_type' added to deposits_df (Personal/Business)")
+
+    # Create segment DataFrames for downstream cells
+    deposits_personal_df = deposits_df[deposits_df['acct_type'] == 'Personal'].copy()
+    deposits_business_df = deposits_df[deposits_df['acct_type'] == 'Business'].copy()
+    HAS_BUSINESS_SPLIT = True
+else:
+    deposits_df['acct_type'] = 'Unknown'
+    deposits_personal_df = deposits_df.copy()
+    deposits_business_df = pd.DataFrame()
+    HAS_BUSINESS_SPLIT = False
+    print(f"\n    WARNING: '{_biz_field}' not found -- no personal/business split")
+
+# ---------------------------------------------------------------------------
 # 5. Longitudinal join: bring all snapshots into deposits_df
 # ---------------------------------------------------------------------------
 # Each snapshot's rolling windows (33/66/99/365 days) cover DIFFERENT periods.
@@ -318,7 +365,9 @@ print(f"\n    ICS fields available: {HAS_ICS}")
 # ---------------------------------------------------------------------------
 print(f"\n    === Deposit Analysis Setup Complete ===")
 print(f"    rewards_df:   {len(rewards_df):,} accounts, {len(rewards_df.columns)} fields")
-print(f"    deposits_df:  {len(deposits_df):,} accounts, {len(deposits_df.columns)} fields")
+print(f"    deposits_df:  {len(deposits_df):,} accounts (open only), {len(deposits_df.columns)} fields")
+if HAS_BUSINESS_SPLIT:
+    print(f"      Personal: {len(deposits_personal_df):,}  |  Business: {len(deposits_business_df):,}")
 print(f"    zaccounts_df: {len(zaccounts_df):,} rows")
 print(f"    ztrends_df:   {len(ztrends_df):,} rows")
 print(f"    Monthly periods: {len(DEP_MONTHS)}")
