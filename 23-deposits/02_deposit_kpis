@@ -90,7 +90,7 @@ fig.suptitle('Personal Accounts \u2014 Deposit Health Dashboard',
              color=_CLR_NEUTRAL, y=0.98)
 
 gs = gridspec.GridSpec(1, 2, figure=fig, width_ratios=[1, 2],
-                       wspace=0.15,
+                       wspace=0.28,
                        left=0.03, right=0.97, top=0.88, bottom=0.06)
 
 # Divider
