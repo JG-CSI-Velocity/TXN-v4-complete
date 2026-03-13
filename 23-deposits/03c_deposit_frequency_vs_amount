@@ -17,8 +17,8 @@ if 'DepCount33' in zaccounts_df.columns and 'DepAmt33' in zaccounts_df.columns:
     ].copy()
 
     if len(_scatter_df) > 0:
-        # Clip Y-axis at 95th percentile to keep chart readable
-        _y_cap = _scatter_df['DepAmt33'].quantile(0.95)
+        # Clip Y-axis at 99th percentile to keep chart readable
+        _y_cap = _scatter_df['DepAmt33'].quantile(0.99)
         _plot_df = _scatter_df[_scatter_df['DepAmt33'] <= _y_cap]
         _clipped = len(_scatter_df) - len(_plot_df)
 
@@ -29,10 +29,12 @@ if 'DepCount33' in zaccounts_df.columns and 'DepAmt33' in zaccounts_df.columns:
             alpha=0.25, s=20, color=GEN_COLORS['info'], edgecolors='none'
         )
 
-        # Add median trend line per deposit count bucket
+        # Add median trend line across the full deposit count range
         _plot_df = _plot_df.copy()
-        _plot_df['_count_bin'] = _plot_df['DepCount33'].clip(upper=15)
-        _trend = _plot_df.groupby('_count_bin')['DepAmt33'].median()
+        _trend = _plot_df.groupby('DepCount33')['DepAmt33'].median()
+        # Filter to counts with enough data points for a stable median
+        _count_support = _plot_df.groupby('DepCount33').size()
+        _trend = _trend[_count_support >= 10]
         if len(_trend) >= 3:
             ax.plot(_trend.index, _trend.values,
                     color=GEN_COLORS['accent'], linewidth=3,
