@@ -1,8 +1,10 @@
 # ===========================================================================
-# PERSONAL DEPOSITS: Auto-Deposit x Card Spend (Cross-Source)
+# PERSONAL DEPOSITS: Auto-Deposit x Deposits & Spend
 # ===========================================================================
-# Do auto-deposit users spend more on their debit cards?
-# Cross-source: ZAccounts (autodeposit) + ODDD (last 12-mon spend/swipes)
+# Do auto-deposit users deposit and spend more?
+# Single chart: grouped bars for deposits + spend (both $), swipe counts
+# as a secondary-axis line.
+# Cross-source: ZAccounts (autodeposit, depAmt365) + ODDD (spend/swipes)
 # Data: deposits_personal_df
 
 import matplotlib.pyplot as plt
@@ -11,17 +13,17 @@ import numpy as np
 
 _df = deposits_personal_df.copy()
 _ad_field = 'autodeposit'
-_spend_fields = ['last 12-mon spend', 'last 12-mon swipes', 'depAmt365']
+_dep_field = 'depAmt365'
+_spend_field = 'last 12-mon spend'
+_swipe_field = 'last 12-mon swipes'
 
-_missing = [f for f in [_ad_field] + _spend_fields if f not in _df.columns]
-_avail_spend = [f for f in _spend_fields if f in _df.columns]
+_required = [_ad_field]
+_missing = [f for f in _required if f not in _df.columns]
 
-if _ad_field not in _df.columns or len(_avail_spend) == 0:
+if _missing:
     print(f"    WARNING: Missing required fields {_missing} -- skipping")
 else:
-    # Only keep accounts that actually matched to ZAccounts (non-null autodeposit).
-    # Unmatched accounts have NaN for all ZA fields, which inflates "No Auto-Deposit"
-    # with members whose autodeposit status is simply unknown.
+    # Only keep accounts that matched to ZAccounts
     _pre_total = len(_df)
     _df = _df[_df[_ad_field].notna()].copy()
 
@@ -30,107 +32,137 @@ else:
         lambda v: 'Auto-Deposit' if v in ('yes', 'y', 'true', '1', '1.0') else 'No Auto-Deposit'
     )
 
-    # Filter to accounts with actual card spend activity (> 0)
-    # Only use spend/swipes fields for filtering, not depAmt365
-    _card_fields = [f for f in _avail_spend if f != 'depAmt365']
+    # Filter to accounts with card activity (spend or swipes > 0)
     _pre_filter = len(_df)
+    _card_fields = [f for f in [_spend_field, _swipe_field] if f in _df.columns]
     if _card_fields:
         _spend_filter = (_df[_card_fields[0]].fillna(0) > 0)
         for _sf in _card_fields[1:]:
             _spend_filter = _spend_filter | (_df[_sf].fillna(0) > 0)
         _df = _df[_spend_filter].copy()
 
-    _groups = _df.groupby('_has_ad')
     _group_names = ['Auto-Deposit', 'No Auto-Deposit']
-    _group_names = [g for g in _group_names if g in _groups.groups]
+    _group_names = [g for g in _group_names if g in _df['_has_ad'].values]
 
-    _labels_map = {
-        'last 12-mon spend': 'Spend (12mo)',
-        'last 12-mon swipes': 'Swipes (12mo)',
-        'depAmt365': 'Deposits (365d)',
-    }
-    _fmt_map = {
-        'last 12-mon spend': gen_fmt_dollar,
-        'last 12-mon swipes': gen_fmt_count,
-        'depAmt365': gen_fmt_dollar,
-    }
+    # Compute medians per group
+    _has_dep = _dep_field in _df.columns
+    _has_spend = _spend_field in _df.columns
+    _has_swipes = _swipe_field in _df.columns
+
+    _data = {}
+    for g in _group_names:
+        _g_df = _df[_df['_has_ad'] == g]
+        _data[g] = {
+            'n': len(_g_df),
+            'dep': _g_df[_dep_field].dropna().median() if _has_dep else 0,
+            'spend': _g_df[_spend_field].dropna().median() if _has_spend else 0,
+            'swipes': _g_df[_swipe_field].dropna().median() if _has_swipes else 0,
+        }
 
     # ----- Conference-format summary table -----
     print(f"\n{'=' * 80}")
-    print(f"  PERSONAL DEPOSITS — AUTO-DEPOSIT x CARD SPEND (Cell 06)")
+    print(f"  PERSONAL DEPOSITS — AUTO-DEPOSIT: DEPOSITS, SPEND & SWIPES (Cell 06)")
     print(f"{'=' * 80}")
     print(f"  Source: deposits_personal_df (cross-source: ZAccounts + ODDD)")
     print(f"  Total personal accounts: {_pre_total:,}")
     print(f"  With ZAccounts match: {_pre_filter:,}")
-    print(f"  With card activity (spend or swipes > 0): {len(_df):,}")
-    print(f"  Excluded (no ZA match): {_pre_total - _pre_filter:,}")
-    print(f"  Excluded (no card activity): {_pre_filter - len(_df):,}")
+    print(f"  With card activity: {len(_df):,}")
     print()
     _hdr = f"  {'Group':<22s}  {'N':>8s}"
-    for _sf in _avail_spend:
-        _lbl = _labels_map.get(_sf, _sf)
-        _hdr += f"  {'Med ' + _lbl:>18s}  {'Mean ' + _lbl:>18s}"
+    if _has_dep:   _hdr += f"  {'Med Deposits':>16s}"
+    if _has_spend: _hdr += f"  {'Med Spend':>16s}"
+    if _has_swipes: _hdr += f"  {'Med Swipes':>14s}"
     print(_hdr)
-    print(f"  {'-'*22}  {'-'*8}" + (f"  {'-'*18}  {'-'*18}" * len(_avail_spend)))
+    print(f"  {'-'*22}  {'-'*8}" +
+          (f"  {'-'*16}" if _has_dep else "") +
+          (f"  {'-'*16}" if _has_spend else "") +
+          (f"  {'-'*14}" if _has_swipes else ""))
     for g in _group_names:
-        _g_df = _df[_df['_has_ad'] == g]
-        _row = f"  {g:<22s}  {len(_g_df):>8,}"
-        for _sf in _avail_spend:
-            _med = _g_df[_sf].dropna().median()
-            _mean = _g_df[_sf].dropna().mean()
-            if 'spend' in _sf.lower():
-                _row += f"  {'${:>,.0f}'.format(_med):>18s}  {'${:>,.0f}'.format(_mean):>18s}"
-            else:
-                _row += f"  {_med:>18,.0f}  {_mean:>18,.0f}"
+        d = _data[g]
+        _row = f"  {g:<22s}  {d['n']:>8,}"
+        if _has_dep:   _row += f"  {'${:>,.0f}'.format(d['dep']):>16s}"
+        if _has_spend: _row += f"  {'${:>,.0f}'.format(d['spend']):>16s}"
+        if _has_swipes: _row += f"  {d['swipes']:>14,.0f}"
         print(_row)
     print(f"{'=' * 80}")
 
-    if len(_group_names) == 2:
-        _n = len(_avail_spend)
-        fig, axes = plt.subplots(1, _n, figsize=(6 * _n, 7))
-        if _n == 1:
-            axes = [axes]
+    # ---------------------------------------------------------------------------
+    # Chart: grouped bars (deposits + spend) with swipe line on secondary axis
+    # ---------------------------------------------------------------------------
+    if len(_group_names) == 2 and (_has_dep or _has_spend):
+        fig, ax = plt.subplots(figsize=(12, 7))
 
-        _colors = {
+        x = np.arange(len(_group_names))
+        _w = 0.3
+        _colors_bar = {
+            'dep': GEN_COLORS['primary'],
+            'spend': GEN_COLORS['info'],
+        }
+        _group_colors = {
             'Auto-Deposit': GEN_COLORS['success'],
             'No Auto-Deposit': GEN_COLORS['muted'],
         }
 
-        for i, field in enumerate(_avail_spend):
-            ax = axes[i]
-            _vals = []
-            _ns = []
-            for g in _group_names:
-                _gdata = _groups.get_group(g)[field].dropna()
-                _vals.append(_gdata.median())
-                _ns.append(len(_gdata))
+        # Bar 1: Deposits
+        _bar_offset = 0
+        _bar_items = []
+        if _has_dep:
+            _dep_vals = [_data[g]['dep'] for g in _group_names]
+            bars_dep = ax.bar(x - _w/2, _dep_vals, _w, label='Deposits (365d)',
+                              color=GEN_COLORS['primary'], edgecolor='white')
+            for bar, val, g in zip(bars_dep, _dep_vals, _group_names):
+                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
+                        gen_fmt_dollar(val, None), ha='center', va='bottom',
+                        fontsize=15, fontweight='bold')
+                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() * 0.5,
+                        f"n={_data[g]['n']:,}", ha='center', va='center',
+                        fontsize=11, fontweight='bold', color='white')
 
-            bars = ax.bar(_group_names, _vals,
-                          color=[_colors[g] for g in _group_names],
-                          edgecolor='white', width=0.5)
+        # Bar 2: Spend
+        if _has_spend:
+            _spend_vals = [_data[g]['spend'] for g in _group_names]
+            bars_spend = ax.bar(x + _w/2, _spend_vals, _w, label='Card Spend (12mo)',
+                                color=GEN_COLORS['info'], edgecolor='white')
+            for bar, val in zip(bars_spend, _spend_vals):
+                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
+                        gen_fmt_dollar(val, None), ha='center', va='bottom',
+                        fontsize=15, fontweight='bold')
 
-            _formatter = _fmt_map.get(field, gen_fmt_count)
-            for bar, val, n in zip(bars, _vals, _ns):
-                ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
-                        _formatter(val, None),
-                        ha='center', va='bottom', fontsize=16, fontweight='bold')
-                # White sample size inside the bar for readability
-                ax.text(bar.get_x() + bar.get_width() / 2,
-                        bar.get_height() * 0.5,
-                        f"n={n:,}", ha='center', va='center',
-                        fontsize=12, fontweight='bold', color='white')
+        ax.set_xticks(x)
+        ax.set_xticklabels(_group_names, fontsize=15)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+        ax.tick_params(axis='y', labelsize=12)
+        ax.set_ylabel('Median Amount', fontsize=14, fontweight='bold')
+        gen_clean_axes(ax)
 
-            ax.set_title(_labels_map.get(field, field), fontsize=16, fontweight='bold',
-                         color=GEN_COLORS['dark_text'])
-            ax.tick_params(axis='x', labelsize=13)
-            ax.tick_params(axis='y', labelsize=12)
-            gen_clean_axes(ax)
+        # Secondary axis: swipe counts as line
+        if _has_swipes:
+            ax2 = ax.twinx()
+            _swipe_vals = [_data[g]['swipes'] for g in _group_names]
+            ax2.plot(x, _swipe_vals, color=GEN_COLORS['accent'], marker='o',
+                     markersize=12, linewidth=3, label='Swipes (12mo)', zorder=5)
+            for xi, val in zip(x, _swipe_vals):
+                ax2.text(xi, val * 1.06, gen_fmt_count(val, None),
+                         ha='center', va='bottom', fontsize=14, fontweight='bold',
+                         color=GEN_COLORS['accent'])
+            ax2.set_ylabel('Median Swipes', fontsize=14, fontweight='bold',
+                           color=GEN_COLORS['accent'])
+            ax2.tick_params(axis='y', labelsize=12, colors=GEN_COLORS['accent'])
+            ax2.spines['top'].set_visible(False)
+            ax2.spines['left'].set_visible(False)
+            ax2.grid(False)
 
-        fig.suptitle('Personal Accounts \u2014 Do Auto-Depositors Spend More?',
+        # Combined legend
+        _handles, _labels = ax.get_legend_handles_labels()
+        if _has_swipes:
+            _h2, _l2 = ax2.get_legend_handles_labels()
+            _handles += _h2
+            _labels += _l2
+        ax.legend(_handles, _labels, fontsize=13, frameon=False,
+                  loc='upper center', bbox_to_anchor=(0.5, -0.08), ncol=3)
+
+        fig.suptitle('Personal Accounts \u2014 Do Auto-Depositors Deposit & Spend More?',
                      fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
-        fig.text(0.5, -0.02,
-                 'Median values  |  Filtered to accounts with ZAccounts match + card activity > 0',
-                 ha='center', fontsize=12, color=GEN_COLORS['muted'])
         plt.tight_layout()
         plt.show()
     else:
