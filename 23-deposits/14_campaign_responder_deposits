@@ -1,14 +1,18 @@
 # ===========================================================================
-# PERSONAL DEPOSITS: Campaign Responder Deposits (Cross-Source)
+# PERSONAL DEPOSITS: Campaign Responder Deposit & Card Behavior
 # ===========================================================================
-# ARS campaign responders vs non-responders: do responders deposit more
-# frequently, larger amounts, with better repayment?
-# Cross-source: ODDD (Response Grouping) + ZAccounts (deposit fields)
+# ARS campaign responders vs non-responders: do responders have better
+# deposit and card activity? Focus on actionable metrics: swipes, spend,
+# deposits. Also break down response rate per mailer and show sustained
+# activity post-mailer.
+# Cross-source: ODDD (Response Grouping, Mail cols, monthly spend/swipes)
+#             + ZAccounts (deposit fields)
 # Data: deposits_personal_df
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
+import re
 
 _df = deposits_personal_df.copy()
 _resp_field = 'Response Grouping'
@@ -19,58 +23,119 @@ else:
     _df = _df[_df[_resp_field].notna()].copy()
     _resp_vals = _df[_resp_field].value_counts()
     _total = len(_df)
-
-    # Use top response groups (typically: Responder, Non-Responder, or similar)
     _top_groups = _resp_vals.head(4).index.tolist()
 
-    print(f"    14 Data Decisions:")
-    print(f"      Source: deposits_personal_df (cross-source: ODDD + ZAccounts)")
-    print(f"      Field: {_resp_field}")
-    print(f"      Accounts with response grouping: {_total:,}")
-    for g in _top_groups:
-        print(f"        {g}: {_resp_vals[g]:,} ({_resp_vals[g]/_total*100:.1f}%)")
+    # ---- Discover per-mailer columns (e.g., "Apr23 Mail", "Jun23 Mail") ----
+    _mail_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Mail$')
+    _mail_cols = {}
+    for col in _df.columns:
+        m = _mail_pattern.match(col)
+        if m:
+            _mail_cols[m.group(1)] = col
 
+    # Sort chronologically
+    _month_order = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
+                    'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
+    def _msort(k):
+        return (int(k[3:])+2000, _month_order.get(k[:3], 0))
+    _mail_keys = sorted(_mail_cols.keys(), key=_msort)
+
+    # Metrics: swipes, spend, deposits (no repayment)
     _compare = [
+        ('last 12-mon spend', 'Card Spend (12mo)', gen_fmt_dollar),
+        ('last 12-mon swipes', 'Card Swipes (12mo)', gen_fmt_count),
         ('depCount365', 'Deposits (365d)', gen_fmt_count),
         ('depAmt365', 'Deposit Amount (365d)', gen_fmt_dollar),
-        ('avgdaysbetweendeposits', 'Days Between Deposits', gen_fmt_index),
-        ('avgrepaymentrate', 'Repayment Rate', lambda x, _: f"{x:.2f}"),
     ]
     _avail = [(f, l, fmt) for f, l, fmt in _compare if f in _df.columns]
 
+    # ---- Conference-format summary table ----
+    print(f"\n{'=' * 90}")
+    print(f"  PERSONAL DEPOSITS — CAMPAIGN RESPONDER BEHAVIOR (Cell 14)")
+    print(f"{'=' * 90}")
+    print(f"  Source: deposits_personal_df (cross-source: ODDD + ZAccounts)")
+    print(f"  Accounts with response grouping: {_total:,}")
+    print(f"  Mailer columns found: {len(_mail_cols)}")
+    print()
+
+    # Group summary
+    _hdr = f"  {'Response Group':<24s}  {'N':>8s}"
+    for _, lbl, _ in _avail:
+        _hdr += f"  {'Med ' + lbl:>22s}"
+    print(_hdr)
+    print(f"  {'-'*24}  {'-'*8}" + (f"  {'-'*22}" * len(_avail)))
+    for g in _top_groups:
+        _g_df = _df[_df[_resp_field] == g]
+        _row = f"  {g:<24s}  {len(_g_df):>8,}"
+        for field, _, fmt in _avail:
+            _med = _g_df[field].dropna().median()
+            if fmt == gen_fmt_dollar:
+                _row += f"  {'${:>,.0f}'.format(_med):>22s}"
+            elif fmt == gen_fmt_count:
+                _row += f"  {_med:>22,.0f}"
+            else:
+                _row += f"  {fmt(_med, None):>22s}"
+        print(_row)
+    print(f"{'=' * 90}")
+
+    # ---- Per-mailer response rate table ----
+    if _mail_keys:
+        print(f"\n  PER-MAILER RESPONSE RATE")
+        print(f"  {'Mailer':<12s}  {'Mailed':>8s}  {'Responded':>10s}  {'Rate':>8s}")
+        print(f"  {'-'*12}  {'-'*8}  {'-'*10}  {'-'*8}")
+        _mail_rates = []
+        for mk in _mail_keys:
+            _col = _mail_cols[mk]
+            _mailed = _df[_col].notna().sum()
+            # Typically: non-null = was mailed, value indicates response
+            _vals = _df[_col].dropna()
+            if len(_vals) > 0:
+                _responded = (_vals.astype(str).str.strip().str.lower().isin(
+                    ['yes', 'y', 'true', '1', '1.0', 'responded', 'response']
+                ) | (_vals.apply(lambda v: isinstance(v, (int, float)) and v > 0))).sum()
+                _rate = _responded / len(_vals) * 100 if len(_vals) > 0 else 0
+                _mail_rates.append((mk, len(_vals), _responded, _rate))
+                _lbl = f"{mk[:3]} '{mk[3:]}"
+                print(f"  {_lbl:<12s}  {len(_vals):>8,}  {_responded:>10,}  {_rate:>7.1f}%")
+        print()
+
+    # =========================================================================
+    # CHART 1: Response Group Metric Comparison (bar chart)
+    # =========================================================================
     if len(_avail) >= 2 and len(_top_groups) >= 2:
         _n = min(len(_avail), 4)
-        _cols = min(_n, 2)
+        _cols = 2
         _rows = (_n + _cols - 1) // _cols
-        fig, axes = plt.subplots(_rows, _cols, figsize=(8 * _cols, 6 * _rows))
-        if _n == 1:
-            axes = [axes]
-        else:
-            axes = axes.flatten()
+        fig, axes = plt.subplots(_rows, _cols, figsize=(9 * _cols, 6 * _rows))
+        axes = axes.flatten() if _n > 1 else [axes]
 
         _palette = [GEN_COLORS['success'], GEN_COLORS['info'],
                     GEN_COLORS['warning'], GEN_COLORS['muted']]
-
         _groups_data = _df.groupby(_resp_field)
 
         for i, (field, label, formatter) in enumerate(_avail[:_n]):
             ax = axes[i]
             _vals = []
+            _ns = []
             for g in _top_groups:
                 if g in _groups_data.groups:
-                    _vals.append(_groups_data.get_group(g)[field].dropna().median())
+                    _gdata = _groups_data.get_group(g)[field].dropna()
+                    _vals.append(_gdata.median())
+                    _ns.append(len(_gdata))
                 else:
                     _vals.append(0)
+                    _ns.append(0)
 
             bars = ax.bar(_top_groups, _vals,
                           color=_palette[:len(_top_groups)],
                           edgecolor='white', width=0.5)
-
-            for bar, val in zip(bars, _vals):
+            for bar, val, n in zip(bars, _vals, _ns):
                 ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
                         formatter(val, None),
                         ha='center', va='bottom', fontsize=14, fontweight='bold')
-
+                ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() * 0.5,
+                        f"n={n:,}", ha='center', va='center',
+                        fontsize=11, fontweight='bold', color='white')
             ax.set_title(label, fontsize=15, fontweight='bold',
                          color=GEN_COLORS['dark_text'])
             ax.tick_params(axis='x', labelsize=11, rotation=15)
@@ -80,9 +145,60 @@ else:
         for j in range(_n, len(axes)):
             axes[j].set_visible(False)
 
-        fig.suptitle('Personal Accounts \u2014 Campaign Responders vs Deposit Behavior',
+        fig.suptitle('Personal Accounts \u2014 Campaign Responders: Spend, Swipes & Deposits',
                      fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+        fig.text(0.5, -0.01, 'Median values by Response Grouping',
+                 ha='center', fontsize=12, color=GEN_COLORS['muted'])
         plt.tight_layout()
         plt.show()
-    else:
-        print("    Not enough data for comparison")
+
+    # =========================================================================
+    # CHART 2: Sustained Activity — monthly spend trend by response group
+    # =========================================================================
+    # Use monthly spend columns to show whether responders sustain higher
+    # spend over time vs non-responders.
+    _spend_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Spend$')
+    _monthly_spend = {}
+    for col in _df.columns:
+        m = _spend_pattern.match(col)
+        if m:
+            _monthly_spend[m.group(1)] = col
+    _spend_months = sorted(_monthly_spend.keys(), key=_msort)
+
+    # Limit to the 2 main groups (Responder vs Non-Responder or top 2)
+    _trend_groups = _top_groups[:2] if len(_top_groups) >= 2 else _top_groups
+
+    if _spend_months and len(_trend_groups) >= 2:
+        fig, ax = plt.subplots(figsize=(16, 7))
+        _trend_colors = [GEN_COLORS['success'], GEN_COLORS['muted'],
+                         GEN_COLORS['info'], GEN_COLORS['warning']]
+
+        for j, g in enumerate(_trend_groups):
+            _g_df = _df[_df[_resp_field] == g]
+            _monthly_medians = []
+            for mk in _spend_months:
+                _col = _monthly_spend[mk]
+                _med = _g_df[_col].dropna().median()
+                _monthly_medians.append(_med if not np.isnan(_med) else 0)
+
+            _x_labels = [f"{mk[:3]} '{mk[3:]}" for mk in _spend_months]
+            ax.plot(_x_labels, _monthly_medians, marker='o', markersize=5,
+                    linewidth=2.5, color=_trend_colors[j], label=f"{g} (n={len(_g_df):,})")
+
+        ax.set_title('Personal Accounts \u2014 Monthly Spend: Responders vs Non-Responders',
+                     fontsize=20, fontweight='bold', color=GEN_COLORS['dark_text'], pad=15)
+        ax.set_xlabel('Month', fontsize=14, fontweight='bold')
+        ax.set_ylabel('Median Monthly Spend', fontsize=14, fontweight='bold')
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+        ax.tick_params(axis='x', labelsize=11, rotation=45)
+        ax.tick_params(axis='y', labelsize=12)
+        ax.legend(fontsize=13, frameon=False, loc='upper left')
+
+        ax.text(0.5, -0.18,
+                'Do campaign responders sustain higher spending over time?',
+                transform=ax.transAxes, ha='center', fontsize=12,
+                color=GEN_COLORS['muted'])
+
+        gen_clean_axes(ax)
+        plt.tight_layout()
+        plt.show()

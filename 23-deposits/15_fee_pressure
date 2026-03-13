@@ -2,7 +2,7 @@
 # PERSONAL DEPOSITS: Fee Pressure Distribution
 # ===========================================================================
 # NSF/OD fees to deposits ratio. Who is under fee pressure?
-# Histogram with risk thresholds.
+# Histogram scaled to non-zero values with callout for zero-fee accounts.
 # Data: deposits_personal_df (ZAccounts: nsfodfeestodepositsratio90days)
 
 import matplotlib.pyplot as plt
@@ -18,54 +18,102 @@ else:
     _df = _df[_df[_field].notna()].copy()
     _total = len(_df)
 
-    # Cap at 99th percentile for display
-    _cap = _df[_field].quantile(0.99)
-    _df['_fee_plot'] = _df[_field].clip(upper=_cap)
+    # Split: zero-fee vs non-zero
+    _zero_count = (_df[_field] == 0).sum()
+    _nonzero_df = _df[_df[_field] > 0].copy()
+    _nonzero_count = len(_nonzero_df)
 
-    # Risk segments
+    # Risk segments (among ALL accounts with fee data)
     _low = (_df[_field] <= 0.05).sum()
     _moderate = ((_df[_field] > 0.05) & (_df[_field] <= 0.20)).sum()
     _high = (_df[_field] > 0.20).sum()
 
-    print(f"    15 Data Decisions:")
-    print(f"      Source: deposits_personal_df (open personal accounts)")
-    print(f"      Field: {_field}")
-    print(f"      Accounts with fee data: {_total:,}")
-    print(f"      Display cap (99th pctl): {_cap:.3f}")
-    print(f"      Low pressure (<=5%): {_low:,} ({_low/_total*100:.1f}%)")
-    print(f"      Moderate (5-20%): {_moderate:,} ({_moderate/_total*100:.1f}%)")
-    print(f"      High pressure (>20%): {_high:,} ({_high/_total*100:.1f}%)")
+    # ----- Conference-format summary table -----
+    print(f"\n{'=' * 70}")
+    print(f"  PERSONAL DEPOSITS — FEE PRESSURE DISTRIBUTION (Cell 15)")
+    print(f"{'=' * 70}")
+    print(f"  Source: deposits_personal_df (ZAccounts)")
+    print(f"  Field: {_field}")
+    print(f"  Accounts with fee data: {_total:,}")
+    print(f"  Zero fee ratio: {_zero_count:,} ({_zero_count/_total*100:.1f}%)")
+    print(f"  Non-zero fee ratio: {_nonzero_count:,} ({_nonzero_count/_total*100:.1f}%)")
+    print()
+    print(f"  {'Risk Segment':<22s}  {'N':>8s}  {'% of Total':>10s}")
+    print(f"  {'-'*22}  {'-'*8}  {'-'*10}")
+    print(f"  {'Zero fees':<22s}  {_zero_count:>8,}  {_zero_count/_total*100:>9.1f}%")
+    print(f"  {'Low (0-5%)':<22s}  {_low - _zero_count:>8,}  {(_low - _zero_count)/_total*100:>9.1f}%")
+    print(f"  {'Moderate (5-20%)':<22s}  {_moderate:>8,}  {_moderate/_total*100:>9.1f}%")
+    print(f"  {'High pressure (>20%)':<22s}  {_high:>8,}  {_high/_total*100:>9.1f}%")
+    if _nonzero_count > 0:
+        print(f"\n  Among non-zero accounts:")
+        print(f"    Median fee ratio: {_nonzero_df[_field].median():.3f}")
+        print(f"    Mean fee ratio:   {_nonzero_df[_field].mean():.3f}")
+        print(f"    99th percentile:  {_nonzero_df[_field].quantile(0.99):.3f}")
+    print(f"{'=' * 70}")
 
     # ---------------------------------------------------------------------------
-    # Chart: Histogram with threshold lines
+    # Chart: Two panels
+    #   Left: Callout bar showing zero vs non-zero split
+    #   Right: Histogram of NON-ZERO fee ratios (properly scaled)
     # ---------------------------------------------------------------------------
-    fig, ax = plt.subplots(figsize=(16, 7))
+    if _nonzero_count > 0:
+        fig = plt.figure(figsize=(18, 7))
+        gs = fig.add_gridspec(1, 2, width_ratios=[1, 3], wspace=0.25)
 
-    _bins = np.linspace(0, _cap, 40)
-    ax.hist(_df['_fee_plot'], bins=_bins, color=GEN_COLORS['primary'],
-            edgecolor='white', alpha=0.85)
+        # Left panel: zero vs non-zero callout
+        ax_split = fig.add_subplot(gs[0])
+        _split_labels = ['Zero Fees', 'Has Fees']
+        _split_vals = [_zero_count, _nonzero_count]
+        _split_colors = [GEN_COLORS['success'], GEN_COLORS['warning']]
+        bars = ax_split.bar(_split_labels, _split_vals, color=_split_colors,
+                            edgecolor='white', width=0.5)
+        for bar, val in zip(bars, _split_vals):
+            _pct = val / _total * 100
+            ax_split.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                          f"{val:,}\n({_pct:.0f}%)", ha='center', va='bottom',
+                          fontsize=14, fontweight='bold', color=GEN_COLORS['dark_text'])
+        ax_split.set_title('Fee Ratio Split', fontsize=16, fontweight='bold',
+                           color=GEN_COLORS['dark_text'], pad=12)
+        ax_split.set_ylabel('Accounts', fontsize=14, fontweight='bold')
+        ax_split.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
+        ax_split.tick_params(axis='both', labelsize=12)
+        gen_clean_axes(ax_split)
 
-    # Threshold lines
-    ax.axvline(0.05, color=GEN_COLORS['warning'], linewidth=2.5,
-               linestyle='--', label=f'Moderate threshold (5%)', zorder=5)
-    ax.axvline(0.20, color=GEN_COLORS['accent'], linewidth=2.5,
-               linestyle='--', label=f'High pressure threshold (20%)', zorder=5)
+        # Right panel: histogram of non-zero values only
+        ax_hist = fig.add_subplot(gs[1])
+        _cap = _nonzero_df[_field].quantile(0.99)
+        _plot_vals = _nonzero_df[_field].clip(upper=_cap)
+        _bins = np.linspace(0, _cap, 40)
 
-    ax.set_title('Personal Accounts \u2014 Fee-to-Deposit Ratio Distribution',
-                 fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], pad=15)
-    ax.set_xlabel('NSF/OD Fees to Deposits Ratio (90 days)', fontsize=16, fontweight='bold')
-    ax.set_ylabel('Number of Accounts', fontsize=16, fontweight='bold')
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
-    ax.tick_params(axis='both', labelsize=13)
-    ax.legend(fontsize=13, loc='upper right')
+        ax_hist.hist(_plot_vals, bins=_bins, color=GEN_COLORS['primary'],
+                     edgecolor='white', alpha=0.85)
 
-    # Summary annotation
-    _summary = (f"Low: {_low:,} ({_low/_total*100:.0f}%)  |  "
-                f"Moderate: {_moderate:,} ({_moderate/_total*100:.0f}%)  |  "
-                f"High: {_high:,} ({_high/_total*100:.0f}%)")
-    ax.text(0.5, -0.12, _summary, transform=ax.transAxes, ha='center',
-            fontsize=13, fontweight='bold', color=GEN_COLORS['dark_text'])
+        # Threshold lines
+        ax_hist.axvline(0.05, color=GEN_COLORS['warning'], linewidth=2.5,
+                        linestyle='--', label='Moderate (5%)', zorder=5)
+        ax_hist.axvline(0.20, color=GEN_COLORS['accent'], linewidth=2.5,
+                        linestyle='--', label='High pressure (20%)', zorder=5)
 
-    gen_clean_axes(ax)
-    plt.tight_layout()
-    plt.show()
+        ax_hist.set_title(f'Fee Ratio Distribution (non-zero only, n={_nonzero_count:,})',
+                          fontsize=16, fontweight='bold', color=GEN_COLORS['dark_text'], pad=12)
+        ax_hist.set_xlabel('NSF/OD Fees to Deposits Ratio (90d)', fontsize=14, fontweight='bold')
+        ax_hist.set_ylabel('Accounts', fontsize=14, fontweight='bold')
+        ax_hist.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
+        ax_hist.tick_params(axis='both', labelsize=12)
+        ax_hist.legend(fontsize=12, loc='upper right')
+        gen_clean_axes(ax_hist)
+
+        fig.suptitle('Personal Accounts \u2014 Fee-to-Deposit Ratio',
+                     fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+
+        # Summary annotation
+        _summary = (f"Low (0-5%): {_low - _zero_count:,}  |  "
+                    f"Moderate (5-20%): {_moderate:,}  |  "
+                    f"High (>20%): {_high:,}")
+        fig.text(0.5, -0.02, _summary, ha='center', fontsize=13,
+                 fontweight='bold', color=GEN_COLORS['dark_text'])
+
+        plt.tight_layout()
+        plt.show()
+    else:
+        print("    All accounts have zero fee ratio -- no histogram to display")

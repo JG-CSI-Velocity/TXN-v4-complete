@@ -1,23 +1,23 @@
 # ===========================================================================
 # PERSONAL DEPOSITS: Snapshot Frequency Trajectory (Conditional)
 # ===========================================================================
-# Only runs if ZA_HAS_MULTIPLE == True.
 # Shows median avgdaysbetweendeposits per snapshot — is frequency improving?
+# If only a single snapshot exists, display a single-bar summary so the
+# cell is never completely empty.
 # Data: deposits_personal_df + ZA_SNAPSHOT_META
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
 
-if not ZA_HAS_MULTIPLE:
-    print("    13 Skipped: Single ZAccounts snapshot -- no longitudinal data")
-else:
-    _df = deposits_personal_df.copy()
-    _snap_keys = sorted(ZA_SNAPSHOT_META.keys())
+_df = deposits_personal_df.copy()
+_snap_keys = sorted(ZA_SNAPSHOT_META.keys()) if 'ZA_SNAPSHOT_META' in dir() else []
 
-    _labels = []
-    _medians = []
+_labels = []
+_medians = []
+_counts = []
 
+if ZA_HAS_MULTIPLE and _snap_keys:
     for sk in _snap_keys:
         _meta = ZA_SNAPSHOT_META[sk]
         _col = f"avgdaysbetweendeposits_{_meta['label']}"
@@ -26,50 +26,100 @@ else:
             _vals = _vals[_vals > 0]
             _labels.append(_meta['label'].upper())
             _medians.append(_vals.median())
+            _counts.append(len(_vals))
 
-    print(f"    13 Data Decisions:")
-    print(f"      Source: deposits_personal_df (longitudinal ZAccounts snapshots)")
-    print(f"      Snapshots: {len(_labels)}")
-    for lbl, med in zip(_labels, _medians):
-        print(f"        {lbl}: median days between deposits = {med:.1f}")
+# Fallback: single snapshot — use unsuffixed field
+if not _labels and 'avgdaysbetweendeposits' in _df.columns:
+    _vals = _df['avgdaysbetweendeposits'].dropna()
+    _vals = _vals[_vals > 0]
+    if len(_vals) > 0:
+        _snap_label = 'CURRENT'
+        if _snap_keys:
+            _meta = ZA_SNAPSHOT_META[_snap_keys[-1]]
+            _snap_label = _meta['label'].upper()
+        _labels.append(_snap_label)
+        _medians.append(_vals.median())
+        _counts.append(len(_vals))
 
-    if len(_labels) >= 2:
-        fig, ax = plt.subplots(figsize=(14, 7))
+# ----- Conference-format summary table -----
+print(f"\n{'=' * 70}")
+print(f"  PERSONAL DEPOSITS — DAYS BETWEEN DEPOSITS TRAJECTORY (Cell 13)")
+print(f"{'=' * 70}")
+print(f"  Source: deposits_personal_df (ZAccounts snapshots)")
+print(f"  Snapshots available: {len(_labels)}")
+print()
+_hdr = f"  {'Snapshot':<12s}  {'N':>8s}  {'Median Days Between':>22s}"
+print(_hdr)
+print(f"  {'-'*12}  {'-'*8}  {'-'*22}")
+for lbl, med, cnt in zip(_labels, _medians, _counts):
+    print(f"  {lbl:<12s}  {cnt:>8,}  {med:>22.1f}")
+if len(_labels) >= 2:
+    _change = _medians[-1] - _medians[0]
+    _sign = '+' if _change >= 0 else ''
+    _dir = 'worse (less frequent)' if _change > 0 else 'better (more frequent)'
+    print(f"\n  Overall change: {_sign}{_change:.1f} days ({_dir})")
+print(f"{'=' * 70}")
 
-        x = np.arange(len(_labels))
-        _bar_colors = [GEN_COLORS['info']] * len(_labels)
-        _bar_colors[-1] = GEN_COLORS['primary']
+# ---------------------------------------------------------------------------
+# Chart
+# ---------------------------------------------------------------------------
+if len(_labels) >= 2:
+    fig, ax = plt.subplots(figsize=(14, 7))
 
-        bars = ax.bar(x, _medians, color=_bar_colors, edgecolor='white', width=0.5)
+    x = np.arange(len(_labels))
+    _bar_colors = [GEN_COLORS['info']] * len(_labels)
+    _bar_colors[-1] = GEN_COLORS['primary']
 
-        for i, (bar, val) in enumerate(zip(bars, _medians)):
-            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
-                    f"{val:.1f}d", ha='center', va='bottom',
-                    fontsize=16, fontweight='bold', color=GEN_COLORS['dark_text'])
-            if i > 0:
-                _change = val - _medians[i - 1]
-                # Lower days = better (more frequent), so negative change is good
-                _sign = '+' if _change >= 0 else ''
-                _color = GEN_COLORS['accent'] if _change > 0 else GEN_COLORS['success']
-                ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() * 0.5,
-                        f"{_sign}{_change:.1f}d",
-                        ha='center', va='center', fontsize=13, fontweight='bold',
-                        color=_color)
+    bars = ax.bar(x, _medians, color=_bar_colors, edgecolor='white', width=0.5)
 
-        ax.set_title('Personal Accounts \u2014 Days Between Deposits Trajectory',
-                     fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], pad=15)
-        ax.set_xlabel('Snapshot', fontsize=16, fontweight='bold')
-        ax.set_ylabel('Median Days Between Deposits', fontsize=16, fontweight='bold')
-        ax.set_xticks(x)
-        ax.set_xticklabels(_labels, fontsize=15)
-        ax.tick_params(axis='y', labelsize=13)
+    for i, (bar, val, cnt) in enumerate(zip(bars, _medians, _counts)):
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                f"{val:.1f}d", ha='center', va='bottom',
+                fontsize=16, fontweight='bold', color=GEN_COLORS['dark_text'])
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() * 0.5,
+                f"n={cnt:,}", ha='center', va='center',
+                fontsize=12, fontweight='bold', color='white')
+        if i > 0:
+            _change = val - _medians[i - 1]
+            _sign = '+' if _change >= 0 else ''
+            # Lower days = better, so negative change is green
+            _color = GEN_COLORS['accent'] if _change > 0 else GEN_COLORS['success']
+            ax.annotate(f"{_sign}{_change:.1f}d",
+                        xy=(x[i], max(_medians[i], _medians[i-1]) * 1.08),
+                        ha='center', fontsize=13, fontweight='bold', color=_color)
 
-        ax.text(0.5, -0.10, 'Lower = more frequent deposits (improving)',
-                transform=ax.transAxes, ha='center', fontsize=12,
-                color=GEN_COLORS['muted'])
+    ax.set_title('Personal Accounts \u2014 Days Between Deposits Trajectory',
+                 fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], pad=15)
+    ax.set_xlabel('Snapshot', fontsize=16, fontweight='bold')
+    ax.set_ylabel('Median Days Between Deposits', fontsize=16, fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels(_labels, fontsize=15)
+    ax.tick_params(axis='y', labelsize=13)
+    ax.text(0.5, -0.10, 'Lower = more frequent deposits (improving)',
+            transform=ax.transAxes, ha='center', fontsize=12, color=GEN_COLORS['muted'])
+    gen_clean_axes(ax)
+    plt.tight_layout()
+    plt.show()
 
-        gen_clean_axes(ax)
-        plt.tight_layout()
-        plt.show()
-    else:
-        print("    Not enough snapshots for trajectory chart")
+elif len(_labels) == 1:
+    fig, ax = plt.subplots(figsize=(8, 7))
+    bars = ax.bar([_labels[0]], [_medians[0]], color=GEN_COLORS['primary'],
+                  edgecolor='white', width=0.4)
+    ax.text(bars[0].get_x() + bars[0].get_width() / 2, bars[0].get_height(),
+            f"{_medians[0]:.1f}d", ha='center', va='bottom',
+            fontsize=18, fontweight='bold', color=GEN_COLORS['dark_text'])
+    ax.text(bars[0].get_x() + bars[0].get_width() / 2, bars[0].get_height() * 0.5,
+            f"n={_counts[0]:,}", ha='center', va='center',
+            fontsize=13, fontweight='bold', color='white')
+    ax.set_title('Personal Accounts \u2014 Days Between Deposits',
+                 fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], pad=15)
+    ax.set_ylabel('Median Days Between Deposits', fontsize=16, fontweight='bold')
+    ax.tick_params(axis='y', labelsize=13)
+    ax.text(0.5, -0.08, 'Single snapshot available \u2014 trajectory requires 2+ snapshots',
+            transform=ax.transAxes, ha='center', fontsize=12, color=GEN_COLORS['muted'])
+    gen_clean_axes(ax)
+    plt.tight_layout()
+    plt.show()
+
+else:
+    print("    No frequency data available for trajectory chart")
