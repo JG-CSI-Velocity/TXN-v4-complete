@@ -1,0 +1,164 @@
+# ===========================================================================
+# DEPOSIT ANALYSIS: Portfolio-Level KPI Cards
+# ===========================================================================
+# Key deposit metrics from ZAccounts displayed as styled KPI cards.
+
+import matplotlib.pyplot as plt
+from matplotlib.patches import FancyBboxPatch
+import numpy as np
+
+# ---------------------------------------------------------------------------
+# 1. Calculate KPIs
+# ---------------------------------------------------------------------------
+_total_accts = len(zaccounts_df)
+
+_dep_33 = (zaccounts_df['DepCount33'] > 0).sum() if 'DepCount33' in zaccounts_df.columns else 0
+_dep_66 = (zaccounts_df['DepCount66'] > 0).sum() if 'DepCount66' in zaccounts_df.columns else 0
+_dep_99 = (zaccounts_df['DepCount99'] > 0).sum() if 'DepCount99' in zaccounts_df.columns else 0
+_dep_365 = (zaccounts_df['depCount365'] > 0).sum() if 'depCount365' in zaccounts_df.columns else 0
+
+_avg_days_between = (
+    zaccounts_df['avgdaysbetweendeposits'].median()
+    if 'avgdaysbetweendeposits' in zaccounts_df.columns else np.nan
+)
+
+_avg_dep_amt_33 = (
+    zaccounts_df.loc[zaccounts_df['DepAmt33'] > 0, 'DepAmt33'].mean()
+    if 'DepAmt33' in zaccounts_df.columns else np.nan
+)
+_avg_dep_amt_365 = (
+    zaccounts_df.loc[zaccounts_df['depAmt365'] > 0, 'depAmt365'].mean()
+    if 'depAmt365' in zaccounts_df.columns else np.nan
+)
+
+_median_bal = (
+    zaccounts_df['balance'].median()
+    if 'balance' in zaccounts_df.columns else np.nan
+)
+_avg_coll_bal = (
+    zaccounts_df['AvgCollectedBalance'].mean()
+    if 'AvgCollectedBalance' in zaccounts_df.columns else np.nan
+)
+
+_auto_dep_rate = (
+    (zaccounts_df['autodeposit'] > 0).mean() * 100
+    if 'autodeposit' in zaccounts_df.columns else np.nan
+)
+
+_mobile_dep = (
+    (zaccounts_df['Mobile_Deposits_90'] > 0).sum()
+    if 'Mobile_Deposits_90' in zaccounts_df.columns else 0
+)
+
+_avg_repay = (
+    zaccounts_df['avgrepaymentrate'].mean()
+    if 'avgrepaymentrate' in zaccounts_df.columns else np.nan
+)
+
+# ---------------------------------------------------------------------------
+# 2. Build KPI card data
+# ---------------------------------------------------------------------------
+_kpis = [
+    {
+        'label': 'Total Accounts',
+        'value': f"{_total_accts:,}",
+        'sub': 'Portfolio size',
+        'color': GEN_COLORS['primary'],
+    },
+    {
+        'label': 'Deposits (33d)',
+        'value': f"{_dep_33:,}",
+        'sub': f"{_dep_33 / _total_accts * 100:.1f}% of portfolio" if _total_accts > 0 else '',
+        'color': GEN_COLORS['success'],
+    },
+    {
+        'label': 'Deposits (365d)',
+        'value': f"{_dep_365:,}",
+        'sub': f"{_dep_365 / _total_accts * 100:.1f}% of portfolio" if _total_accts > 0 else '',
+        'color': GEN_COLORS['info'],
+    },
+    {
+        'label': 'Median Days Btwn',
+        'value': f"{_avg_days_between:.0f}" if not np.isnan(_avg_days_between) else 'N/A',
+        'sub': 'Median deposit frequency',
+        'color': GEN_COLORS['warning'],
+    },
+    {
+        'label': 'Avg Deposit (33d)',
+        'value': f"${_avg_dep_amt_33:,.0f}" if not np.isnan(_avg_dep_amt_33) else 'N/A',
+        'sub': 'Among depositors',
+        'color': GEN_COLORS['accent'],
+    },
+    {
+        'label': 'Avg Deposit (365d)',
+        'value': f"${_avg_dep_amt_365:,.0f}" if not np.isnan(_avg_dep_amt_365) else 'N/A',
+        'sub': 'Among depositors',
+        'color': GEN_COLORS['primary'],
+    },
+    {
+        'label': 'Median Balance',
+        'value': f"${_median_bal:,.0f}" if not np.isnan(_median_bal) else 'N/A',
+        'sub': 'Current balance',
+        'color': GEN_COLORS['success'],
+    },
+    {
+        'label': 'Auto-Deposit Rate',
+        'value': f"{_auto_dep_rate:.1f}%" if not np.isnan(_auto_dep_rate) else 'N/A',
+        'sub': 'Accounts w/ auto-deposit',
+        'color': GEN_COLORS['info'],
+    },
+]
+
+# ---------------------------------------------------------------------------
+# 3. Render KPI cards using matplotlib
+# ---------------------------------------------------------------------------
+_n_cols = 4
+_n_rows = 2
+fig, axes = plt.subplots(_n_rows, _n_cols, figsize=(18, 6))
+fig.suptitle('Deposit Portfolio KPIs', fontsize=22, fontweight='bold',
+             color=GEN_COLORS['dark_text'], y=1.02)
+
+for idx, ax in enumerate(axes.flatten()):
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.axis('off')
+
+    if idx < len(_kpis):
+        kpi = _kpis[idx]
+        _box = FancyBboxPatch(
+            (0.05, 0.05), 0.9, 0.9,
+            boxstyle="round,pad=0.05",
+            facecolor=GEN_COLORS['light_bg'],
+            edgecolor=kpi['color'],
+            linewidth=3,
+        )
+        ax.add_patch(_box)
+
+        ax.text(0.5, 0.75, kpi['label'], transform=ax.transAxes,
+                ha='center', va='center', fontsize=14, fontweight='bold',
+                color=GEN_COLORS['muted'])
+        ax.text(0.5, 0.45, kpi['value'], transform=ax.transAxes,
+                ha='center', va='center', fontsize=28, fontweight='bold',
+                color=kpi['color'])
+        ax.text(0.5, 0.18, kpi['sub'], transform=ax.transAxes,
+                ha='center', va='center', fontsize=11,
+                color=GEN_COLORS['muted'])
+
+plt.tight_layout()
+plt.show()
+
+# ---------------------------------------------------------------------------
+# 4. Print supplementary metrics
+# ---------------------------------------------------------------------------
+print(f"\n    Supplementary Deposit Metrics:")
+print(f"    {'='*50}")
+print(f"    Deposits in last 66 days:  {_dep_66:,} "
+      f"({_dep_66 / _total_accts * 100:.1f}%)" if _total_accts > 0 else "")
+print(f"    Deposits in last 99 days:  {_dep_99:,} "
+      f"({_dep_99 / _total_accts * 100:.1f}%)" if _total_accts > 0 else "")
+print(f"    Mobile depositors (90d):   {_mobile_dep:,} "
+      f"({_mobile_dep / _total_accts * 100:.1f}%)" if _total_accts > 0 else "")
+print(f"    Avg Collected Balance:     ${_avg_coll_bal:,.0f}"
+      if not np.isnan(_avg_coll_bal) else "    Avg Collected Balance: N/A")
+print(f"    Avg Repayment Rate:        {_avg_repay:.2f}"
+      if not np.isnan(_avg_repay) else "    Avg Repayment Rate: N/A")

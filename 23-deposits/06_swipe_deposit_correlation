@@ -1,0 +1,194 @@
+# ===========================================================================
+# DEPOSIT ANALYSIS: Swipe-Deposit Correlation (Core Analysis)
+# ===========================================================================
+# Do higher swipers deposit more? Cross-reference card usage with deposit
+# behavior from ZAccounts.
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import numpy as np
+from scipy import stats as sp_stats
+
+# ---------------------------------------------------------------------------
+# 1. Prepare correlation data
+# ---------------------------------------------------------------------------
+_swipe_col = None
+for candidate in ['Total Swipes', 'last 12-mon swipes']:
+    if candidate in deposits_df.columns:
+        _swipe_col = candidate
+        break
+
+_dep_count_col = 'depCount365' if 'depCount365' in deposits_df.columns else None
+_dep_amt_col = 'depAmt365' if 'depAmt365' in deposits_df.columns else None
+_monthly_swipe_col = 'MonthlySwipes12' if 'MonthlySwipes12' in deposits_df.columns else None
+
+_has_data = _swipe_col is not None and (_dep_count_col is not None or _dep_amt_col is not None)
+
+if not _has_data:
+    print("    WARNING: Missing swipe or deposit columns -- skipping correlation analysis")
+else:
+    # ------------------------------------------------------------------
+    # 2. Scatter: Total Swipes vs Deposit Count (365d)
+    # ------------------------------------------------------------------
+    if _dep_count_col:
+        _plot_df = deposits_df[
+            [_swipe_col, _dep_count_col]
+        ].dropna()
+        _plot_df[_swipe_col] = pd.to_numeric(_plot_df[_swipe_col], errors='coerce')
+        _plot_df[_dep_count_col] = pd.to_numeric(_plot_df[_dep_count_col], errors='coerce')
+        _plot_df = _plot_df.dropna()
+
+        # Clip outliers for visualization
+        _sw_99 = _plot_df[_swipe_col].quantile(0.99)
+        _dc_99 = _plot_df[_dep_count_col].quantile(0.99)
+        _plot_clipped = _plot_df[
+            (_plot_df[_swipe_col] <= _sw_99) & (_plot_df[_dep_count_col] <= _dc_99)
+        ]
+
+        _corr, _pval = sp_stats.pearsonr(
+            _plot_df[_swipe_col], _plot_df[_dep_count_col]
+        )
+
+        fig, ax = plt.subplots(figsize=(10, 8))
+        ax.scatter(
+            _plot_clipped[_swipe_col], _plot_clipped[_dep_count_col],
+            alpha=0.25, s=12, color=GEN_COLORS['info'], edgecolors='none'
+        )
+        ax.set_title('Card Swipes vs Deposit Frequency',
+                     fontsize=20, fontweight='bold', color=GEN_COLORS['dark_text'])
+        ax.set_xlabel(f'{_swipe_col}', fontsize=14)
+        ax.set_ylabel('Deposit Count (365 Days)', fontsize=14)
+        ax.tick_params(labelsize=12)
+        ax.spines[['top', 'right']].set_visible(False)
+        ax.grid(alpha=0.3, color=GEN_COLORS['grid'])
+
+        # Correlation annotation
+        _sig_label = 'p < 0.001' if _pval < 0.001 else f'p = {_pval:.4f}'
+        ax.text(0.02, 0.95,
+                f'r = {_corr:.3f}  ({_sig_label})',
+                transform=ax.transAxes, fontsize=14, fontweight='bold',
+                color=GEN_COLORS['accent'],
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.9))
+
+        plt.tight_layout()
+        plt.show()
+
+    # ------------------------------------------------------------------
+    # 3. Scatter: Monthly Swipes vs Avg Deposit Amount
+    # ------------------------------------------------------------------
+    if _monthly_swipe_col and _dep_amt_col:
+        _plot_df2 = deposits_df[
+            [_monthly_swipe_col, _dep_amt_col]
+        ].dropna()
+        _plot_df2[_monthly_swipe_col] = pd.to_numeric(_plot_df2[_monthly_swipe_col], errors='coerce')
+        _plot_df2[_dep_amt_col] = pd.to_numeric(_plot_df2[_dep_amt_col], errors='coerce')
+        _plot_df2 = _plot_df2.dropna()
+        _plot_df2 = _plot_df2[_plot_df2[_dep_amt_col] > 0]
+
+        _sw_99 = _plot_df2[_monthly_swipe_col].quantile(0.99)
+        _da_99 = _plot_df2[_dep_amt_col].quantile(0.99)
+        _plot_clipped2 = _plot_df2[
+            (_plot_df2[_monthly_swipe_col] <= _sw_99) & (_plot_df2[_dep_amt_col] <= _da_99)
+        ]
+
+        _corr2, _pval2 = sp_stats.pearsonr(
+            _plot_df2[_monthly_swipe_col], _plot_df2[_dep_amt_col]
+        )
+
+        fig, ax = plt.subplots(figsize=(10, 8))
+        ax.scatter(
+            _plot_clipped2[_monthly_swipe_col], _plot_clipped2[_dep_amt_col],
+            alpha=0.25, s=12, color=GEN_COLORS['success'], edgecolors='none'
+        )
+        ax.set_title('Monthly Swipes vs Deposit Amount (365d)',
+                     fontsize=20, fontweight='bold', color=GEN_COLORS['dark_text'])
+        ax.set_xlabel('Monthly Swipes (12-mo avg)', fontsize=14)
+        ax.set_ylabel('Deposit Amount (365 Days)', fontsize=14)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+        ax.tick_params(labelsize=12)
+        ax.spines[['top', 'right']].set_visible(False)
+        ax.grid(alpha=0.3, color=GEN_COLORS['grid'])
+
+        _sig_label2 = 'p < 0.001' if _pval2 < 0.001 else f'p = {_pval2:.4f}'
+        ax.text(0.02, 0.95,
+                f'r = {_corr2:.3f}  ({_sig_label2})',
+                transform=ax.transAxes, fontsize=14, fontweight='bold',
+                color=GEN_COLORS['accent'],
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.9))
+
+        plt.tight_layout()
+        plt.show()
+
+    # ------------------------------------------------------------------
+    # 4. Deposits by SwipeCat12 (swipe category tier)
+    # ------------------------------------------------------------------
+    _swipecat_col = None
+    for candidate in ['SwipeCat12', 'SwipeCat3']:
+        if candidate in deposits_df.columns:
+            _swipecat_col = candidate
+            break
+
+    if _swipecat_col and _dep_count_col:
+        _cat_stats = (
+            deposits_df.groupby(_swipecat_col)
+            .agg(
+                avg_dep_count=(
+                    _dep_count_col,
+                    lambda x: pd.to_numeric(x, errors='coerce').mean()
+                ),
+                avg_dep_amt=(
+                    _dep_amt_col,
+                    lambda x: pd.to_numeric(x, errors='coerce').mean()
+                ) if _dep_amt_col else (_dep_count_col, 'count'),
+                account_count=(_dep_count_col, 'count'),
+            )
+            .reset_index()
+            .sort_values('avg_dep_count', ascending=True)
+        )
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
+        fig.suptitle(f'Deposit Metrics by Swipe Category ({_swipecat_col})',
+                     fontsize=20, fontweight='bold', color=GEN_COLORS['dark_text'])
+
+        # Deposit count by category
+        ax1.barh(_cat_stats[_swipecat_col].astype(str), _cat_stats['avg_dep_count'],
+                 color=GEN_COLORS['info'], edgecolor='white', height=0.6)
+        ax1.set_title('Avg Deposit Count (365d)', fontsize=16, fontweight='bold')
+        ax1.set_xlabel('Average Deposits', fontsize=14)
+        ax1.tick_params(labelsize=13)
+        ax1.spines[['top', 'right']].set_visible(False)
+        for i, (val, cat) in enumerate(zip(_cat_stats['avg_dep_count'],
+                                           _cat_stats[_swipecat_col])):
+            ax1.text(val, i, f' {val:.1f}', va='center', fontsize=12, fontweight='bold')
+
+        # Deposit amount by category
+        if _dep_amt_col:
+            ax2.barh(_cat_stats[_swipecat_col].astype(str), _cat_stats['avg_dep_amt'],
+                     color=GEN_COLORS['success'], edgecolor='white', height=0.6)
+            ax2.set_title('Avg Deposit Amount (365d)', fontsize=16, fontweight='bold')
+            ax2.set_xlabel('Average Amount ($)', fontsize=14)
+            ax2.xaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+            ax2.tick_params(labelsize=13)
+            ax2.spines[['top', 'right']].set_visible(False)
+            for i, val in enumerate(_cat_stats['avg_dep_amt']):
+                ax2.text(val, i, f' ${val:,.0f}', va='center', fontsize=12, fontweight='bold')
+
+        plt.tight_layout()
+        plt.show()
+
+        print(f"\n    Deposits by {_swipecat_col}:")
+        print(f"    {'='*60}")
+        for _, row in _cat_stats.iterrows():
+            print(f"      {str(row[_swipecat_col]):<15s}: "
+                  f"Avg Count={row['avg_dep_count']:.1f}, "
+                  f"Accounts={row['account_count']:,}")
+
+    # ------------------------------------------------------------------
+    # 5. Correlation summary
+    # ------------------------------------------------------------------
+    print(f"\n    Swipe-Deposit Correlation Summary:")
+    print(f"    {'='*50}")
+    if _dep_count_col:
+        print(f"    {_swipe_col} vs {_dep_count_col}: r={_corr:.3f}")
+    if _monthly_swipe_col and _dep_amt_col:
+        print(f"    {_monthly_swipe_col} vs {_dep_amt_col}: r={_corr2:.3f}")

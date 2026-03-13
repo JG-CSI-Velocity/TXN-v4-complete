@@ -1,0 +1,191 @@
+# ===========================================================================
+# DEPOSIT ANALYSIS: Monthly Deposit Trends
+# ===========================================================================
+# Time series of monthly MTD deposits from rewards_df. Seasonal pattern
+# detection and multi-snapshot comparison if available.
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import numpy as np
+
+# ---------------------------------------------------------------------------
+# 1. Build monthly deposit time series from MTD columns
+# ---------------------------------------------------------------------------
+_monthly_totals = []
+_monthly_medians = []
+_monthly_counts = []
+_month_keys = []
+
+for mk, col in mtd_cols.items():
+    if col in rewards_df.columns:
+        _vals = pd.to_numeric(rewards_df[col], errors='coerce')
+        _monthly_totals.append(_vals.sum())
+        _monthly_medians.append(_vals.median())
+        _monthly_counts.append((_vals > 0).sum())
+        _month_keys.append(mk)
+
+if not _month_keys:
+    print("    WARNING: No MTD columns found -- skipping deposit trends")
+else:
+    _labels = [f"{m[:3]} '{m[3:]}" for m in _month_keys]
+
+    # -------------------------------------------------------------------
+    # 2. Aggregate monthly deposits over time
+    # -------------------------------------------------------------------
+    fig, ax = plt.subplots(figsize=(16, 7))
+    fig.suptitle('Monthly Deposit Trends (Aggregate MTD)',
+                 fontsize=20, fontweight='bold', color=GEN_COLORS['dark_text'])
+
+    x = np.arange(len(_month_keys))
+    ax.plot(x, _monthly_totals, color=GEN_COLORS['primary'],
+            linewidth=2.5, marker='o', markersize=5, label='Total MTD Deposits')
+    ax.fill_between(x, _monthly_totals, alpha=0.1, color=GEN_COLORS['primary'])
+
+    # Rolling average
+    if len(_monthly_totals) >= 3:
+        _rolling = pd.Series(_monthly_totals).rolling(3, center=True).mean()
+        ax.plot(x, _rolling, color=GEN_COLORS['accent'],
+                linewidth=2, linestyle='--', label='3-Month Rolling Avg')
+
+    ax.set_xticks(x[::max(1, len(x) // 12)])
+    ax.set_xticklabels([_labels[i] for i in range(0, len(_labels), max(1, len(x) // 12))],
+                       fontsize=12, rotation=45, ha='right')
+    ax.set_ylabel('Total Deposits ($)', fontsize=14)
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+    ax.tick_params(axis='y', labelsize=12)
+    ax.legend(fontsize=14, loc='upper left')
+    ax.spines[['top', 'right']].set_visible(False)
+    ax.grid(axis='y', alpha=0.3, color=GEN_COLORS['grid'])
+
+    plt.tight_layout()
+    plt.show()
+
+    # -------------------------------------------------------------------
+    # 3. Median monthly deposit trend
+    # -------------------------------------------------------------------
+    fig, ax = plt.subplots(figsize=(16, 6))
+    ax.set_title('Median Monthly Deposit per Account',
+                 fontsize=18, fontweight='bold', color=GEN_COLORS['dark_text'])
+
+    ax.bar(x, _monthly_medians, color=GEN_COLORS['info'], edgecolor='white')
+
+    ax.set_xticks(x[::max(1, len(x) // 12)])
+    ax.set_xticklabels([_labels[i] for i in range(0, len(_labels), max(1, len(x) // 12))],
+                       fontsize=12, rotation=45, ha='right')
+    ax.set_ylabel('Median Deposit ($)', fontsize=14)
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+    ax.tick_params(axis='y', labelsize=12)
+    ax.spines[['top', 'right']].set_visible(False)
+    ax.grid(axis='y', alpha=0.3, color=GEN_COLORS['grid'])
+
+    plt.tight_layout()
+    plt.show()
+
+    # -------------------------------------------------------------------
+    # 4. Depositor count trend
+    # -------------------------------------------------------------------
+    fig, ax = plt.subplots(figsize=(16, 5))
+    ax.set_title('Active Depositors by Month',
+                 fontsize=18, fontweight='bold', color=GEN_COLORS['dark_text'])
+
+    ax.bar(x, _monthly_counts, color=GEN_COLORS['success'], edgecolor='white')
+
+    ax.set_xticks(x[::max(1, len(x) // 12)])
+    ax.set_xticklabels([_labels[i] for i in range(0, len(_labels), max(1, len(x) // 12))],
+                       fontsize=12, rotation=45, ha='right')
+    ax.set_ylabel('Accounts with Deposits', fontsize=14)
+    ax.tick_params(axis='y', labelsize=12)
+    ax.spines[['top', 'right']].set_visible(False)
+    ax.grid(axis='y', alpha=0.3, color=GEN_COLORS['grid'])
+
+    plt.tight_layout()
+    plt.show()
+
+    # -------------------------------------------------------------------
+    # 5. Seasonal pattern analysis
+    # -------------------------------------------------------------------
+    _seasonal = {}
+    for mk, total in zip(_month_keys, _monthly_totals):
+        _mon = mk[:3]
+        if _mon not in _seasonal:
+            _seasonal[_mon] = []
+        _seasonal[_mon].append(total)
+
+    if len(_month_keys) > 12:
+        _mon_order = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+        _available_months = [m for m in _mon_order if m in _seasonal]
+        _seasonal_avg = [np.mean(_seasonal[m]) for m in _available_months]
+
+        fig, ax = plt.subplots(figsize=(12, 5))
+        ax.set_title('Seasonal Deposit Pattern (Avg by Calendar Month)',
+                     fontsize=18, fontweight='bold', color=GEN_COLORS['dark_text'])
+        ax.bar(range(len(_available_months)), _seasonal_avg,
+               color=GEN_COLORS['warning'], edgecolor='white')
+        ax.set_xticks(range(len(_available_months)))
+        ax.set_xticklabels(_available_months, fontsize=14)
+        ax.set_ylabel('Avg Total Deposits ($)', fontsize=14)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+        ax.tick_params(axis='y', labelsize=12)
+        ax.spines[['top', 'right']].set_visible(False)
+        ax.grid(axis='y', alpha=0.3, color=GEN_COLORS['grid'])
+        plt.tight_layout()
+        plt.show()
+
+    # -------------------------------------------------------------------
+    # 6. Multi-snapshot comparison (if available)
+    # -------------------------------------------------------------------
+    if ZA_HAS_MULTIPLE:
+        _snap_keys = sorted(ZA_SNAPSHOTS.keys())
+        _snap_metrics = []
+        for sk in _snap_keys:
+            _snap = ZA_SNAPSHOTS[sk]
+            _row = {
+                'snapshot': sk,
+                'avg_depcount365': _snap['depCount365'].mean() if 'depCount365' in _snap.columns else np.nan,
+                'avg_depamt365': _snap['depAmt365'].mean() if 'depAmt365' in _snap.columns else np.nan,
+                'avg_days_between': _snap['avgdaysbetweendeposits'].median() if 'avgdaysbetweendeposits' in _snap.columns else np.nan,
+            }
+            _snap_metrics.append(_row)
+
+        _snap_compare = pd.DataFrame(_snap_metrics)
+
+        fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+        fig.suptitle('ZAccounts Snapshot Comparison',
+                     fontsize=18, fontweight='bold', color=GEN_COLORS['dark_text'])
+
+        for ax, metric, title, fmt in zip(
+            axes,
+            ['avg_depcount365', 'avg_depamt365', 'avg_days_between'],
+            ['Avg Deposit Count (365d)', 'Avg Deposit Amt (365d)', 'Median Days Between'],
+            ['{:.1f}', '${:,.0f}', '{:.0f}']
+        ):
+            vals = _snap_compare[metric].values
+            ax.bar(range(len(_snap_keys)), vals, color=GEN_COLORS['info'], edgecolor='white')
+            ax.set_xticks(range(len(_snap_keys)))
+            ax.set_xticklabels(_snap_keys, fontsize=12, rotation=45, ha='right')
+            ax.set_title(title, fontsize=14, fontweight='bold')
+            ax.tick_params(labelsize=12)
+            ax.spines[['top', 'right']].set_visible(False)
+            for i, v in enumerate(vals):
+                if not np.isnan(v):
+                    ax.text(i, v, fmt.format(v), ha='center', va='bottom',
+                            fontsize=12, fontweight='bold')
+
+        plt.tight_layout()
+        plt.show()
+    else:
+        print("    Single ZAccounts snapshot -- skipping multi-snapshot comparison")
+
+    # -------------------------------------------------------------------
+    # 7. Summary
+    # -------------------------------------------------------------------
+    print(f"\n    Monthly Deposit Trend Summary:")
+    print(f"    {'='*50}")
+    print(f"    Months analyzed: {len(_month_keys)}")
+    print(f"    Total deposits (all time): ${sum(_monthly_totals):,.0f}")
+    if _monthly_totals:
+        print(f"    Peak month: {_labels[np.argmax(_monthly_totals)]} "
+              f"(${max(_monthly_totals):,.0f})")
+        print(f"    Lowest month: {_labels[np.argmin(_monthly_totals)]} "
+              f"(${min(_monthly_totals):,.0f})")

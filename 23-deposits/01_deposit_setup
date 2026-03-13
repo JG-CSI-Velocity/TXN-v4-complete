@@ -1,0 +1,206 @@
+# ===========================================================================
+# DEPOSIT ANALYSIS: Data Setup and File Loading
+# ===========================================================================
+# Load ZAccounts and ZTrends files, join to rewards_df, auto-discover
+# monthly deposit columns. All downstream deposit cells depend on this.
+
+import re
+import glob
+from collections import OrderedDict
+from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# 1. Configuration
+# ---------------------------------------------------------------------------
+CLIENT_ID = 1780
+
+# Data path -- override as needed per client
+try:
+    _data_path = DATA_PATH
+except NameError:
+    _data_path = Path(r"C:\Users\james.gilmore\analysis-platform\data")
+
+_data_path = Path(_data_path)
+
+print(f"    Client ID: {CLIENT_ID}")
+print(f"    Data path: {_data_path}")
+
+# ---------------------------------------------------------------------------
+# 2. Load ZAccounts (find most recent snapshot, support multiple)
+# ---------------------------------------------------------------------------
+_za_pattern = str(_data_path / f"{CLIENT_ID}_zaccounts_*.xlsx")
+_za_files = sorted(glob.glob(_za_pattern))
+
+if not _za_files:
+    _za_pattern_alt = str(_data_path / "**" / f"{CLIENT_ID}_zaccounts_*.xlsx")
+    _za_files = sorted(glob.glob(_za_pattern_alt, recursive=True))
+
+if not _za_files:
+    _za_pattern_alt2 = str(_data_path / "**" / f"*zaccounts*.xlsx")
+    _za_files = sorted(glob.glob(_za_pattern_alt2, recursive=True))
+
+_za_snapshots = {}
+if _za_files:
+    for f in _za_files:
+        _fname = Path(f).stem
+        _date_match = re.search(r'(\d{8})', _fname)
+        _snap_key = _date_match.group(1) if _date_match else _fname
+        print(f"    Loading ZAccounts: {Path(f).name}")
+        _za_snapshots[_snap_key] = pd.read_excel(f)
+
+    _latest_key = sorted(_za_snapshots.keys())[-1]
+    zaccounts_df = _za_snapshots[_latest_key].copy()
+    ZA_SNAPSHOTS = _za_snapshots
+    ZA_HAS_MULTIPLE = len(_za_snapshots) > 1
+    print(f"    ZAccounts loaded: {len(zaccounts_df):,} rows, "
+          f"{len(zaccounts_df.columns)} columns")
+    print(f"    Snapshots available: {len(_za_snapshots)} "
+          f"({', '.join(sorted(_za_snapshots.keys()))})")
+    print(f"    Using latest snapshot: {_latest_key}")
+else:
+    zaccounts_df = pd.DataFrame()
+    ZA_SNAPSHOTS = {}
+    ZA_HAS_MULTIPLE = False
+    print("    WARNING: No ZAccounts files found")
+
+# ---------------------------------------------------------------------------
+# 3. Load ZTrends
+# ---------------------------------------------------------------------------
+_zt_pattern = str(_data_path / f"{CLIENT_ID}_ztrends_*.xlsx")
+_zt_files = sorted(glob.glob(_zt_pattern))
+
+if not _zt_files:
+    _zt_pattern_alt = str(_data_path / "**" / f"{CLIENT_ID}_ztrends_*.xlsx")
+    _zt_files = sorted(glob.glob(_zt_pattern_alt, recursive=True))
+
+if not _zt_files:
+    _zt_pattern_alt2 = str(_data_path / "**" / f"*ztrends*.xlsx")
+    _zt_files = sorted(glob.glob(_zt_pattern_alt2, recursive=True))
+
+if _zt_files:
+    _zt_file = _zt_files[-1]
+    print(f"    Loading ZTrends: {Path(_zt_file).name}")
+    ztrends_df = pd.read_excel(_zt_file)
+    print(f"    ZTrends loaded: {len(ztrends_df):,} rows, "
+          f"{len(ztrends_df.columns)} columns")
+else:
+    ztrends_df = pd.DataFrame()
+    print("    WARNING: No ZTrends files found")
+
+# ---------------------------------------------------------------------------
+# 4. Join ZAccounts to rewards_df
+# ---------------------------------------------------------------------------
+_join_left = 'Acct Number'
+_join_right = 'HASHED_ACCOUNT'
+
+if not zaccounts_df.empty and _join_left in rewards_df.columns:
+    if _join_right not in zaccounts_df.columns:
+        _possible = [c for c in zaccounts_df.columns
+                     if 'hashed' in c.lower() or 'account' in c.lower()]
+        if _possible:
+            _join_right = _possible[0]
+            print(f"    Join key adjusted to: {_join_right}")
+
+    _za_deduped = zaccounts_df.drop_duplicates(subset=[_join_right], keep='last')
+    _pre_count = len(rewards_df)
+
+    deposits_df = rewards_df.merge(
+        _za_deduped,
+        left_on=_join_left,
+        right_on=_join_right,
+        how='left',
+        suffixes=('', '_za')
+    )
+
+    _matched = deposits_df[_join_right].notna().sum()
+    print(f"    Join complete: {_matched:,} of {_pre_count:,} accounts matched "
+          f"({_matched / _pre_count * 100:.1f}%)")
+else:
+    deposits_df = rewards_df.copy()
+    print("    WARNING: Could not join ZAccounts -- using rewards_df only")
+
+# ---------------------------------------------------------------------------
+# 5. Auto-discover monthly columns from rewards_df
+# ---------------------------------------------------------------------------
+_month_order = {
+    'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
+    'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12,
+}
+
+def _month_sort_key(key):
+    """Convert 'Sep24' to (2024, 9) for chronological sorting."""
+    mon_str = key[:3]
+    yr_str = key[3:]
+    yr = int(yr_str) + 2000
+    return (yr, _month_order.get(mon_str, 0))
+
+_mtd_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+MTD$')
+_spend_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Spend$')
+_swipes_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Swipes$')
+_pin_amt_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+PIN\s+\$$')
+_sig_amt_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Sig\s+\$$')
+_pin_cnt_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+PIN\s+#$')
+_sig_cnt_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Sig\s+#$')
+
+mtd_cols = OrderedDict()
+spend_cols = OrderedDict()
+swipes_cols = OrderedDict()
+pin_amt_cols = OrderedDict()
+sig_amt_cols = OrderedDict()
+pin_cnt_cols = OrderedDict()
+sig_cnt_cols = OrderedDict()
+
+for col in rewards_df.columns:
+    for pattern, target in [
+        (_mtd_pattern, mtd_cols),
+        (_spend_pattern, spend_cols),
+        (_swipes_pattern, swipes_cols),
+        (_pin_amt_pattern, pin_amt_cols),
+        (_sig_amt_pattern, sig_amt_cols),
+        (_pin_cnt_pattern, pin_cnt_cols),
+        (_sig_cnt_pattern, sig_cnt_cols),
+    ]:
+        m = pattern.match(col)
+        if m:
+            target[m.group(1)] = col
+            break
+
+# Sort all column maps chronologically
+for _map in [mtd_cols, spend_cols, swipes_cols,
+             pin_amt_cols, sig_amt_cols, pin_cnt_cols, sig_cnt_cols]:
+    _sorted = OrderedDict(sorted(_map.items(), key=lambda x: _month_sort_key(x[0])))
+    _map.clear()
+    _map.update(_sorted)
+
+DEP_MONTHS = sorted(
+    set(list(mtd_cols.keys()) + list(spend_cols.keys())),
+    key=_month_sort_key
+)
+DEP_MONTH_LABELS = [f"{m[:3]} '{m[3:]}" for m in DEP_MONTHS]
+
+print(f"\n    Discovered monthly columns:")
+print(f"      MTD (deposits): {len(mtd_cols)}")
+print(f"      Spend:          {len(spend_cols)}")
+print(f"      Swipes:         {len(swipes_cols)}")
+print(f"      PIN $:          {len(pin_amt_cols)}")
+print(f"      Sig $:          {len(sig_amt_cols)}")
+print(f"      PIN #:          {len(pin_cnt_cols)}")
+print(f"      Sig #:          {len(sig_cnt_cols)}")
+if DEP_MONTHS:
+    print(f"      Month span: {DEP_MONTHS[0]} to {DEP_MONTHS[-1]}")
+
+# ---------------------------------------------------------------------------
+# 6. Detect ICS fields
+# ---------------------------------------------------------------------------
+HAS_ICS = 'ICS_Account' in rewards_df.columns
+print(f"\n    ICS fields available: {HAS_ICS}")
+
+# ---------------------------------------------------------------------------
+# 7. Summary
+# ---------------------------------------------------------------------------
+print(f"\n    === Deposit Analysis Setup Complete ===")
+print(f"    rewards_df:   {len(rewards_df):,} accounts, {len(rewards_df.columns)} fields")
+print(f"    deposits_df:  {len(deposits_df):,} accounts, {len(deposits_df.columns)} fields")
+print(f"    zaccounts_df: {len(zaccounts_df):,} rows")
+print(f"    ztrends_df:   {len(ztrends_df):,} rows")
+print(f"    Monthly periods: {len(DEP_MONTHS)}")

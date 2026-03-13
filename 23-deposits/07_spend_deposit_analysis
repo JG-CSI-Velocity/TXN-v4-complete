@@ -1,0 +1,181 @@
+# ===========================================================================
+# DEPOSIT ANALYSIS: Spend vs Deposit Relationship
+# ===========================================================================
+# Are accounts depositing AND spending? Monthly spend-to-deposit ratios,
+# identification of dormant card users and at-risk spenders.
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import numpy as np
+
+# ---------------------------------------------------------------------------
+# 1. Monthly spend vs MTD comparison
+# ---------------------------------------------------------------------------
+_paired_months = [mk for mk in DEP_MONTHS
+                  if mk in spend_cols and mk in mtd_cols]
+
+_monthly_spend_totals = []
+_monthly_mtd_totals = []
+_monthly_ratios = []
+
+for mk in _paired_months:
+    _sp = pd.to_numeric(rewards_df[spend_cols[mk]], errors='coerce').sum()
+    _mt = pd.to_numeric(rewards_df[mtd_cols[mk]], errors='coerce').sum()
+    _monthly_spend_totals.append(_sp)
+    _monthly_mtd_totals.append(_mt)
+    _ratio = _sp / _mt if _mt > 0 else np.nan
+    _monthly_ratios.append(_ratio)
+
+_paired_labels = [f"{m[:3]} '{m[3:]}" for m in _paired_months]
+
+if not _paired_months:
+    print("    WARNING: No paired spend/MTD months found -- skipping analysis")
+else:
+    # ------------------------------------------------------------------
+    # 2. Dual-axis: Monthly spend vs monthly MTD over time
+    # ------------------------------------------------------------------
+    fig, ax1 = plt.subplots(figsize=(16, 7))
+    fig.suptitle('Monthly Spend vs Deposits Over Time',
+                 fontsize=20, fontweight='bold', color=GEN_COLORS['dark_text'])
+
+    x = np.arange(len(_paired_months))
+
+    color_spend = GEN_COLORS['accent']
+    color_dep = GEN_COLORS['success']
+
+    ax1.plot(x, _monthly_spend_totals, color=color_spend, linewidth=2.5,
+             marker='o', markersize=4, label='Total Spend')
+    ax1.set_ylabel('Total Spend ($)', fontsize=14, color=color_spend)
+    ax1.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+    ax1.tick_params(axis='y', labelsize=12, labelcolor=color_spend)
+
+    ax2 = ax1.twinx()
+    ax2.plot(x, _monthly_mtd_totals, color=color_dep, linewidth=2.5,
+             marker='s', markersize=4, label='Total Deposits (MTD)')
+    ax2.set_ylabel('Total Deposits ($)', fontsize=14, color=color_dep)
+    ax2.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+    ax2.tick_params(axis='y', labelsize=12, labelcolor=color_dep)
+
+    _step = max(1, len(x) // 12)
+    ax1.set_xticks(x[::_step])
+    ax1.set_xticklabels([_paired_labels[i] for i in range(0, len(_paired_labels), _step)],
+                        fontsize=12, rotation=45, ha='right')
+
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, fontsize=14, loc='upper left')
+
+    ax1.spines[['top']].set_visible(False)
+    ax1.grid(axis='y', alpha=0.3, color=GEN_COLORS['grid'])
+
+    plt.tight_layout()
+    plt.show()
+
+    # ------------------------------------------------------------------
+    # 3. Spend-to-deposit ratio by month
+    # ------------------------------------------------------------------
+    _valid_ratios = [(l, r) for l, r in zip(_paired_labels, _monthly_ratios)
+                     if not np.isnan(r) and r < 10]
+
+    if _valid_ratios:
+        fig, ax = plt.subplots(figsize=(16, 5))
+        ax.set_title('Spend-to-Deposit Ratio by Month',
+                     fontsize=18, fontweight='bold', color=GEN_COLORS['dark_text'])
+        ax.set_ylabel('Spend / Deposits', fontsize=14)
+
+        _r_labels = [v[0] for v in _valid_ratios]
+        _r_vals = [v[1] for v in _valid_ratios]
+        _r_colors = [GEN_COLORS['accent'] if v > 1 else GEN_COLORS['success']
+                     for v in _r_vals]
+
+        ax.bar(range(len(_r_labels)), _r_vals, color=_r_colors, edgecolor='white')
+        ax.axhline(1.0, color=GEN_COLORS['muted'], linestyle='--', linewidth=1.5,
+                   label='Ratio = 1.0')
+
+        _step = max(1, len(_r_labels) // 12)
+        ax.set_xticks(range(0, len(_r_labels), _step))
+        ax.set_xticklabels(_r_labels[::_step], fontsize=12, rotation=45, ha='right')
+        ax.tick_params(axis='y', labelsize=12)
+        ax.legend(fontsize=12)
+        ax.spines[['top', 'right']].set_visible(False)
+        ax.grid(axis='y', alpha=0.3, color=GEN_COLORS['grid'])
+
+        plt.tight_layout()
+        plt.show()
+
+    # ------------------------------------------------------------------
+    # 4. Scatter: Total Spend vs Deposit Amount (365d)
+    # ------------------------------------------------------------------
+    _spend_total_col = 'Total Spend' if 'Total Spend' in deposits_df.columns else None
+    _dep_amt_col = 'depAmt365' if 'depAmt365' in deposits_df.columns else None
+
+    if _spend_total_col and _dep_amt_col:
+        _sc_df = deposits_df[[_spend_total_col, _dep_amt_col]].copy()
+        _sc_df[_spend_total_col] = pd.to_numeric(_sc_df[_spend_total_col], errors='coerce')
+        _sc_df[_dep_amt_col] = pd.to_numeric(_sc_df[_dep_amt_col], errors='coerce')
+        _sc_df = _sc_df.dropna()
+        _sc_df = _sc_df[(_sc_df[_spend_total_col] > 0) & (_sc_df[_dep_amt_col] > 0)]
+
+        _sp_99 = _sc_df[_spend_total_col].quantile(0.99)
+        _da_99 = _sc_df[_dep_amt_col].quantile(0.99)
+        _sc_clip = _sc_df[
+            (_sc_df[_spend_total_col] <= _sp_99) & (_sc_df[_dep_amt_col] <= _da_99)
+        ]
+
+        fig, ax = plt.subplots(figsize=(10, 8))
+        ax.scatter(_sc_clip[_spend_total_col], _sc_clip[_dep_amt_col],
+                   alpha=0.2, s=12, color=GEN_COLORS['primary'], edgecolors='none')
+        ax.set_title('Total Spend vs Total Deposits (365d)',
+                     fontsize=18, fontweight='bold', color=GEN_COLORS['dark_text'])
+        ax.set_xlabel('Total Card Spend ($)', fontsize=14)
+        ax.set_ylabel('Total Deposits (365d) ($)', fontsize=14)
+        ax.xaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+        ax.tick_params(labelsize=12)
+        ax.spines[['top', 'right']].set_visible(False)
+        ax.grid(alpha=0.3, color=GEN_COLORS['grid'])
+
+        plt.tight_layout()
+        plt.show()
+
+    # ------------------------------------------------------------------
+    # 5. Identify behavioral segments
+    # ------------------------------------------------------------------
+    _spend_col_12 = 'last 12-mon spend' if 'last 12-mon spend' in deposits_df.columns else _spend_total_col
+
+    if _spend_col_12 and _dep_amt_col:
+        _seg_df = deposits_df[[_spend_col_12, _dep_amt_col]].copy()
+        _seg_df[_spend_col_12] = pd.to_numeric(_seg_df[_spend_col_12], errors='coerce')
+        _seg_df[_dep_amt_col] = pd.to_numeric(_seg_df[_dep_amt_col], errors='coerce')
+
+        _spend_med = _seg_df[_spend_col_12].median()
+        _dep_med = _seg_df[_dep_amt_col].median()
+
+        _dormant = (
+            (_seg_df[_dep_amt_col] > _dep_med) & (_seg_df[_spend_col_12] <= _spend_med * 0.1)
+        ).sum()
+        _heavy_spend = (
+            (_seg_df[_spend_col_12] > _spend_med * 2) & (_seg_df[_dep_amt_col] <= _dep_med * 0.5)
+        ).sum()
+        _balanced = (
+            (_seg_df[_spend_col_12] > 0) & (_seg_df[_dep_amt_col] > 0)
+        ).sum()
+
+        print(f"\n    Spend-Deposit Behavioral Segments:")
+        print(f"    {'='*55}")
+        print(f"    Deposit but rarely spend (dormant card): {_dormant:,} accounts")
+        print(f"    Spend heavily, low deposits (at-risk):   {_heavy_spend:,} accounts")
+        print(f"    Active in both (balanced):               {_balanced:,} accounts")
+
+    # ------------------------------------------------------------------
+    # 6. Summary
+    # ------------------------------------------------------------------
+    if _monthly_ratios:
+        _valid = [r for r in _monthly_ratios if not np.isnan(r)]
+        if _valid:
+            print(f"\n    Spend-to-Deposit Ratio Summary:")
+            print(f"    {'='*50}")
+            print(f"    Average ratio: {np.mean(_valid):.2f}")
+            print(f"    Median ratio:  {np.median(_valid):.2f}")
+            print(f"    Months > 1.0 (spend > deposits): "
+                  f"{sum(1 for r in _valid if r > 1)}/{len(_valid)}")

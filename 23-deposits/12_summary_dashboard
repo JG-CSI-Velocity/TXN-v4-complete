@@ -1,0 +1,280 @@
+# ===========================================================================
+# DEPOSIT ANALYSIS: Executive Summary Dashboard
+# ===========================================================================
+# Standalone summary combining KPIs, key charts, and findings.
+# Designed for executive presentations.
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+from matplotlib.patches import FancyBboxPatch
+from matplotlib.gridspec import GridSpec
+import numpy as np
+
+# ---------------------------------------------------------------------------
+# 1. Calculate summary KPIs
+# ---------------------------------------------------------------------------
+_total = len(deposits_df)
+
+# Deposit coverage
+_has_dep365 = 'depCount365' in deposits_df.columns
+_dep365_active = (
+    (pd.to_numeric(deposits_df['depCount365'], errors='coerce') > 0).sum()
+    if _has_dep365 else 0
+)
+_dep365_pct = _dep365_active / _total * 100 if _total > 0 else 0
+
+# Average deposit frequency
+_avg_freq = (
+    pd.to_numeric(deposits_df['avgdaysbetweendeposits'], errors='coerce').median()
+    if 'avgdaysbetweendeposits' in deposits_df.columns else np.nan
+)
+
+# Average deposit amount
+_avg_amt = (
+    pd.to_numeric(deposits_df['depAmt365'], errors='coerce').mean()
+    if 'depAmt365' in deposits_df.columns else np.nan
+)
+
+# Deposit tier distribution
+_tier_pcts = {}
+if 'deposit_tier' in deposits_df.columns:
+    for tier in DEPOSIT_TIER_ORDER:
+        _tier_pcts[tier] = (deposits_df['deposit_tier'] == tier).mean() * 100
+
+# Swipe-deposit correlation
+_corr_val = np.nan
+_swipe_col_sum = None
+for candidate in ['Total Swipes', 'last 12-mon swipes']:
+    if candidate in deposits_df.columns:
+        _swipe_col_sum = candidate
+        break
+
+if _swipe_col_sum and _has_dep365:
+    _sw = pd.to_numeric(deposits_df[_swipe_col_sum], errors='coerce')
+    _dc = pd.to_numeric(deposits_df['depCount365'], errors='coerce')
+    _valid = _sw.notna() & _dc.notna()
+    if _valid.sum() > 10:
+        _corr_val = _sw[_valid].corr(_dc[_valid])
+
+# Spend-to-deposit ratio (latest 3 months)
+_recent_spend = 0
+_recent_dep = 0
+_recent_months = list(spend_cols.keys())[-3:] if spend_cols else []
+for mk in _recent_months:
+    if mk in spend_cols and mk in mtd_cols:
+        _recent_spend += pd.to_numeric(rewards_df[spend_cols[mk]], errors='coerce').sum()
+        _recent_dep += pd.to_numeric(rewards_df[mtd_cols[mk]], errors='coerce').sum()
+_spend_dep_ratio = _recent_spend / _recent_dep if _recent_dep > 0 else np.nan
+
+# ---------------------------------------------------------------------------
+# 2. KPI cards (top row)
+# ---------------------------------------------------------------------------
+_summary_kpis = [
+    {
+        'label': 'Active Depositors',
+        'value': f"{_dep365_active:,}",
+        'sub': f"{_dep365_pct:.0f}% of portfolio",
+        'color': GEN_COLORS['success'],
+    },
+    {
+        'label': 'Median Frequency',
+        'value': f"{_avg_freq:.0f} days" if not np.isnan(_avg_freq) else 'N/A',
+        'sub': 'Between deposits',
+        'color': GEN_COLORS['info'],
+    },
+    {
+        'label': 'Avg Deposit (365d)',
+        'value': f"${_avg_amt:,.0f}" if not np.isnan(_avg_amt) else 'N/A',
+        'sub': 'Per account',
+        'color': GEN_COLORS['primary'],
+    },
+    {
+        'label': 'Strong Depositors',
+        'value': f"{_tier_pcts.get('Strong', 0):.0f}%",
+        'sub': 'Deposits every 14 days or less',
+        'color': GEN_COLORS['success'],
+    },
+    {
+        'label': 'Swipe-Deposit r',
+        'value': f"{_corr_val:.3f}" if not np.isnan(_corr_val) else 'N/A',
+        'sub': 'Pearson correlation',
+        'color': GEN_COLORS['warning'],
+    },
+    {
+        'label': 'Spend/Deposit Ratio',
+        'value': f"{_spend_dep_ratio:.2f}" if not np.isnan(_spend_dep_ratio) else 'N/A',
+        'sub': 'Last 3 months',
+        'color': GEN_COLORS['accent'],
+    },
+]
+
+fig, axes = plt.subplots(1, len(_summary_kpis), figsize=(20, 4))
+fig.suptitle('Deposit Analysis -- Executive Summary',
+             fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.08)
+
+for idx, ax in enumerate(axes):
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.axis('off')
+    kpi = _summary_kpis[idx]
+    _box = FancyBboxPatch(
+        (0.05, 0.05), 0.9, 0.9,
+        boxstyle="round,pad=0.05",
+        facecolor=GEN_COLORS['light_bg'],
+        edgecolor=kpi['color'],
+        linewidth=3,
+    )
+    ax.add_patch(_box)
+    ax.text(0.5, 0.78, kpi['label'], transform=ax.transAxes,
+            ha='center', va='center', fontsize=12, fontweight='bold',
+            color=GEN_COLORS['muted'])
+    ax.text(0.5, 0.45, kpi['value'], transform=ax.transAxes,
+            ha='center', va='center', fontsize=24, fontweight='bold',
+            color=kpi['color'])
+    ax.text(0.5, 0.16, kpi['sub'], transform=ax.transAxes,
+            ha='center', va='center', fontsize=10,
+            color=GEN_COLORS['muted'])
+
+plt.tight_layout()
+plt.show()
+
+# ---------------------------------------------------------------------------
+# 3. Key chart: Deposit tier distribution (pie)
+# ---------------------------------------------------------------------------
+if _tier_pcts:
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
+
+    # Pie chart
+    _pie_labels = [t for t in DEPOSIT_TIER_ORDER if t in _tier_pcts]
+    _pie_vals = [_tier_pcts[t] for t in _pie_labels]
+    _pie_colors = [DEPOSIT_TIER_PALETTE.get(t, GEN_COLORS['muted']) for t in _pie_labels]
+
+    wedges, texts, autotexts = ax1.pie(
+        _pie_vals, labels=_pie_labels, colors=_pie_colors,
+        autopct='%1.0f%%', startangle=90, textprops={'fontsize': 14}
+    )
+    for autotext in autotexts:
+        autotext.set_fontweight('bold')
+        autotext.set_fontsize(14)
+    ax1.set_title('Deposit Health Distribution',
+                  fontsize=16, fontweight='bold', color=GEN_COLORS['dark_text'])
+
+    # Swipe category vs deposit count (if available)
+    _swipecat_col = None
+    for candidate in ['SwipeCat12', 'SwipeCat3']:
+        if candidate in deposits_df.columns:
+            _swipecat_col = candidate
+            break
+
+    if _swipecat_col and _has_dep365:
+        _cat_dep = (
+            deposits_df.groupby(_swipecat_col)
+            .apply(
+                lambda g: pd.to_numeric(g['depCount365'], errors='coerce').mean(),
+                include_groups=False
+            )
+            .sort_values(ascending=True)
+        )
+
+        ax2.barh(_cat_dep.index.astype(str), _cat_dep.values,
+                 color=GEN_COLORS['info'], edgecolor='white', height=0.6)
+        ax2.set_title(f'Avg Deposits by {_swipecat_col}',
+                      fontsize=16, fontweight='bold', color=GEN_COLORS['dark_text'])
+        ax2.set_xlabel('Avg Deposit Count (365d)', fontsize=14)
+        ax2.tick_params(labelsize=12)
+        ax2.spines[['top', 'right']].set_visible(False)
+        for i, val in enumerate(_cat_dep.values):
+            ax2.text(val, i, f' {val:.1f}', va='center',
+                     fontsize=12, fontweight='bold')
+    else:
+        ax2.axis('off')
+        ax2.text(0.5, 0.5, 'Swipe category data\nnot available',
+                 ha='center', va='center', fontsize=14,
+                 color=GEN_COLORS['muted'], transform=ax2.transAxes)
+
+    plt.tight_layout()
+    plt.show()
+
+# ---------------------------------------------------------------------------
+# 4. Spend vs deposit trend (recent 12 months)
+# ---------------------------------------------------------------------------
+_recent_12 = list(spend_cols.keys())[-12:]
+_r12_spend = []
+_r12_dep = []
+_r12_labels = []
+
+for mk in _recent_12:
+    if mk in spend_cols and mk in mtd_cols:
+        _r12_spend.append(pd.to_numeric(rewards_df[spend_cols[mk]], errors='coerce').sum())
+        _r12_dep.append(pd.to_numeric(rewards_df[mtd_cols[mk]], errors='coerce').sum())
+        _r12_labels.append(f"{mk[:3]} '{mk[3:]}")
+
+if _r12_spend and _r12_dep:
+    fig, ax1 = plt.subplots(figsize=(14, 5))
+    ax1.set_title('Spend vs Deposits -- Last 12 Months',
+                  fontsize=18, fontweight='bold', color=GEN_COLORS['dark_text'])
+
+    x = np.arange(len(_r12_labels))
+    ax1.plot(x, _r12_spend, color=GEN_COLORS['accent'], linewidth=2.5,
+             marker='o', markersize=5, label='Spend')
+    ax1.set_ylabel('Total ($)', fontsize=14)
+    ax1.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+
+    ax2 = ax1.twinx()
+    ax2.plot(x, _r12_dep, color=GEN_COLORS['success'], linewidth=2.5,
+             marker='s', markersize=5, label='Deposits')
+    ax2.set_ylabel('Total Deposits ($)', fontsize=14)
+    ax2.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+
+    ax1.set_xticks(x)
+    ax1.set_xticklabels(_r12_labels, fontsize=12, rotation=45, ha='right')
+
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, fontsize=13, loc='upper left')
+
+    ax1.spines[['top']].set_visible(False)
+    ax1.grid(axis='y', alpha=0.3, color=GEN_COLORS['grid'])
+    ax1.tick_params(axis='y', labelsize=12)
+    ax2.tick_params(axis='y', labelsize=12)
+
+    plt.tight_layout()
+    plt.show()
+
+# ---------------------------------------------------------------------------
+# 5. Key findings
+# ---------------------------------------------------------------------------
+print(f"\n    {'='*60}")
+print(f"    KEY FINDINGS -- DEPOSIT ANALYSIS")
+print(f"    {'='*60}")
+print(f"")
+print(f"    1. PORTFOLIO COVERAGE")
+print(f"       {_dep365_pct:.0f}% of accounts had deposits in the last 365 days")
+print(f"       Median deposit frequency: {_avg_freq:.0f} days"
+      if not np.isnan(_avg_freq) else "       Median deposit frequency: N/A")
+print(f"")
+print(f"    2. DEPOSIT HEALTH")
+if _tier_pcts:
+    print(f"       Strong depositors: {_tier_pcts.get('Strong', 0):.0f}%")
+    print(f"       Moderate:          {_tier_pcts.get('Moderate', 0):.0f}%")
+    print(f"       Light:             {_tier_pcts.get('Light', 0):.0f}%")
+    print(f"       Inactive:          {_tier_pcts.get('Inactive', 0):.0f}%")
+print(f"")
+print(f"    3. SWIPE-DEPOSIT RELATIONSHIP")
+if not np.isnan(_corr_val):
+    _strength = "strong" if abs(_corr_val) > 0.5 else "moderate" if abs(_corr_val) > 0.3 else "weak"
+    _direction = "positive" if _corr_val > 0 else "negative"
+    print(f"       Correlation: r = {_corr_val:.3f} ({_strength} {_direction})")
+    print(f"       Higher swipers {'do' if _corr_val > 0.1 else 'do not'} tend to deposit more")
+else:
+    print(f"       Correlation data not available")
+print(f"")
+print(f"    4. SPEND-TO-DEPOSIT RATIO")
+if not np.isnan(_spend_dep_ratio):
+    print(f"       Last 3 months: {_spend_dep_ratio:.2f}")
+    if _spend_dep_ratio > 1:
+        print(f"       Members are spending MORE than they deposit (high engagement)")
+    else:
+        print(f"       Members deposit more than they spend on card")
+print(f"")
+print(f"    {'='*60}")
