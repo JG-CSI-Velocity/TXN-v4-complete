@@ -62,14 +62,15 @@ if 'Mobile_Deposits_90' in _df.columns:
 
 # Risk
 if 'nsfodfeestodepositsratio90days' in _df.columns:
-    _fee = _df['nsfodfeestodepositsratio90days'].dropna()
+    _fee = pd.to_numeric(_df['nsfodfeestodepositsratio90days'], errors='coerce').dropna()
     _high_fee = (_fee > 0.20).sum()
     print(f"\n  RISK SIGNALS")
     print(f"    High fee pressure (>20%): {_high_fee:,} ({_high_fee/_total*100:.1f}%)")
 if 'avgrepaymentrate' in _df.columns:
-    _repay = _df['avgrepaymentrate'].dropna()
+    _repay = pd.to_numeric(_df['avgrepaymentrate'], errors='coerce').dropna()
+    _repay = _repay[_repay > 0]
     _low_repay = (_repay < 0.5).sum()
-    print(f"    Low repayment (<0.50): {_low_repay:,} ({_low_repay/_total*100:.1f}%)")
+    print(f"    Low repayment (<0.50): {_low_repay:,} of {len(_repay):,} w/ OD activity")
 
 # Cross-Source
 if 'Total Spend' in _df.columns and 'depAmt365' in _df.columns:

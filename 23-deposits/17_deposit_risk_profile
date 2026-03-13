@@ -34,10 +34,12 @@ else:
     )
 
     # 2. High fee pressure
-    _df['_risk_fees'] = np.where(_df['nsfodfeestodepositsratio90days'] > 0.20, 1, 0)
+    _fee_vals = pd.to_numeric(_df['nsfodfeestodepositsratio90days'], errors='coerce').fillna(0)
+    _df['_risk_fees'] = np.where(_fee_vals > 0.20, 1, 0)
 
-    # 3. Low repayment
-    _df['_risk_repayment'] = np.where(_df['avgrepaymentrate'] < 0.5, 1, 0)
+    # 3. Low repayment (NaN treated as no OD activity = not a risk signal)
+    _repay_vals = pd.to_numeric(_df['avgrepaymentrate'], errors='coerce')
+    _df['_risk_repayment'] = np.where(_repay_vals.notna() & (_repay_vals < 0.5), 1, 0)
 
     # Composite: sum of signals
     _df['_risk_score'] = _df['_risk_velocity'] + _df['_risk_fees'] + _df['_risk_repayment']

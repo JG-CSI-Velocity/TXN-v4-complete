@@ -47,10 +47,15 @@ _mobile_dep = (
     if 'Mobile_Deposits_90' in _df.columns else 0
 )
 
-_avg_repay = (
-    _df['avgrepaymentrate'].mean()
-    if 'avgrepaymentrate' in _df.columns else np.nan
-)
+if 'avgrepaymentrate' in _df.columns:
+    _repay_vals = pd.to_numeric(_df['avgrepaymentrate'], errors='coerce')
+    _repay_valid = _repay_vals.dropna()
+    _repay_valid = _repay_valid[_repay_valid > 0]
+    _avg_repay = _repay_valid.mean() if len(_repay_valid) > 0 else np.nan
+    _repay_n = len(_repay_valid)
+else:
+    _avg_repay = np.nan
+    _repay_n = 0
 
 # ---------------------------------------------------------------------------
 # 2. KPI card definitions
@@ -101,7 +106,7 @@ _kpis = [
     {
         'label': 'Avg Repayment Rate',
         'value': f"{_avg_repay:.2f}" if not np.isnan(_avg_repay) else 'N/A',
-        'sub': 'OD repayment strength',
+        'sub': f"Among {_repay_n:,} accounts w/ OD activity" if _repay_n > 0 else 'No OD activity data',
         'color': GEN_COLORS['info'],
     },
 ]

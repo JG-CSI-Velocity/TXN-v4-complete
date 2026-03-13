@@ -15,7 +15,8 @@ if len(_df) < _MIN_ACCOUNTS:
 elif _field not in _df.columns:
     print(f"    WARNING: '{_field}' not available -- skipping")
 else:
-    _df = _df[_df[_field].notna()].copy()
+    _df[_field] = pd.to_numeric(_df[_field], errors='coerce')
+    _df = _df[_df[_field].notna() & (_df[_field] > 0)].copy()
     _total = len(_df)
 
     _bins = [-float('inf'), 0.5, 0.8, float('inf')]

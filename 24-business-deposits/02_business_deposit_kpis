@@ -29,7 +29,15 @@ else:
         if 'autodeposit' in _df.columns else np.nan
     )
     _mobile_dep = (_df['Mobile_Deposits_90'] > 0).sum() if 'Mobile_Deposits_90' in _df.columns else 0
-    _avg_repay = _df['avgrepaymentrate'].mean() if 'avgrepaymentrate' in _df.columns else np.nan
+    if 'avgrepaymentrate' in _df.columns:
+        _repay_vals = pd.to_numeric(_df['avgrepaymentrate'], errors='coerce')
+        _repay_valid = _repay_vals.dropna()
+        _repay_valid = _repay_valid[_repay_valid > 0]
+        _avg_repay = _repay_valid.mean() if len(_repay_valid) > 0 else np.nan
+        _repay_n = len(_repay_valid)
+    else:
+        _avg_repay = np.nan
+        _repay_n = 0
 
     _kpis = [
         {'label': 'Business Accounts', 'value': f"{_total:,}", 'sub': 'Open accounts in portfolio', 'color': GEN_COLORS['primary']},
@@ -39,7 +47,7 @@ else:
         {'label': 'Avg Deposit (365d)', 'value': f"${_avg_dep_amt:,.0f}" if not np.isnan(_avg_dep_amt) else 'N/A', 'sub': 'Among depositors', 'color': GEN_COLORS['accent']},
         {'label': 'Median Balance', 'value': f"${_median_bal:,.0f}" if not np.isnan(_median_bal) else 'N/A', 'sub': 'Current balance', 'color': GEN_COLORS['primary']},
         {'label': 'Auto-Deposit Rate', 'value': f"{_auto_rate:.1f}%" if not np.isnan(_auto_rate) else 'N/A', 'sub': f"{int(_total*_auto_rate/100):,} accounts" if not np.isnan(_auto_rate) else '', 'color': GEN_COLORS['success']},
-        {'label': 'Avg Repayment Rate', 'value': f"{_avg_repay:.2f}" if not np.isnan(_avg_repay) else 'N/A', 'sub': 'OD repayment strength', 'color': GEN_COLORS['info']},
+        {'label': 'Avg Repayment Rate', 'value': f"{_avg_repay:.2f}" if not np.isnan(_avg_repay) else 'N/A', 'sub': f"Among {_repay_n:,} accounts w/ OD activity" if _repay_n > 0 else 'No OD activity data', 'color': GEN_COLORS['info']},
     ]
 
     fig, axes = plt.subplots(2, 4, figsize=(20, 7))
