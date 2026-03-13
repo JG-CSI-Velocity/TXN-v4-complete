@@ -79,14 +79,15 @@ else:
         print(f"  {'-'*12}  {'-'*8}  {'-'*10}  {'-'*8}")
         for mk in _mail_keys:
             _col = _mail_cols[mk]
+            # Mail column values: SO = Sent Only, SR = Sent & Responded
             _vals = _df[_col].dropna()
             if len(_vals) > 0:
-                _responded = (_vals.astype(str).str.strip().str.lower().isin(
-                    ['yes', 'y', 'true', '1', '1.0', 'responded', 'response']
-                ) | (_vals.apply(lambda v: isinstance(v, (int, float)) and v > 0))).sum()
-                _rate = _responded / len(_vals) * 100
+                _val_str = _vals.astype(str).str.strip().str.upper()
+                _mailed_count = (_val_str.isin(['SO', 'SR'])).sum()
+                _responded = (_val_str == 'SR').sum()
+                _rate = _responded / _mailed_count * 100 if _mailed_count > 0 else 0
                 _lbl = f"{mk[:3]} '{mk[3:]}"
-                print(f"  {_lbl:<12s}  {len(_vals):>8,}  {_responded:>10,}  {_rate:>7.1f}%")
+                print(f"  {_lbl:<12s}  {_mailed_count:>8,}  {_responded:>10,}  {_rate:>7.1f}%")
         print()
 
     # Chart 1: metric comparison

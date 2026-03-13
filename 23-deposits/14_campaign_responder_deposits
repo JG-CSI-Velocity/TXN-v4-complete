@@ -88,15 +88,16 @@ else:
             _col = _mail_cols[mk]
             _mailed = _df[_col].notna().sum()
             # Typically: non-null = was mailed, value indicates response
+            # Mail column values: SO = Sent Only, SR = Sent & Responded
             _vals = _df[_col].dropna()
             if len(_vals) > 0:
-                _responded = (_vals.astype(str).str.strip().str.lower().isin(
-                    ['yes', 'y', 'true', '1', '1.0', 'responded', 'response']
-                ) | (_vals.apply(lambda v: isinstance(v, (int, float)) and v > 0))).sum()
-                _rate = _responded / len(_vals) * 100 if len(_vals) > 0 else 0
-                _mail_rates.append((mk, len(_vals), _responded, _rate))
+                _val_str = _vals.astype(str).str.strip().str.upper()
+                _mailed_count = (_val_str.isin(['SO', 'SR'])).sum()
+                _responded = (_val_str == 'SR').sum()
+                _rate = _responded / _mailed_count * 100 if _mailed_count > 0 else 0
+                _mail_rates.append((mk, _mailed_count, _responded, _rate))
                 _lbl = f"{mk[:3]} '{mk[3:]}"
-                print(f"  {_lbl:<12s}  {len(_vals):>8,}  {_responded:>10,}  {_rate:>7.1f}%")
+                print(f"  {_lbl:<12s}  {_mailed_count:>8,}  {_responded:>10,}  {_rate:>7.1f}%")
         print()
 
     # =========================================================================
