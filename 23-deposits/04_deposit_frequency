@@ -20,11 +20,17 @@ else:
     _total = len(_df)
 
     # Segment
-    _bins = [0, 7, 16, 35, float('inf')]
-    _labels = ['Weekly (\u22647d)', 'Biweekly (8-16d)', 'Monthly (17-35d)', 'Infrequent (36d+)']
+    _bins = [0, 7, 16, 33, float('inf')]
+    _labels = ['Weekly (\u22647d)', 'Biweekly (8-16d)', 'Monthly (17-33d)', 'Infrequent (34d+)']
     _df['freq_segment'] = pd.cut(_df[_field], bins=_bins, labels=_labels, right=True)
 
     _seg_counts = _df['freq_segment'].value_counts().reindex(_labels).fillna(0).astype(int)
+
+    # Median deposit amount (33-day window) per segment
+    _amt_field = 'DepAmt33'
+    _has_amt = _amt_field in _df.columns
+    if _has_amt:
+        _seg_median_amt = _df.groupby('freq_segment', observed=False)[_amt_field].median().reindex(_labels).fillna(0)
 
     _seg_colors = [
         GEN_COLORS['success'],   # Weekly
@@ -39,21 +45,22 @@ else:
     print(f"      Accounts with valid frequency: {_total:,}")
     print(f"      Median days between deposits: {_df[_field].median():.1f}")
     for lbl, cnt in zip(_labels, _seg_counts):
-        print(f"        {lbl}: {cnt:,} ({cnt / _total * 100:.1f}%)")
+        _amt_str = f"  |  Median 33d deposits: ${_seg_median_amt[lbl]:,.0f}" if _has_amt else ""
+        print(f"        {lbl}: {cnt:,} ({cnt / _total * 100:.1f}%){_amt_str}")
 
     # ---------------------------------------------------------------------------
     # Chart: Horizontal bar
     # ---------------------------------------------------------------------------
-    fig, ax = plt.subplots(figsize=(14, 6))
+    fig, ax = plt.subplots(figsize=(14, 5))
 
-    _y_pos = range(len(_labels))
     _bars = ax.barh(_labels[::-1], _seg_counts.values[::-1],
-                    color=_seg_colors[::-1], edgecolor='white', height=0.55)
+                    color=_seg_colors[::-1], edgecolor='white', height=0.7)
 
-    for bar, val in zip(_bars, _seg_counts.values[::-1]):
+    for bar, val, lbl in zip(_bars, _seg_counts.values[::-1], _labels[::-1]):
         _pct = val / _total * 100
+        _amt_str = f"   median 33d: ${_seg_median_amt[lbl]:,.0f}" if _has_amt else ""
         ax.text(bar.get_width() + _total * 0.01, bar.get_y() + bar.get_height() / 2,
-                f"{val:,}  ({_pct:.1f}%)",
+                f"{val:,}  ({_pct:.1f}%){_amt_str}",
                 ha='left', va='center', fontsize=16, fontweight='bold',
                 color=GEN_COLORS['dark_text'])
 
@@ -64,8 +71,8 @@ else:
     ax.tick_params(axis='y', labelsize=15)
     ax.tick_params(axis='x', labelsize=14)
 
-    ax.text(0.5, -0.12,
-            f'Median: {_df[_field].median():.0f} days between deposits  |  Based on avgdaysbetweendeposits',
+    ax.text(0.5, -0.22,
+            f'Median: {_df[_field].median():.0f} days between deposits  |  Deposit amounts from 33-day window (DepAmt33)',
             transform=ax.transAxes, ha='center', fontsize=12,
             color=GEN_COLORS['muted'])
 
