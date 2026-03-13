@@ -66,22 +66,24 @@ else:
                  fontsize=24, fontweight='bold',
                  color=GEN_COLORS['dark_text'], y=0.98)
 
-    gs = gridspec.GridSpec(1, 2, figure=fig, width_ratios=[1, 1],
-                           wspace=0.12,
-                           left=0.04, right=0.96, top=0.88, bottom=0.06)
+    gs = gridspec.GridSpec(1, 2, figure=fig, width_ratios=[1, 2],
+                           wspace=0.15,
+                           left=0.03, right=0.97, top=0.88, bottom=0.06)
 
-    # Center divider — exactly at 0.50
+    # Divider line — between the two panels
+    _divider_x = 0.36
     fig.add_artist(plt.Line2D(
-        [0.50, 0.50], [0.06, 0.92],
+        [_divider_x, _divider_x], [0.06, 0.92],
         transform=fig.transFigure, color=GEN_COLORS['muted'],
         linewidth=1.5, alpha=0.45))
 
     # Section titles — aligned at same y position
     _title_y = 0.905
-    fig.text(0.27, _title_y, '365-Day Deposit Overview',
-             fontsize=20, fontweight='bold',
-             color=GEN_COLORS['dark_text'], ha='center', va='center')
-    fig.text(0.73, _title_y, 'Account Composition by Deposit Activity',
+    fig.text(0.19, _title_y, '365-Day Deposit\nOverview',
+             fontsize=18, fontweight='bold',
+             color=GEN_COLORS['dark_text'], ha='center', va='center',
+             linespacing=1.2)
+    fig.text(0.68, _title_y, 'Account Composition by Deposit Activity',
              fontsize=20, fontweight='bold',
              color=GEN_COLORS['dark_text'], ha='center', va='center')
 
