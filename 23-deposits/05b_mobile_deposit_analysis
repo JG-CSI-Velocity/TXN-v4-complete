@@ -29,7 +29,7 @@ else:
     print(f"      Not using mobile deposit: {_no_mobile:,} ({_no_mobile/_total*100:.1f}%)")
     if _rdi_field in deposits_df.columns:
         _rdi_vals = pd.to_numeric(deposits_df[_rdi_field], errors='coerce').fillna(0)
-        print(f"      RDI33 (remote deposit items, 33 days): {(_rdi_vals > 0).sum():,} accounts")
+        print(f"      RDI33 (return deposit items, 33 days): {(_rdi_vals > 0).sum():,} accounts")
     print()
 
     # Segment: mobile depositor vs non-mobile

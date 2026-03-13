@@ -14,7 +14,6 @@ _trend_fields = [
     ('DepositTrendCount33', 'Deposit Trend'),
     ('RepaymentTrendCount33', 'Repayment Trend'),
     ('CashFlowTrendCount33', 'Cash Flow Trend'),
-    ('WindfallTrendCount33', 'Windfall Trend'),
 ]
 
 _avail_trends = [(f, l) for f, l in _trend_fields if f in deposits_df.columns]
