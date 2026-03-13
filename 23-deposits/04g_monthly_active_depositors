@@ -1,0 +1,30 @@
+# ===========================================================================
+# DEPOSIT TRENDS: Active Depositors by Month
+# ===========================================================================
+# Bar chart of how many accounts had at least one deposit each month.
+#
+# Requires: 04_deposit_trend_data (_monthly_counts, _month_keys_mtd, _mtd_labels)
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+if _month_keys_mtd:
+    x = np.arange(len(_month_keys_mtd))
+
+    fig, ax = plt.subplots(figsize=(16, 5))
+    ax.bar(x, _monthly_counts, color=GEN_COLORS['success'], edgecolor='white')
+
+    _tick_step = max(1, len(x) // 12)
+    ax.set_xticks(x[::_tick_step])
+    ax.set_xticklabels([_mtd_labels[i] for i in range(0, len(_mtd_labels), _tick_step)],
+                       fontsize=12, rotation=45, ha='right')
+    ax.set_title('Active Depositors by Month',
+                 fontsize=18, fontweight='bold', color=GEN_COLORS['dark_text'])
+    ax.set_ylabel('Accounts with Deposits', fontsize=14, fontweight='bold')
+    ax.tick_params(axis='y', labelsize=12)
+    gen_clean_axes(ax)
+
+    plt.tight_layout()
+    plt.show()
+else:
+    print("    No MTD data -- skipping")
