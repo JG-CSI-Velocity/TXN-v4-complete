@@ -2,7 +2,25 @@
 # DEPOSIT ANALYSIS: Data Setup and File Loading
 # ===========================================================================
 # Load ZAccounts and ZTrends files, join to rewards_df, auto-discover
-# monthly deposit columns. All downstream deposit cells depend on this.
+# monthly ODDD columns. All downstream deposit cells depend on this.
+#
+# DATA MODEL (critical):
+#   ODDD monthly columns are ALL card/OD-related, NOT deposit data:
+#     - MmmYY Spend   = card spend dollars
+#     - MmmYY Swipes  = card swipe count
+#     - MmmYY MTD     = monthly overdraft items (NOT deposits, NOT card spend)
+#     - MmmYY PIN $   = PIN transaction dollars
+#     - MmmYY Sig $   = Signature transaction dollars
+#     - MmmYY PIN #   = PIN transaction count
+#     - MmmYY Sig #   = Signature transaction count
+#
+#   Deposit data exists ONLY in:
+#     - ZAccounts (point-in-time snapshots: Nov24, Jun25, Dec25):
+#       DepCount33/66/99, DepAmt33/66/99, depCount365, depAmt365
+#     - ZTrends (per OD event):
+#       depcount33/66/99/124, deptotal33/66/99/124
+#
+#   Monthly deposit columns DO NOT EXIST in any data source.
 
 import re
 import glob
@@ -297,7 +315,7 @@ else:
     print(f"\n    Single snapshot -- no longitudinal join needed")
 
 # ---------------------------------------------------------------------------
-# 6. Auto-discover monthly columns from rewards_df
+# 6. Auto-discover ODDD monthly columns from rewards_df (card/OD data, NOT deposits)
 # ---------------------------------------------------------------------------
 _month_order = {
     'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
@@ -319,7 +337,7 @@ _sig_amt_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Sig\s+\$$')
 _pin_cnt_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+PIN\s+#$')
 _sig_cnt_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Sig\s+#$')
 
-mtd_cols = OrderedDict()
+od_mtd_cols = OrderedDict()
 spend_cols = OrderedDict()
 swipes_cols = OrderedDict()
 pin_amt_cols = OrderedDict()
@@ -329,7 +347,7 @@ sig_cnt_cols = OrderedDict()
 
 for col in rewards_df.columns:
     for pattern, target in [
-        (_mtd_pattern, mtd_cols),
+        (_mtd_pattern, od_mtd_cols),
         (_spend_pattern, spend_cols),
         (_swipes_pattern, swipes_cols),
         (_pin_amt_pattern, pin_amt_cols),
@@ -343,28 +361,28 @@ for col in rewards_df.columns:
             break
 
 # Sort all column maps chronologically
-for _map in [mtd_cols, spend_cols, swipes_cols,
+for _map in [od_mtd_cols, spend_cols, swipes_cols,
              pin_amt_cols, sig_amt_cols, pin_cnt_cols, sig_cnt_cols]:
     _sorted = OrderedDict(sorted(_map.items(), key=lambda x: _month_sort_key(x[0])))
     _map.clear()
     _map.update(_sorted)
 
-DEP_MONTHS = sorted(
-    set(list(mtd_cols.keys()) + list(spend_cols.keys())),
+ODDD_MONTHS = sorted(
+    set(list(od_mtd_cols.keys()) + list(spend_cols.keys())),
     key=_month_sort_key
 )
-DEP_MONTH_LABELS = [f"{m[:3]} '{m[3:]}" for m in DEP_MONTHS]
+ODDD_MONTH_LABELS = [f"{m[:3]} '{m[3:]}" for m in ODDD_MONTHS]
 
 print(f"\n    Discovered monthly columns:")
-print(f"      MTD (deposits): {len(mtd_cols)}")
+print(f"      MTD (OD items): {len(od_mtd_cols)}")
 print(f"      Spend:          {len(spend_cols)}")
 print(f"      Swipes:         {len(swipes_cols)}")
 print(f"      PIN $:          {len(pin_amt_cols)}")
 print(f"      Sig $:          {len(sig_amt_cols)}")
 print(f"      PIN #:          {len(pin_cnt_cols)}")
 print(f"      Sig #:          {len(sig_cnt_cols)}")
-if DEP_MONTHS:
-    print(f"      Month span: {DEP_MONTHS[0]} to {DEP_MONTHS[-1]}")
+if ODDD_MONTHS:
+    print(f"      Month span: {ODDD_MONTHS[0]} to {ODDD_MONTHS[-1]}")
 
 # ---------------------------------------------------------------------------
 # 7. Refresh personal/business DFs with longitudinal columns
@@ -468,7 +486,7 @@ if HAS_BUSINESS_SPLIT:
     print(f"      Personal: {len(deposits_personal_df):,}  |  Business: {len(deposits_business_df):,}")
 print(f"    zaccounts_df: {len(zaccounts_df):,} rows")
 print(f"    ztrends_df:   {len(ztrends_df):,} rows")
-print(f"    Monthly periods: {len(DEP_MONTHS)}")
+print(f"    ODDD monthly periods: {len(ODDD_MONTHS)}")
 if HAS_CAMPAIGN_DATA:
     print(f"    Campaign periods: {len(CAMP_MAILER_KEYS)}")
 if ZA_HAS_MULTIPLE:

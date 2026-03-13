@@ -1,5 +1,5 @@
 # ===========================================================================
-# BUSINESS DEPOSITS: Monthly Deposits vs Spend (Dual Trend)
+# BUSINESS DEPOSITS: Snapshot Deposits vs Card Spend
 # ===========================================================================
 # Mirror of Section 23 cell 11 for business accounts.
 
@@ -11,42 +11,82 @@ _df = deposits_business_df.copy()
 
 if len(_df) < _MIN_ACCOUNTS:
     print(f"    11 Skipped: {len(_df)} business accounts (below {_MIN_ACCOUNTS} threshold)")
-elif not mtd_cols or not spend_cols:
-    print("    WARNING: No monthly MTD or Spend columns found -- skipping")
+elif not ZA_HAS_MULTIPLE:
+    print("    11 Skipped: need multiple ZAccounts snapshots for comparison")
 else:
-    _months = sorted(
-        set(mtd_cols.keys()) & set(spend_cols.keys()),
-        key=lambda m: (int(m[3:])+2000, {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
-                                          'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}[m[:3]])
-    )
-    _dep_totals, _spend_totals, _labels = [], [], []
-    for m in _months:
-        _mtd_col, _spend_col = mtd_cols[m], spend_cols[m]
-        if _mtd_col in _df.columns and _spend_col in _df.columns:
-            _dep_totals.append(_df[_mtd_col].sum())
-            _spend_totals.append(_df[_spend_col].sum())
-            _labels.append(f"{m[:3]} '{m[3:]}")
+    _snap_keys = sorted(ZA_SNAPSHOT_META.keys())
+    _snap_labels = []
+    _dep_medians = []
+    _spend_medians = []
+
+    for _sk in _snap_keys:
+        _meta = ZA_SNAPSHOT_META[_sk]
+        _label = _meta['label']
+        _dep_col = f"depAmt365_{_label}"
+
+        if _dep_col not in _df.columns:
+            continue
+
+        _dep_val = _df[_dep_col].median()
+
+        _snap_date = _meta['date']
+        _window_start = _snap_date - __import__('datetime').timedelta(days=365)
+        _spend_total = 0
+        for _mkey, _mcol in spend_cols.items():
+            _mon = _mkey[:3]
+            _yr = int(_mkey[3:]) + 2000
+            _mo_num = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
+                       'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}.get(_mon, 0)
+            if _mo_num == 0:
+                continue
+            _col_date = __import__('datetime').datetime(_yr, _mo_num, 15)
+            if _window_start <= _col_date <= _snap_date and _mcol in _df.columns:
+                _spend_total += _df[_mcol].median()
+
+        _snap_labels.append(f"{_label.upper()}\n({_meta['window_365']})")
+        _dep_medians.append(_dep_val)
+        _spend_medians.append(_spend_total)
 
     print(f"    11 Data Decisions:")
-    print(f"      Source: deposits_business_df (ODDD monthly columns)")
-    print(f"      Months: {len(_labels)}")
+    print(f"      Source: deposits_business_df (ZAccounts depAmt365 + ODDD Spend)")
+    print(f"      Snapshots: {len(_snap_labels)}")
 
-    if len(_labels) >= 3:
-        fig, ax = plt.subplots(figsize=(18, 8))
-        x = np.arange(len(_labels))
-        ax.plot(x, [d/1e6 for d in _dep_totals], color=GEN_COLORS['primary'], linewidth=3,
-                marker='o', markersize=6, label='Deposits (MTD)', zorder=3)
-        ax.plot(x, [s/1e6 for s in _spend_totals], color=GEN_COLORS['accent'], linewidth=3,
-                marker='s', markersize=6, label='Card Spend', zorder=3)
-        ax.fill_between(x, [d/1e6 for d in _dep_totals], alpha=0.08, color=GEN_COLORS['primary'])
-        ax.fill_between(x, [s/1e6 for s in _spend_totals], alpha=0.08, color=GEN_COLORS['accent'])
-        ax.set_title('Business Accounts \u2014 Monthly Deposits vs Card Spend',
-                     fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], pad=15)
-        ax.set_xlabel('Month', fontsize=16, fontweight='bold')
-        ax.set_ylabel('Amount ($M)', fontsize=16, fontweight='bold')
-        ax.set_xticks(x); ax.set_xticklabels(_labels, fontsize=11, rotation=45, ha='right')
-        ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f"${v:.1f}M"))
-        ax.legend(fontsize=14, loc='upper left')
+    if len(_snap_labels) >= 2:
+        fig, ax = plt.subplots(figsize=(14, 8))
+
+        x = np.arange(len(_snap_labels))
+        _width = 0.35
+
+        bars1 = ax.bar(x - _width/2, [d / 1e3 for d in _dep_medians],
+                        _width, color=GEN_COLORS['primary'], label='Deposits (depAmt365)',
+                        edgecolor='white', alpha=0.85)
+        bars2 = ax.bar(x + _width/2, [s / 1e3 for s in _spend_medians],
+                        _width, color=GEN_COLORS['accent'], label='Card Spend (trailing 12mo)',
+                        edgecolor='white', alpha=0.85)
+
+        for bars in [bars1, bars2]:
+            for bar in bars:
+                _h = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width() / 2, _h + 0.1,
+                        f"${_h:,.1f}K", ha='center', va='bottom', fontsize=12,
+                        fontweight='bold')
+
+        ax.set_title('Business Accounts \u2014 Deposit Amount vs Card Spend by Snapshot',
+                     fontsize=20, fontweight='bold', color=GEN_COLORS['dark_text'], pad=15)
+        ax.set_ylabel('Median per Account ($K)', fontsize=15, fontweight='bold')
+        ax.set_xticks(x)
+        ax.set_xticklabels(_snap_labels, fontsize=13)
+        ax.tick_params(axis='y', labelsize=13)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(
+            lambda v, _: f"${v:,.0f}K"))
+        ax.legend(fontsize=13, loc='upper left')
+
         gen_clean_axes(ax)
+        fig.text(0.5, -0.02,
+                 f'ZAccounts depAmt365 vs ODDD card spend  |  '
+                 f'{len(_df):,} business accounts',
+                 ha='center', fontsize=11, color=GEN_COLORS['muted'])
         plt.tight_layout()
         plt.show()
+    else:
+        print("    Not enough snapshots for comparison chart")

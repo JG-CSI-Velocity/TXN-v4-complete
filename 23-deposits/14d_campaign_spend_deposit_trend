@@ -1,37 +1,23 @@
 # ===========================================================================
-# PERSONAL DEPOSITS: Monthly Spend & Deposit Trend by Campaign Status
+# PERSONAL DEPOSITS: Monthly Spend & Snapshot Deposit Trend by Campaign Status
 # ===========================================================================
-# Shows median monthly Card Spend and MTD (deposits) per campaign status
-# group over all 36 monthly periods. Mailer periods marked as dashed lines.
+# Panel 1 (Left): Median monthly card spend by campaign status over ODDD
+#   monthly periods. Source: ODDD Spend columns (spend_cols from setup).
+# Panel 2 (Right): Median 365-day deposit amount (depAmt365) at each
+#   ZAccounts snapshot by campaign status. Source: ZAccounts snapshots
+#   (depAmt365_{label} columns). NOT ODDD MTD, which is overdraft items.
 #
-# Depends on cell 14 classification (_df with _camp_status already assigned).
-# Cross-source: ODDD (monthly Spend/MTD cols, Mail/Resp cols)
-# Data: deposits_personal_df (via _df from cell 14)
+# Data: deposits_personal_df, spend_cols, ZA_SNAPSHOT_META
+# Campaign globals: CAMP_MAIL_COL_LIST, CAMP_RESP_COL_LIST, CAMP_MAILER_KEYS,
+#   camp_is_success(), camp_is_nu_partial(), HAS_CAMPAIGN_DATA
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
-import re
 
 _df = deposits_personal_df.copy()
 
-# Uses shared campaign classification from 01_deposit_setup:
-#   CAMP_MAIL_COLS, CAMP_RESP_COLS, CAMP_MAILER_KEYS,
-#   CAMP_MAIL_COL_LIST, CAMP_RESP_COL_LIST,
-#   camp_is_success(), camp_is_nu_partial(), HAS_CAMPAIGN_DATA
-
-# Still need spend/mtd discovery locally (not campaign-specific)
-_spend_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Spend$')
-_mtd_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+MTD$')
-_spend_cols = {}
-_mtd_cols = {}
-for col in _df.columns:
-    for pat, target in [(_spend_pattern, _spend_cols), (_mtd_pattern, _mtd_cols)]:
-        m = pat.match(col)
-        if m:
-            target[m.group(1)] = col
-            break
-
+# ---- Campaign classification ----
 _times_mailed = _df[CAMP_MAIL_COL_LIST].notna().sum(axis=1)
 _times_success = _df[CAMP_RESP_COL_LIST].apply(
     lambda col: col.map(camp_is_success)).sum(axis=1)
@@ -45,44 +31,52 @@ _df.loc[_times_success > 0, '_camp_status'] = 'Responder'
 
 _camp_groups = ['Responder', 'NU 1-4 (Partial)', 'Non-Responder']
 _camp_groups = [g for g in _camp_groups if g in _df['_camp_status'].values]
-_total = len(_df)
 
-_has_spend = bool(_spend_cols)
-_has_mtd = bool(_mtd_cols)
+# ---- Check data availability ----
+_has_spend = bool(spend_cols)
 
-if (_has_spend or _has_mtd) and len(_camp_groups) >= 2:
-    _n_charts = int(_has_spend) + int(_has_mtd)
-    fig, axes = plt.subplots(1, _n_charts, figsize=(16, 7) if _n_charts == 1
+_snap_keys = sorted(ZA_SNAPSHOT_META.keys()) if ZA_HAS_MULTIPLE else []
+_dep_snap_cols = {}
+for sk in _snap_keys:
+    _meta = ZA_SNAPSHOT_META[sk]
+    _col = f"depAmt365_{_meta['label']}"
+    if _col in _df.columns:
+        _dep_snap_cols[sk] = {'col': _col, 'label': _meta['label'].upper()}
+_has_snapshots = bool(_dep_snap_cols)
+
+if (_has_spend or _has_snapshots) and len(_camp_groups) >= 2:
+    _n_charts = int(_has_spend) + int(_has_snapshots)
+    fig, axes = plt.subplots(1, _n_charts,
+                             figsize=(16, 7) if _n_charts == 1
                              else (9 * _n_charts, 7))
     if _n_charts == 1:
         axes = [axes]
 
-    _trend_colors = {'Responder': GEN_COLORS['success'],
-                     'NU 1-4 (Partial)': GEN_COLORS['warning'],
-                     'Non-Responder': GEN_COLORS['muted']}
+    _trend_colors = {
+        'Responder': GEN_COLORS['success'],
+        'NU 1-4 (Partial)': GEN_COLORS['warning'],
+        'Non-Responder': GEN_COLORS['muted'],
+    }
 
     _chart_idx = 0
 
-    for _metric_cols, _metric_label, _metric_fmt in [
-        (_spend_cols, 'Median Monthly Card Spend', gen_fmt_dollar),
-        (_mtd_cols, 'Median Monthly Deposits (MTD)', gen_fmt_dollar),
-    ]:
-        if not _metric_cols:
-            continue
+    # ---- Panel 1: Monthly card spend trend (line chart) ----
+    if _has_spend:
         ax = axes[_chart_idx]
         _chart_idx += 1
-        _m_keys = sorted(_metric_cols.keys(), key=_camp_month_sort_key)
+        _m_keys = sorted(spend_cols.keys(), key=_camp_month_sort_key)
         _x_labels = [f"{mk[:3]} '{mk[3:]}" for mk in _m_keys]
 
         for g in _camp_groups:
             _g_df = _df[_df['_camp_status'] == g]
             _medians = []
             for mk in _m_keys:
-                _col = _metric_cols[mk]
+                _col = spend_cols[mk]
                 _med = _g_df[_col].dropna().median()
                 _medians.append(_med if not np.isnan(_med) else 0)
             ax.plot(_x_labels, _medians, marker='o', markersize=4,
-                    linewidth=2, color=_trend_colors.get(g, GEN_COLORS['info']),
+                    linewidth=2,
+                    color=_trend_colors.get(g, GEN_COLORS['info']),
                     label=f"{g} (n={len(_g_df):,})")
 
         # Mark mailer periods
@@ -92,21 +86,62 @@ if (_has_spend or _has_mtd) and len(_camp_groups) >= 2:
                 ax.axvline(x=_xi, color=GEN_COLORS['accent'], alpha=0.3,
                            linestyle='--', linewidth=1)
 
-        ax.set_title(_metric_label, fontsize=16, fontweight='bold',
-                     color=GEN_COLORS['dark_text'])
-        ax.set_ylabel(_metric_label, fontsize=12, fontweight='bold')
-        ax.yaxis.set_major_formatter(mticker.FuncFormatter(_metric_fmt))
+        ax.set_title('Median Monthly Card Spend', fontsize=16,
+                     fontweight='bold', color=GEN_COLORS['dark_text'])
+        ax.set_ylabel('Median Monthly Card Spend', fontsize=12,
+                      fontweight='bold')
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
         ax.tick_params(axis='x', labelsize=9, rotation=45)
         ax.tick_params(axis='y', labelsize=11)
         ax.legend(fontsize=11, frameon=False, loc='upper left')
         gen_clean_axes(ax)
 
-    fig.suptitle('Personal Accounts \u2014 Monthly Spend & Deposits by Campaign Status',
-                 fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
-    fig.text(0.5, -0.02,
-             'Dashed lines = mailer periods  |  Do responders show behavior changes around campaigns?',
-             ha='center', fontsize=12, color=GEN_COLORS['muted'])
+    # ---- Panel 2: Deposit amount at each ZAccounts snapshot (grouped bar) ----
+    if _has_snapshots:
+        ax = axes[_chart_idx]
+        _chart_idx += 1
+
+        _ordered_sks = sorted(_dep_snap_cols.keys())
+        _snap_labels = [_dep_snap_cols[sk]['label'] for sk in _ordered_sks]
+        _n_snaps = len(_ordered_sks)
+        _n_groups = len(_camp_groups)
+        _bar_width = 0.8 / _n_groups
+        _x_pos = np.arange(_n_snaps)
+
+        for gi, g in enumerate(_camp_groups):
+            _g_df = _df[_df['_camp_status'] == g]
+            _medians = []
+            for sk in _ordered_sks:
+                _col = _dep_snap_cols[sk]['col']
+                _med = _g_df[_col].dropna().median()
+                _medians.append(_med if not np.isnan(_med) else 0)
+            _offset = (gi - _n_groups / 2 + 0.5) * _bar_width
+            ax.bar(_x_pos + _offset, _medians, width=_bar_width,
+                   color=_trend_colors.get(g, GEN_COLORS['info']),
+                   label=f"{g} (n={len(_g_df):,})", edgecolor='white',
+                   linewidth=0.5)
+
+        ax.set_xticks(_x_pos)
+        ax.set_xticklabels(_snap_labels, fontsize=11)
+        ax.set_title('Median 365-Day Deposit Amount by Snapshot',
+                     fontsize=16, fontweight='bold',
+                     color=GEN_COLORS['dark_text'])
+        ax.set_ylabel('Median depAmt365', fontsize=12, fontweight='bold')
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+        ax.tick_params(axis='y', labelsize=11)
+        ax.legend(fontsize=11, frameon=False, loc='upper left')
+        gen_clean_axes(ax)
+
+    fig.suptitle(
+        'Personal Accounts -- Monthly Spend & Deposit Amount by Campaign Status',
+        fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+    fig.text(
+        0.5, -0.02,
+        'Left: ODDD monthly spend (dashed = mailer waves)  |  '
+        'Right: ZAccounts depAmt365 at each snapshot',
+        ha='center', fontsize=12, color=GEN_COLORS['muted'])
     plt.tight_layout()
     plt.show()
 else:
-    print("    14d Skipped: insufficient monthly Spend/MTD columns or campaign groups")
+    print("    14d Skipped: insufficient spend/snapshot columns "
+          "or campaign groups")

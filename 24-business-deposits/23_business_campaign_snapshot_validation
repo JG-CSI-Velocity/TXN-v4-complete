@@ -1,7 +1,10 @@
 # ===========================================================================
-# BUSINESS DEPOSITS: Campaign-Snapshot Validation
+# BUSINESS DEPOSITS: Campaign-Snapshot DID Validation
 # ===========================================================================
 # Mirror of Section 23 cell 23 for business accounts.
+# Snapshot-based DID only (no MTD). Amount + Count for confirmation.
+#
+# Data: deposits_business_df + ZAccounts snapshots
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
@@ -15,146 +18,190 @@ elif not HAS_CAMPAIGN_DATA:
     print("    23 Skipped: no campaign data")
 elif not ZA_HAS_MULTIPLE:
     print("    23 Skipped: requires 2+ ZAccounts snapshots")
-elif not mtd_cols:
-    print("    23 Skipped: no MTD columns")
 else:
     _mo_map = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
                'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
-    _all_mtd_keys = sorted(mtd_cols.keys(), key=_camp_month_sort_key)
+
     _snap_keys = sorted(ZA_SNAPSHOT_META.keys())
     _snap_labels = [ZA_SNAPSHOT_META[sk]['label'] for sk in _snap_keys]
-    _snap_dates = {ZA_SNAPSHOT_META[sk]['label']: ZA_SNAPSHOT_META[sk]['date'] for sk in _snap_keys}
-    _MIN_DID_N = 20
+    _snap_dates = {
+        ZA_SNAPSHOT_META[sk]['label']: ZA_SNAPSHOT_META[sk]['date']
+        for sk in _snap_keys
+    }
 
-    def _wave_to_ym(wk):
-        return (int(wk[3:]) + 2000, _mo_map.get(wk[:3], 1))
+    MIN_DID_N = 20
 
+    # -----------------------------------------------------------------
+    # 1. For each wave, find before/after snapshot and compute DID
+    # -----------------------------------------------------------------
     _results = []
+
     for wk in CAMP_MAILER_KEYS:
-        _w_yr, _w_mn = _wave_to_ym(wk)
-        _wave_date = _w_yr * 12 + _w_mn
+        _w_yr = int(wk[3:]) + 2000
+        _w_mn = _mo_map[wk[:3]]
+        _wave_ym = _w_yr * 12 + _w_mn
+
+        # Find before/after snapshots
         _before_label = None
         _after_label = None
         for lbl in _snap_labels:
             _sd = _snap_dates[lbl]
-            _s_date = _sd.year * 12 + _sd.month
-            if _s_date <= _wave_date:
+            _s_ym = _sd.year * 12 + _sd.month
+            if _s_ym <= _wave_ym:
                 _before_label = lbl
-            if _s_date > _wave_date and _after_label is None:
+            if _s_ym > _wave_ym and _after_label is None:
                 _after_label = lbl
 
-        _has_snapshot_pair = (_before_label is not None and _after_label is not None)
-        _pre_months = []
-        _post_months = []
-        for mk in _all_mtd_keys:
-            _m_yr = int(mk[3:]) + 2000
-            _m_mn = _mo_map.get(mk[:3], 1)
-            _diff = (_w_yr - _m_yr) * 12 + (_w_mn - _m_mn)
-            if 1 <= _diff <= 3:
-                _pre_months.append(mk)
-            _diff_post = (_m_yr - _w_yr) * 12 + (_m_mn - _w_mn)
-            if 1 <= _diff_post <= 3:
-                _post_months.append(mk)
-
-        if len(_pre_months) < 2 or not _post_months:
+        if _before_label is None or _after_label is None:
             continue
 
+        # Check required columns exist
+        _amt_before = f"depAmt365_{_before_label}"
+        _amt_after = f"depAmt365_{_after_label}"
+        _cnt_before = f"depCount365_{_before_label}"
+        _cnt_after = f"depCount365_{_after_label}"
+
+        if _amt_before not in _df.columns or _amt_after not in _df.columns:
+            continue
+
+        _has_count = (_cnt_before in _df.columns and _cnt_after in _df.columns)
+
+        # Responder / non-responder masks
         _mail_col = CAMP_MAIL_COLS[wk]
         _resp_col = CAMP_RESP_COLS[wk]
         _mailed = _df[_mail_col].notna()
         _responded = _df[_resp_col].map(camp_is_success)
         _resp_mask = _mailed & _responded
         _nonresp_mask = _mailed & ~_responded
+
         _n_resp = int(_resp_mask.sum())
         _n_nonresp = int(_nonresp_mask.sum())
-        if _n_resp < _MIN_DID_N or _n_nonresp < _MIN_DID_N:
+        if _n_resp < MIN_DID_N or _n_nonresp < MIN_DID_N:
             continue
 
-        _pre_cols = [mtd_cols[m] for m in _pre_months if m in mtd_cols]
-        _post_cols = [mtd_cols[m] for m in _post_months if m in mtd_cols]
-        _pre_valid = _df[_pre_cols].notna().sum(axis=1) >= 2
-        _pre_mean = _df[_pre_cols].mean(axis=1)
-        _post_mean = _df[_post_cols].mean(axis=1)
-        _delta = _post_mean - _pre_mean
-        _resp_delta_mtd = _delta[_resp_mask & _pre_valid].median()
-        _nonresp_delta_mtd = _delta[_nonresp_mask & _pre_valid].median()
-        _mtd_did = _resp_delta_mtd - _nonresp_delta_mtd
+        # Amount DID
+        _amt_valid = _df[_amt_before].notna() & _df[_amt_after].notna()
+        _amt_delta = _df[_amt_after] - _df[_amt_before]
 
-        _snap_did = np.nan
-        _snap_note = 'no post snapshot'
-        if _has_snapshot_pair:
-            _before_col = f"depAmt365_{_before_label}"
-            _after_col = f"depAmt365_{_after_label}"
-            if _before_col in _df.columns and _after_col in _df.columns:
-                _both_valid = _df[_before_col].notna() & _df[_after_col].notna()
-                _snap_delta = _df[_after_col] - _df[_before_col]
-                _r_snap = _snap_delta[_resp_mask & _both_valid]
-                _nr_snap = _snap_delta[_nonresp_mask & _both_valid]
-                if len(_r_snap) >= _MIN_DID_N and len(_nr_snap) >= _MIN_DID_N:
-                    _snap_did = _r_snap.median() - _nr_snap.median()
-                    if not np.isnan(_snap_did):
-                        _snap_note = f"{_before_label}->{_after_label}"
+        _r_amt = _amt_delta[_resp_mask & _amt_valid]
+        _nr_amt = _amt_delta[_nonresp_mask & _amt_valid]
+
+        if len(_r_amt) < MIN_DID_N or len(_nr_amt) < MIN_DID_N:
+            continue
+
+        _amt_did = _r_amt.median() - _nr_amt.median()
+
+        # Count DID (frequency confirmation)
+        _cnt_did = np.nan
+        if _has_count:
+            _cnt_valid = _df[_cnt_before].notna() & _df[_cnt_after].notna()
+            _cnt_delta = _df[_cnt_after] - _df[_cnt_before]
+            _r_cnt = _cnt_delta[_resp_mask & _cnt_valid]
+            _nr_cnt = _cnt_delta[_nonresp_mask & _cnt_valid]
+            if len(_r_cnt) >= MIN_DID_N and len(_nr_cnt) >= MIN_DID_N:
+                _cnt_did = _r_cnt.median() - _nr_cnt.median()
+
+        # Same direction?
+        if np.isnan(_cnt_did):
+            _same_dir = '-'
+        elif (_amt_did >= 0) == (_cnt_did >= 0):
+            _same_dir = 'Yes'
+        else:
+            _same_dir = 'No'
 
         _results.append({
-            'wave': wk, 'label': f"{wk[:3]} '{wk[3:]}",
-            'n_resp': _n_resp, 'n_nonresp': _n_nonresp,
-            'mtd_did': _mtd_did, 'snap_did': _snap_did,
-            'snap_note': _snap_note, 'before': _before_label, 'after': _after_label,
+            'wave': wk,
+            'label': f"{wk[:3]} '{wk[3:]}",
+            'snapshots': f"{_before_label} -> {_after_label}",
+            'n_resp': _n_resp,
+            'n_nonresp': _n_nonresp,
+            'amt_did': _amt_did,
+            'cnt_did': _cnt_did,
+            'same_dir': _same_dir,
         })
 
+    # -----------------------------------------------------------------
+    # 2. Summary table
+    # -----------------------------------------------------------------
     if _results:
-        print(f"\n{'=' * 110}")
-        print(f"  BUSINESS DEPOSITS — CAMPAIGN-SNAPSHOT VALIDATION (Cell 23)")
-        print(f"{'=' * 110}")
-        print(f"  MTD DID vs Snapshot DID comparison")
+        print(f"\n{'=' * 115}")
+        print(f"  BUSINESS DEPOSITS -- CAMPAIGN SNAPSHOT DID (Cell 23)")
+        print(f"{'=' * 115}")
+        print(f"  Amount DID = median(resp depAmt365 delta) - median(nonresp depAmt365 delta)")
+        print(f"  Count DID  = same formula on depCount365 (frequency confirmation)")
+        print(f"  Same Dir?  = both Amount and Count DID agree on sign")
         print()
-        _hdr = (f"  {'Wave':<10s}  {'Resp':>7s}  {'NonResp':>8s}"
-                f"  {'MTD DID':>12s}  {'Snap DID':>14s}  {'Agree':>6s}  {'Snapshots':<20s}")
+
+        _hdr = (f"  {'Wave':<10s}  {'Snapshots':<22s}  {'N Resp':>7s}  {'N NonResp':>10s}"
+                f"  {'Amount DID':>12s}  {'Count DID':>11s}  {'Same Dir?':>10s}")
         print(_hdr)
-        print(f"  {'-'*10}  {'-'*7}  {'-'*8}  {'-'*12}  {'-'*14}  {'-'*6}  {'-'*20}")
+        print(f"  {'-'*10}  {'-'*22}  {'-'*7}  {'-'*10}  {'-'*12}  {'-'*11}  {'-'*10}")
 
+        _n_same = 0
+        _n_comparable = 0
         for r in _results:
-            _mtd_str = '${:>,.0f}'.format(r['mtd_did'])
-            if np.isnan(r['snap_did']):
-                _snap_str = 'N/A'
-                _agree_str = '-'
+            _amt_str = '${:>,.0f}'.format(r['amt_did'])
+            if np.isnan(r['cnt_did']):
+                _cnt_str = 'N/A'
             else:
-                _snap_str = '${:>,.0f}'.format(r['snap_did'])
-                _agree_str = 'Yes' if (r['mtd_did'] >= 0) == (r['snap_did'] >= 0) else 'No'
-            _snap_pair = f"{r['before'] or '?'} -> {r['after'] or '?'}"
-            print(f"  {r['label']:<10s}  {r['n_resp']:>7,}  {r['n_nonresp']:>8,}"
-                  f"  {_mtd_str:>12s}  {_snap_str:>14s}  {_agree_str:>6s}  {_snap_pair:<20s}")
-        print(f"{'=' * 110}")
+                _cnt_str = '{:>,.1f}'.format(r['cnt_did'])
+                _n_comparable += 1
+                if r['same_dir'] == 'Yes':
+                    _n_same += 1
 
-        _chart_results = [r for r in _results if not np.isnan(r['snap_did'])]
-        if len(_chart_results) >= 2:
-            fig, ax = plt.subplots(figsize=(max(14, len(_chart_results) * 3), 7))
-            x = np.arange(len(_chart_results))
-            _w = 0.35
-            bars1 = ax.bar(x - _w/2, [r['mtd_did'] for r in _chart_results], _w,
-                           label='MTD DID ($/month)', color=GEN_COLORS['primary'], edgecolor='white')
-            bars2 = ax.bar(x + _w/2, [r['snap_did'] for r in _chart_results], _w,
-                           label='Snapshot DID ($/year)', color=GEN_COLORS['success'], edgecolor='white')
-            for bar, val in zip(bars1, [r['mtd_did'] for r in _chart_results]):
-                ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
-                        gen_fmt_dollar(val, None), ha='center',
-                        va='bottom' if val >= 0 else 'top', fontsize=11, fontweight='bold')
-            for bar, val in zip(bars2, [r['snap_did'] for r in _chart_results]):
-                ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
-                        gen_fmt_dollar(val, None), ha='center',
-                        va='bottom' if val >= 0 else 'top', fontsize=11, fontweight='bold')
+            print(f"  {r['label']:<10s}  {r['snapshots']:<22s}  {r['n_resp']:>7,}"
+                  f"  {r['n_nonresp']:>10,}  {_amt_str:>12s}  {_cnt_str:>11s}"
+                  f"  {r['same_dir']:>10s}")
+
+        print(f"{'=' * 115}")
+        if _n_comparable > 0:
+            print(f"\n  Direction agreement: {_n_same}/{_n_comparable} waves "
+                  f"({_n_same / _n_comparable * 100:.0f}%)")
+
+        # ---------------------------------------------------------
+        # 3. Chart: Amount DID per wave
+        # ---------------------------------------------------------
+        if len(_results) >= 1:
+            fig, ax = plt.subplots(figsize=(max(10, len(_results) * 2.5), 7))
+            x = np.arange(len(_results))
+
+            _amt_vals = [r['amt_did'] for r in _results]
+            _bar_colors = [
+                GEN_COLORS['success'] if v >= 0 else GEN_COLORS['danger']
+                for v in _amt_vals
+            ]
+
+            bars = ax.bar(x, _amt_vals, 0.6, color=_bar_colors, edgecolor='white')
+
+            for bar, val in zip(bars, _amt_vals):
+                ax.text(
+                    bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                    gen_fmt_dollar(val, None), ha='center',
+                    va='bottom' if val >= 0 else 'top',
+                    fontsize=12, fontweight='bold',
+                )
+
             ax.axhline(y=0, color=GEN_COLORS['muted'], linewidth=1)
             ax.set_xticks(x)
-            ax.set_xticklabels([r['label'] for r in _chart_results], fontsize=13, rotation=20, ha='right')
-            ax.set_ylabel('DID Lift ($)', fontsize=14, fontweight='bold')
+            ax.set_xticklabels(
+                [r['label'] for r in _results],
+                fontsize=13, rotation=20, ha='right',
+            )
+            ax.set_ylabel('Amount DID ($)', fontsize=14, fontweight='bold')
             ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
-            ax.legend(fontsize=12, frameon=False)
             gen_clean_axes(ax)
-            fig.suptitle('Business Accounts \u2014 Campaign DID: Monthly vs Snapshot Validation',
-                         fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
-            fig.text(0.5, -0.02,
-                     'MTD = 3-month ODDD windows  |  Snapshot = depAmt365 between ZAccounts snapshots',
-                     ha='center', fontsize=12, color=GEN_COLORS['muted'])
-            plt.tight_layout(); plt.show()
+
+            fig.suptitle(
+                'Business Accounts -- Snapshot DID by Campaign Wave',
+                fontsize=22, fontweight='bold',
+                color=GEN_COLORS['dark_text'], y=1.02,
+            )
+            fig.text(
+                0.5, -0.02,
+                'DID = median(resp depAmt365 delta) - median(nonresp depAmt365 delta)',
+                ha='center', fontsize=12, color=GEN_COLORS['muted'],
+            )
+            plt.tight_layout()
+            plt.show()
     else:
-        print("    23: No waves had sufficient data for validation")
+        print("    23: No waves had sufficient data for snapshot DID validation")

@@ -27,7 +27,8 @@ The current 14-series cells (14-14f) show correlational comparisons -- responder
 **Why it matters:**
 - The current analysis can't answer "should we continue this program?" because it can't isolate campaign impact from selection bias
 - Executives need incremental deposit dollars per reward dollar to justify program costs
-- The data to do this properly already exists (36 months of ODDD MTD columns + multiple ZAccounts snapshots)
+- The data to do this properly already exists (ZAccounts snapshot deposit fields + multiple snapshots for longitudinal comparison)
+- NOTE: ODDD MTD columns are overdraft item counts, NOT deposit data. Deposit measurement uses ZAccounts depAmt365/DepAmt33/66/99 fields.
 
 ## Proposed Solution
 
@@ -149,7 +150,8 @@ For each mailer wave W:
 ```
 
 **Data dependencies:**
-- `deposits_personal_df` with ODDD MTD columns (`mtd_cols` from setup)
+- `deposits_personal_df` with ZAccounts snapshot deposit fields (`depAmt365_{label}` from longitudinal join)
+- NOTE: ODDD MTD columns are OD items, NOT deposits. DiD uses ZAccounts depAmt365 at bracketing snapshots.
 - `CAMP_MAILER_KEYS`, `CAMP_MAIL_COLS`, `CAMP_RESP_COLS` from setup
 - `camp_is_success()` from setup
 
@@ -276,8 +278,8 @@ For each mailer wave W:
 **Output:**
 - Summary: N accounts, single wave identified, response rate
 - Table: SO-SR Responder vs SO-SR Non-Responder on deposit metrics
-- Chart 1: Monthly deposit trend (pre/post with vertical line at mail date)
-- DID callout: "SO-SR responders increased deposits by $X/month vs non-responders"
+- Chart 1: Snapshot-based deposit comparison (depAmt365 at each snapshot for SO-SR resp vs non-resp)
+- DID callout: "SO-SR responders increased deposits by $X (depAmt365 delta) vs non-responders"
 
 **File:** `23-deposits/14k_so_sr_deposit_deep_dive`
 
@@ -334,11 +336,11 @@ For each mailer wave W:
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| MTD columns = monthly deposit dollars | Confirmed | Cell 14d already uses MTD with `gen_fmt_dollar`; column name "Month-To-Date" in deposit context means total deposits for that month |
+| **CORRECTED:** MTD columns = monthly overdraft items, NOT deposits | Fixed | MTD was incorrectly treated as deposit data. DiD now uses ZAccounts depAmt365 at bracketing snapshots (Nov24/Jun25/Dec25) |
 | 14g builds its own wave config | Independent | Matches self-contained pattern of all existing 14-series cells; avoids cross-section dependency on Section 09 |
-| NaN in MTD for accounts not yet open | Exclude account-wave pair | Account must have non-NaN in at least 2 of 3 pre-period months to be included in that wave's analysis |
+| NaN in snapshot fields | Exclude account-wave pair | Account must have non-NaN depAmt365 at both bracketing snapshots to be included in that wave's DiD |
 | Multi-period responder tier assignment | Most recent success | Matches `14f`'s `_last_success` pattern and represents current tier standing |
-| Pre/post window | 3 months each | Matches Section 09's `10_cohort_lift_data` pattern; deposits are monthly enough for 3-month windows |
+| Pre/post measurement | Bracketing ZAccounts snapshots | Each wave maps to before/after snapshot pair (e.g., Apr25 wave: Nov24->Jun25) |
 | Minimum N for DID | 20 per group | Higher than existing 10 threshold because DID requires more statistical power |
 | Minimum N for tier/group comparisons | 10 per group | Matches existing cells 14b/14e threshold |
 | Never Mailed in 14g | Secondary reference, not in DID | DID compares Responder vs Non-Responder (both mailed); Never Mailed shown as reference line only |
@@ -372,7 +374,7 @@ For each mailer wave W:
 
 | Risk | Mitigation |
 |------|-----------|
-| MTD columns may not be total deposit dollars | Validate with known account data before building full framework |
+| **RESOLVED:** MTD columns are overdraft items, not deposits | All cells now use ZAccounts depAmt365 snapshots for deposit measurement |
 | Business accounts too few for per-wave DID | `_MIN_ACCOUNTS = 20` guard; may skip most waves |
 | Response Grouping column missing for some CUs | 14k has graceful skip; other cells unaffected |
 | Only 1 ZAccounts snapshot available | 14i degrades to single-point summary (no delta) |

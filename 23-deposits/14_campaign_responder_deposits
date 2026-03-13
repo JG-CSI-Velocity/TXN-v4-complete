@@ -9,9 +9,9 @@
 # Resp columns: outcome values — NU split into NU 1-4 and NU 5+
 #
 # Summary table uses ZAccounts deposit fields (depAmt365, depCount365, etc.)
-# Trend chart uses monthly ODDD Spend and MTD columns to show behavior over time.
+# Chart uses ZAccounts deposit fields + ODDD card spend for comparison.
 #
-# Cross-source: ODDD (Mail/Resp cols, monthly Spend/MTD)
+# Cross-source: ODDD (Mail/Resp cols, card spend)
 #             + ZAccounts (deposit fields)
 # Data: deposits_personal_df
 

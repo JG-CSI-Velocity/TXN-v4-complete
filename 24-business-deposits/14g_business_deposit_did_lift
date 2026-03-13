@@ -1,8 +1,9 @@
 # ===========================================================================
-# BUSINESS DEPOSITS: Deposit DiD Lift Analysis
+# BUSINESS DEPOSITS: Deposit DiD Lift Analysis (Snapshot-Based)
 # ===========================================================================
 # Mirror of Section 23 cell 14g for business accounts.
-# DiD = (Resp_post - Resp_pre) - (NonResp_post - NonResp_pre)
+# DID = (Resp_post_snap - Resp_pre_snap) - (NonResp_post_snap - NonResp_pre_snap)
+# Uses ZAccounts depAmt365 at bracketing snapshots.
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
@@ -15,47 +16,44 @@ if len(_df) < _MIN_ACCOUNTS:
     print(f"    14g Skipped: {len(_df)} business accounts (below {_MIN_ACCOUNTS} threshold)")
 elif not HAS_CAMPAIGN_DATA:
     print("    14g Skipped: no campaign data")
-elif not mtd_cols:
-    print("    14g Skipped: no MTD columns")
+elif not ZA_HAS_MULTIPLE:
+    print("    14g Skipped: requires 2+ ZAccounts snapshots")
 else:
-    _all_mtd_keys = sorted(mtd_cols.keys(), key=_camp_month_sort_key)
-    _all_mtd_dates = {}
-    for mk in _all_mtd_keys:
-        _mo_map = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
-                   'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
-        _all_mtd_dates[mk] = (int(mk[3:]) + 2000, _mo_map.get(mk[:3], 1))
+    _mo_map = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
+               'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
+    _snap_keys = sorted(ZA_SNAPSHOT_META.keys())
+    _snap_labels = [ZA_SNAPSHOT_META[sk]['label'] for sk in _snap_keys]
+    _snap_dates = {ZA_SNAPSHOT_META[sk]['label']: ZA_SNAPSHOT_META[sk]['date']
+                   for sk in _snap_keys}
 
     _WAVE_CONFIG = {}
     for wk in CAMP_MAILER_KEYS:
-        _mail_col = CAMP_MAIL_COLS[wk]
-        _resp_col = CAMP_RESP_COLS[wk]
-        _mo_map = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
-                   'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
         _w_yr = int(wk[3:]) + 2000
         _w_mn = _mo_map.get(wk[:3], 1)
+        _wave_ym = _w_yr * 12 + _w_mn
 
-        _pre_months, _post_1mo, _post_3mo, _post_6mo = [], [], [], []
-        for mk in _all_mtd_keys:
-            _m_yr, _m_mn = _all_mtd_dates[mk]
-            _diff = (_w_yr - _m_yr) * 12 + (_w_mn - _m_mn)
-            if 1 <= _diff <= 3:
-                _pre_months.append(mk)
-            _diff_post = (_m_yr - _w_yr) * 12 + (_m_mn - _w_mn)
-            if _diff_post == 1:
-                _post_1mo.append(mk)
-            if 1 <= _diff_post <= 3:
-                _post_3mo.append(mk)
-            if 1 <= _diff_post <= 6:
-                _post_6mo.append(mk)
+        _before_label = None
+        _after_label = None
+        for lbl in _snap_labels:
+            _sd = _snap_dates[lbl]
+            _s_ym = _sd.year * 12 + _sd.month
+            if _s_ym <= _wave_ym:
+                _before_label = lbl
+            if _s_ym > _wave_ym and _after_label is None:
+                _after_label = lbl
 
-        if len(_post_1mo) > 0 and len(_pre_months) >= 2:
-            _WAVE_CONFIG[wk] = {
-                'mail_col': _mail_col, 'resp_col': _resp_col,
-                'pre_months': _pre_months,
-                'post_1mo': _post_1mo,
-                'post_3mo': _post_3mo if len(_post_3mo) >= 2 else _post_1mo,
-                'post_6mo': _post_6mo if len(_post_6mo) >= 4 else None,
-            }
+        if _before_label and _after_label:
+            _before_col = f"depAmt365_{_before_label}"
+            _after_col = f"depAmt365_{_after_label}"
+            if _before_col in _df.columns and _after_col in _df.columns:
+                _WAVE_CONFIG[wk] = {
+                    'mail_col': CAMP_MAIL_COLS[wk],
+                    'resp_col': CAMP_RESP_COLS[wk],
+                    'before_label': _before_label,
+                    'after_label': _after_label,
+                    'before_col': _before_col,
+                    'after_col': _after_col,
+                }
 
     _did_results = []
     for wk, wc in _WAVE_CONFIG.items():
@@ -70,20 +68,11 @@ else:
         if _n_resp < _MIN_DID_ACCOUNTS or _n_nonresp < _MIN_DID_ACCOUNTS:
             continue
 
-        _pre_cols = [mtd_cols[m] for m in wc['pre_months'] if m in mtd_cols]
-        _post_cols = [mtd_cols[m] for m in wc['post_3mo'] if m in mtd_cols]
-        if not _pre_cols or not _post_cols:
-            continue
+        _both_valid = _df[wc['before_col']].notna() & _df[wc['after_col']].notna()
+        _snap_delta = _df[wc['after_col']] - _df[wc['before_col']]
 
-        _pre_vals = _df[_pre_cols]
-        _post_vals = _df[_post_cols]
-        _pre_valid = _pre_vals.notna().sum(axis=1) >= 2
-        _pre_mean = _pre_vals.mean(axis=1)
-        _post_mean = _post_vals.mean(axis=1)
-        _delta = _post_mean - _pre_mean
-
-        _resp_delta = _delta[_resp_mask & _pre_valid]
-        _nonresp_delta = _delta[_nonresp_mask & _pre_valid]
+        _resp_delta = _snap_delta[_resp_mask & _both_valid]
+        _nonresp_delta = _snap_delta[_nonresp_mask & _both_valid]
         if len(_resp_delta) < _MIN_DID_ACCOUNTS or len(_nonresp_delta) < _MIN_DID_ACCOUNTS:
             continue
 
@@ -92,32 +81,32 @@ else:
 
         _did_results.append({
             'wave': wk, 'label': f"{wk[:3]} '{wk[3:]}",
+            'snapshots': f"{wc['before_label']}->{wc['after_label']}",
             'n_mailed': _n_mailed, 'n_resp': _n_resp,
             'n_nonresp': _n_nonresp, 'rate': _rate,
-            'resp_pre': _pre_mean[_resp_mask & _pre_valid].median(),
-            'resp_post': _post_mean[_resp_mask & _pre_valid].median(),
-            'resp_delta': _resp_delta.median(),
-            'nonresp_pre': _pre_mean[_nonresp_mask & _pre_valid].median(),
-            'nonresp_post': _post_mean[_nonresp_mask & _pre_valid].median(),
-            'nonresp_delta': _nonresp_delta.median(),
+            'resp_pre': _df.loc[_resp_mask & _both_valid, wc['before_col']].median(),
+            'resp_post': _df.loc[_resp_mask & _both_valid, wc['after_col']].median(),
+            'nonresp_pre': _df.loc[_nonresp_mask & _both_valid, wc['before_col']].median(),
+            'nonresp_post': _df.loc[_nonresp_mask & _both_valid, wc['after_col']].median(),
             'did_lift': _did_lift,
         })
 
     if _did_results:
         print(f"\n{'=' * 120}")
-        print(f"  BUSINESS DEPOSITS — DIFFERENCE-IN-DIFFERENCES DEPOSIT LIFT (Cell 14g)")
+        print(f"  BUSINESS DEPOSITS -- DIFFERENCE-IN-DIFFERENCES DEPOSIT LIFT (Cell 14g)")
         print(f"{'=' * 120}")
-        print(f"  Methodology: DID = (Resp_post - Resp_pre) - (NonResp_post - NonResp_pre)")
+        print(f"  Methodology: DID = (Resp_post_snap - Resp_pre_snap) - (NonResp_post_snap - NonResp_pre_snap)")
+        print(f"  Measurement: ZAccounts depAmt365 (rolling 365-day deposit total)")
         print(f"  Minimum N per group: {_MIN_DID_ACCOUNTS}")
         print()
-        _hdr = (f"  {'Wave':<10s}  {'Mailed':>8s}  {'Resp':>7s}  {'Rate':>6s}"
+        _hdr = (f"  {'Wave':<10s}  {'Snapshots':<16s}  {'Mailed':>8s}  {'Resp':>7s}  {'Rate':>6s}"
                 f"  {'Resp Pre':>12s}  {'Resp Post':>12s}"
                 f"  {'NR Pre':>12s}  {'NR Post':>12s}"
                 f"  {'DID Lift':>12s}")
         print(_hdr)
-        print(f"  {'-'*10}  {'-'*8}  {'-'*7}  {'-'*6}  {'-'*12}  {'-'*12}  {'-'*12}  {'-'*12}  {'-'*12}")
+        print(f"  {'-'*10}  {'-'*16}  {'-'*8}  {'-'*7}  {'-'*6}  {'-'*12}  {'-'*12}  {'-'*12}  {'-'*12}  {'-'*12}")
         for r in _did_results:
-            print(f"  {r['label']:<10s}  {r['n_mailed']:>8,}  {r['n_resp']:>7,}  {r['rate']:>5.1f}%"
+            print(f"  {r['label']:<10s}  {r['snapshots']:<16s}  {r['n_mailed']:>8,}  {r['n_resp']:>7,}  {r['rate']:>5.1f}%"
                   f"  {'${:>,.0f}'.format(r['resp_pre']):>12s}  {'${:>,.0f}'.format(r['resp_post']):>12s}"
                   f"  {'${:>,.0f}'.format(r['nonresp_pre']):>12s}  {'${:>,.0f}'.format(r['nonresp_post']):>12s}"
                   f"  {'${:>,.0f}'.format(r['did_lift']):>12s}")
@@ -129,21 +118,21 @@ else:
         x = np.arange(len(_wave_labels))
         _colors = [GEN_COLORS['success'] if v >= 0 else GEN_COLORS['warning'] for v in _did_vals]
         bars = ax.bar(x, _did_vals, color=_colors, edgecolor='white', width=0.6)
-        for bar, val, r in zip(bars, _did_vals, _did_results):
-            _va = 'bottom' if val >= 0 else 'top'
+        for bar, val in zip(bars, _did_vals):
             ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
-                    gen_fmt_dollar(val, None), ha='center', va=_va,
+                    gen_fmt_dollar(val, None), ha='center',
+                    va='bottom' if val >= 0 else 'top',
                     fontsize=14, fontweight='bold')
         ax.axhline(y=0, color=GEN_COLORS['muted'], linewidth=1)
         ax.set_xticks(x)
         ax.set_xticklabels(_wave_labels, fontsize=13, rotation=20, ha='right')
-        ax.set_ylabel('DID Deposit Lift ($/month)', fontsize=14, fontweight='bold')
+        ax.set_ylabel('DID Deposit Lift (depAmt365)', fontsize=14, fontweight='bold')
         ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
         gen_clean_axes(ax)
-        fig.suptitle('Business Accounts \u2014 Deposit DiD Lift by Campaign Wave',
+        fig.suptitle('Business Accounts -- Deposit DiD Lift by Campaign Wave',
                      fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
         fig.text(0.5, -0.02,
-                 f'DID = (Resp post-pre) - (NonResp post-pre)  |  {len(_did_results)} waves',
+                 f'DID = (Resp snap delta) - (NonResp snap delta)  |  {len(_did_results)} waves  |  ZAccounts depAmt365',
                  ha='center', fontsize=12, color=GEN_COLORS['muted'])
         plt.tight_layout()
         plt.show()

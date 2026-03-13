@@ -1,27 +1,26 @@
 # ===========================================================================
-# PERSONAL DEPOSITS: Snapshot-Monthly Fusion Timeline
+# PERSONAL DEPOSITS: Deposit Recency Analysis Across Snapshots
 # ===========================================================================
-# Aligns ZAccounts snapshot measurements with ODDD monthly deposits to show
-# how monthly behavior leads up to and follows each snapshot measurement.
+# At each ZAccounts snapshot, compute how the most recent deposit activity
+# compares to the full-year run rate using nested windows (33d / 99d).
 #
-# Core insight: snapshot depAmt365 is a rolling 365-day sum. By comparing
-# the most recent 3 months of ODDD MTD against depAmt365/4 (quarterly avg),
-# we get a "recency ratio" — whether deposits are accelerating or decelerating
-# relative to the rolling annual average.
+# Recency Ratio = (DepAmtN / N * 365) / depAmt365
+#   ratio_33: most recent ~1 month vs annual rate
+#   ratio_99: most recent ~3 months vs annual rate
+#   > 1.0 = deposits accelerating, < 1.0 = deposits decelerating
 #
-# Cross-source: ODDD (MTD cols) + ZAccounts (snapshot depAmt365_{label})
+# IMPORTANT: ODDD MTD columns are overdraft item counts, NOT deposit data.
+# All deposit recency is derived solely from ZAccounts DepAmt33/99/depAmt365.
+#
 # Data: deposits_personal_df
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
-import numpy as np
 
 _df = deposits_personal_df.copy()
 
 if not ZA_HAS_MULTIPLE:
     print("    21 Skipped: requires 2+ ZAccounts snapshots")
-elif not mtd_cols:
-    print("    21 Skipped: no MTD columns")
 else:
     # -----------------------------------------------------------------
     # 1. Classify accounts by campaign status
@@ -37,162 +36,249 @@ else:
         _df['_camp_status'] = 'All Accounts'
 
     # -----------------------------------------------------------------
-    # 2. Map snapshots to ODDD monthly timeline
+    # 2. Build snapshot metadata
     # -----------------------------------------------------------------
-    _mo_map = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
-               'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
-    _all_mtd_keys = sorted(mtd_cols.keys(), key=_camp_month_sort_key)
-
-    def _mtd_key_to_ym(mk):
-        return (int(mk[3:]) + 2000, _mo_map.get(mk[:3], 1))
-
-    _mtd_ym = {mk: _mtd_key_to_ym(mk) for mk in _all_mtd_keys}
-
     _snap_keys = sorted(ZA_SNAPSHOT_META.keys())
-    _snap_alignment = []
-
+    _snap_info = []
     for sk in _snap_keys:
         _meta = ZA_SNAPSHOT_META[sk]
         _label = _meta['label']
-        _sd = _meta['date']
-        _s_yr, _s_mn = _sd.year, _sd.month
-
-        # Find 3 ODDD months leading up to snapshot (1-3 months before)
-        _pre_months = []
-        for mk in _all_mtd_keys:
-            _m_yr, _m_mn = _mtd_ym[mk]
-            _diff = (_s_yr - _m_yr) * 12 + (_s_mn - _m_mn)
-            if 0 <= _diff <= 2:
-                _pre_months.append(mk)
-
-        # Find closest MTD key to snapshot month for marker position
-        _closest_mk = None
-        _min_dist = 999
-        for mk in _all_mtd_keys:
-            _m_yr, _m_mn = _mtd_ym[mk]
-            _dist = abs((_s_yr - _m_yr) * 12 + (_s_mn - _m_mn))
-            if _dist < _min_dist:
-                _min_dist = _dist
-                _closest_mk = mk
-
-        _snap_alignment.append({
-            'key': sk, 'label': _label, 'date': _sd,
-            'pre_months': _pre_months,
-            'closest_mtd': _closest_mk,
-            'closest_idx': _all_mtd_keys.index(_closest_mk) if _closest_mk in _all_mtd_keys else None,
-            'dep_col': f"depAmt365_{_label}",
+        _snap_info.append({
+            'key': sk,
+            'label': _label,
+            'date': _meta['date'],
+            'dep365_col': f"depAmt365_{_label}",
+            'dep33_col': f"DepAmt33_{_label}",
+            'dep99_col': f"DepAmt99_{_label}",
         })
 
-    # -----------------------------------------------------------------
-    # 3. Compute recency ratio per snapshot per group
-    # -----------------------------------------------------------------
-    _camp_groups = ['Responder', 'Non-Responder', 'Never Mailed'] if HAS_CAMPAIGN_DATA else ['All Accounts']
+    _camp_groups = (
+        ['Responder', 'Non-Responder', 'Never Mailed']
+        if HAS_CAMPAIGN_DATA else ['All Accounts']
+    )
     _camp_groups = [g for g in _camp_groups if g in _df['_camp_status'].values]
 
-    print(f"\n{'=' * 100}")
-    print(f"  PERSONAL DEPOSITS — SNAPSHOT-MONTHLY FUSION TIMELINE (Cell 21)")
-    print(f"{'=' * 100}")
-    print(f"  Snapshots aligned with ODDD monthly timeline")
-    print(f"  Recency Ratio = (3-month pre MTD avg) / (depAmt365 / 12)")
-    print(f"    > 1.0 = deposits accelerating recently")
-    print(f"    < 1.0 = deposits decelerating recently")
-    print()
+    # -----------------------------------------------------------------
+    # 3. Compute recency ratios per snapshot per group
+    # -----------------------------------------------------------------
+    _RATIO_DAYS_33 = 33
+    _RATIO_DAYS_99 = 99
+    _MIN_N = 20
+    _table_rows = []
 
-    _hdr = f"  {'Snapshot':<10s}  {'Group':<20s}  {'N':>7s}  {'Med depAmt365':>16s}  {'3-mo Pre Avg':>14s}  {'Recency Ratio':>14s}"
-    print(_hdr)
-    print(f"  {'-'*10}  {'-'*20}  {'-'*7}  {'-'*16}  {'-'*14}  {'-'*14}")
-
-    for sa in _snap_alignment:
-        _dep_col = sa['dep_col']
-        _pre_cols = [mtd_cols[m] for m in sa['pre_months'] if m in mtd_cols]
-        if _dep_col not in _df.columns or not _pre_cols:
+    for si in _snap_info:
+        _d365 = si['dep365_col']
+        _d33 = si['dep33_col']
+        _d99 = si['dep99_col']
+        if _d365 not in _df.columns:
             continue
 
         for g in _camp_groups:
-            _g_df = _df[(_df['_camp_status'] == g) & _df[_dep_col].notna()]
-            if len(_g_df) < 20:
+            _mask = (
+                (_df['_camp_status'] == g)
+                & _df[_d365].notna()
+                & (_df[_d365] > 0)
+            )
+            _g_df = _df[_mask]
+            if len(_g_df) < _MIN_N:
                 continue
-            _med_dep365 = _g_df[_dep_col].median()
-            _med_pre = _g_df[_pre_cols].mean(axis=1).median()
-            _monthly_avg = _med_dep365 / 12 if _med_dep365 > 0 else 0
-            _ratio = _med_pre / _monthly_avg if _monthly_avg > 0 else 0
 
-            print(f"  {sa['label'].upper():<10s}  {g:<20s}  {len(_g_df):>7,}"
-                  f"  {'${:>,.0f}'.format(_med_dep365):>16s}"
-                  f"  {'${:>,.0f}'.format(_med_pre):>14s}"
-                  f"  {_ratio:>14.2f}")
+            _med_365 = _g_df[_d365].median()
+            _med_33 = _g_df[_d33].median() if _d33 in _df.columns else np.nan
+            _r33 = (
+                (_med_33 / _RATIO_DAYS_33 * 365) / _med_365
+                if _d33 in _df.columns and _med_365 > 0 else np.nan
+            )
+            _med_99 = _g_df[_d99].median() if _d99 in _df.columns else np.nan
+            _r99 = (
+                (_med_99 / _RATIO_DAYS_99 * 365) / _med_365
+                if _d99 in _df.columns and _med_365 > 0 else np.nan
+            )
 
-    print(f"{'=' * 100}")
+            _table_rows.append({
+                'snapshot': si['label'],
+                'group': g,
+                'n': len(_g_df),
+                'med_365': _med_365,
+                'med_33': _med_33,
+                'ratio_33': _r33,
+                'ratio_99': _r99,
+            })
 
     # -----------------------------------------------------------------
-    # 4. Chart: dual-axis timeline with snapshot markers
+    # 4. Summary table
     # -----------------------------------------------------------------
-    _palette = {'Responder': GEN_COLORS['success'],
-                'Non-Responder': GEN_COLORS['muted'],
-                'Never Mailed': GEN_COLORS['info'],
-                'All Accounts': GEN_COLORS['primary']}
-    _line_styles = {'Responder': '-', 'Non-Responder': '--',
-                    'Never Mailed': ':', 'All Accounts': '-'}
+    print(f"\n{'=' * 115}")
+    print("  PERSONAL DEPOSITS -- Deposit Recency Analysis Across Snapshots (Cell 21)")
+    print(f"{'=' * 115}")
+    print("  Recency Ratio = (DepAmtN / N * 365) / depAmt365")
+    print("    > 1.0 = accelerating    < 1.0 = decelerating")
+    print()
 
-    fig, ax1 = plt.subplots(figsize=(20, 9))
-    x = np.arange(len(_all_mtd_keys))
-    _labels = [f"{mk[:3]} '{mk[3:]}" for mk in _all_mtd_keys]
+    _hdr = (
+        f"  {'Snapshot':<10s}  {'Group':<20s}  {'N':>7s}"
+        f"  {'Med depAmt365':>14s}  {'Med DepAmt33':>14s}"
+        f"  {'Ratio (33d)':>12s}  {'Ratio (99d)':>12s}"
+    )
+    print(_hdr)
+    print(
+        f"  {'-'*10}  {'-'*20}  {'-'*7}"
+        f"  {'-'*14}  {'-'*14}  {'-'*12}  {'-'*12}"
+    )
 
-    # Left axis: monthly MTD medians per group
-    for g in _camp_groups:
-        _g_df = _df[_df['_camp_status'] == g]
-        _medians = []
-        for mk in _all_mtd_keys:
-            _col = mtd_cols[mk]
-            _med = _g_df[_col].dropna().median()
-            _medians.append(_med if not np.isnan(_med) else 0)
-        ax1.plot(x, _medians, color=_palette.get(g, GEN_COLORS['warning']),
-                 linewidth=2.5, linestyle=_line_styles.get(g, '-'),
-                 label=f'{g} MTD (n={len(_g_df):,})', zorder=2)
+    for r in _table_rows:
+        _r33_str = f"{r['ratio_33']:.2f}" if not np.isnan(r['ratio_33']) else "n/a"
+        _r99_str = f"{r['ratio_99']:.2f}" if not np.isnan(r['ratio_99']) else "n/a"
+        _m33_str = f"${r['med_33']:>,.0f}" if not np.isnan(r['med_33']) else "n/a"
+        print(
+            f"  {r['snapshot'].upper():<10s}  {r['group']:<20s}  {r['n']:>7,}"
+            f"  {'${:>,.0f}'.format(r['med_365']):>14s}  {_m33_str:>14s}"
+            f"  {_r33_str:>12s}  {_r99_str:>12s}"
+        )
 
-    ax1.set_ylabel('Median Monthly Deposits ($)', fontsize=14, fontweight='bold')
-    ax1.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+    print(f"{'=' * 115}")
 
-    # Snapshot markers as vertical bands
-    for sa in _snap_alignment:
-        _idx = sa['closest_idx']
-        if _idx is not None:
-            # Shade the 3-month pre window
-            _pre_indices = [_all_mtd_keys.index(m) for m in sa['pre_months'] if m in _all_mtd_keys]
-            if _pre_indices:
-                ax1.axvspan(min(_pre_indices) - 0.3, max(_pre_indices) + 0.3,
-                            alpha=0.08, color=GEN_COLORS['accent'])
-            # Vertical line at snapshot
-            ax1.axvline(x=_idx, color=GEN_COLORS['accent'], alpha=0.6,
-                        linestyle='-', linewidth=2)
-            ax1.text(_idx, ax1.get_ylim()[1] * 0.95, f" {sa['label'].upper()}",
-                     fontsize=11, fontweight='bold', color=GEN_COLORS['accent'],
-                     va='top', ha='left')
+    # -----------------------------------------------------------------
+    # 5. Chart: two-panel layout
+    #    LEFT  = recency ratio grouped bars per snapshot
+    #    RIGHT = card spend trend with mailer markers
+    # -----------------------------------------------------------------
+    _palette = {
+        'Responder': GEN_COLORS['success'],
+        'Non-Responder': GEN_COLORS['muted'],
+        'Never Mailed': GEN_COLORS['info'],
+        'All Accounts': GEN_COLORS['primary'],
+    }
 
-    # Mark campaign waves
-    for mk in CAMP_MAILER_KEYS:
-        if mk in _all_mtd_keys:
-            _wi = _all_mtd_keys.index(mk)
-            ax1.axvline(x=_wi, color=GEN_COLORS['warning'], alpha=0.3,
-                        linestyle='--', linewidth=1)
+    fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(22, 9),
+                                             gridspec_kw={'width_ratios': [3, 2]})
 
-    # X-axis thinning
-    _step = max(1, len(_labels) // 15)
-    _visible = list(range(0, len(_labels), _step))
-    if (len(_labels) - 1) not in _visible:
-        _visible.append(len(_labels) - 1)
-    ax1.set_xticks([x[i] for i in _visible])
-    ax1.set_xticklabels([_labels[i] for i in _visible],
-                         fontsize=12, rotation=30, ha='right')
+    # --- LEFT PANEL: grouped bar chart of recency ratios ---------------
+    _snap_labels_used = list(dict.fromkeys(r['snapshot'] for r in _table_rows))
+    _n_snaps = len(_snap_labels_used)
+    _n_groups = len(_camp_groups)
 
-    ax1.legend(fontsize=12, frameon=False, loc='upper left')
-    gen_clean_axes(ax1)
+    if _n_snaps > 0 and _n_groups > 0:
+        _bar_width = 0.7 / (_n_groups * 2)
+        _x_base = np.arange(_n_snaps)
 
-    fig.suptitle('Personal Accounts \u2014 Snapshot-Monthly Deposit Fusion',
-                 fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
-    fig.text(0.5, -0.02,
-             'Vertical lines = snapshot dates  |  Dashed = mailer waves  |  '
-             'Shaded = 3-month pre-snapshot window',
-             ha='center', fontsize=12, color=GEN_COLORS['muted'])
+        for gi, g in enumerate(_camp_groups):
+            _vals_33 = []
+            _vals_99 = []
+            for sl in _snap_labels_used:
+                _match = [
+                    r for r in _table_rows
+                    if r['snapshot'] == sl and r['group'] == g
+                ]
+                if _match:
+                    _vals_33.append(
+                        _match[0]['ratio_33'] if not np.isnan(_match[0]['ratio_33']) else 0
+                    )
+                    _vals_99.append(
+                        _match[0]['ratio_99'] if not np.isnan(_match[0]['ratio_99']) else 0
+                    )
+                else:
+                    _vals_33.append(0)
+                    _vals_99.append(0)
+
+            _offset_33 = (gi * 2) * _bar_width - (_n_groups * _bar_width) + _bar_width / 2
+            _offset_99 = (gi * 2 + 1) * _bar_width - (_n_groups * _bar_width) + _bar_width / 2
+
+            ax_left.bar(
+                _x_base + _offset_33, _vals_33, _bar_width * 0.9,
+                color=_palette.get(g, GEN_COLORS['warning']), alpha=0.85,
+                label=f'{g} (33d)',
+            )
+            ax_left.bar(
+                _x_base + _offset_99, _vals_99, _bar_width * 0.9,
+                color=_palette.get(g, GEN_COLORS['warning']), alpha=0.45,
+                label=f'{g} (99d)',
+            )
+
+        ax_left.axhline(y=1.0, color=GEN_COLORS.get('dark_text', '#333333'),
+                         linewidth=1.2, linestyle='--', alpha=0.5)
+        ax_left.set_xticks(_x_base)
+        ax_left.set_xticklabels(
+            [sl.upper() for sl in _snap_labels_used],
+            fontsize=12, fontweight='bold',
+        )
+        ax_left.set_ylabel('Recency Ratio', fontsize=14, fontweight='bold')
+        ax_left.set_title(
+            'Deposit Recency by Snapshot & Campaign Group',
+            fontsize=15, fontweight='bold', color=GEN_COLORS['dark_text'],
+        )
+        ax_left.legend(fontsize=10, frameon=False, ncol=2, loc='upper left')
+        gen_clean_axes(ax_left)
+
+    # --- RIGHT PANEL: card spend trend with mailer markers -------------
+    _all_spend_keys = sorted(spend_cols.keys(), key=_camp_month_sort_key)
+    _spend_labels = [f"{mk[:3]} '{mk[3:]}" for mk in _all_spend_keys]
+
+    if _all_spend_keys:
+        _x_spend = np.arange(len(_all_spend_keys))
+
+        for g in _camp_groups:
+            _g_df = _df[_df['_camp_status'] == g]
+            _spend_medians = []
+            for mk in _all_spend_keys:
+                _col = spend_cols[mk]
+                _med = _g_df[_col].dropna().median()
+                _spend_medians.append(_med if not np.isnan(_med) else 0)
+
+            ax_right.plot(
+                _x_spend, _spend_medians,
+                color=_palette.get(g, GEN_COLORS['warning']),
+                linewidth=2.5, label=f'{g} (n={len(_g_df):,})',
+            )
+
+        # Mailer wave markers
+        for mk in CAMP_MAILER_KEYS:
+            if mk in _all_spend_keys:
+                _wi = _all_spend_keys.index(mk)
+                ax_right.axvline(
+                    x=_wi, color=GEN_COLORS['warning'], alpha=0.4,
+                    linestyle='--', linewidth=1.2,
+                )
+
+        ax_right.set_ylabel(
+            'Median Card Spend ($)', fontsize=14, fontweight='bold',
+        )
+        ax_right.yaxis.set_major_formatter(
+            mticker.FuncFormatter(gen_fmt_dollar),
+        )
+
+        _step = max(1, len(_spend_labels) // 10)
+        _visible = list(range(0, len(_spend_labels), _step))
+        if (len(_spend_labels) - 1) not in _visible:
+            _visible.append(len(_spend_labels) - 1)
+        ax_right.set_xticks([_x_spend[i] for i in _visible])
+        ax_right.set_xticklabels(
+            [_spend_labels[i] for i in _visible],
+            fontsize=11, rotation=30, ha='right',
+        )
+        ax_right.set_title(
+            'Card Spend Trend (Context)',
+            fontsize=15, fontweight='bold', color=GEN_COLORS['dark_text'],
+        )
+        ax_right.legend(fontsize=10, frameon=False, loc='upper left')
+        gen_clean_axes(ax_right)
+    else:
+        ax_right.text(
+            0.5, 0.5, 'No spend data available',
+            transform=ax_right.transAxes, ha='center', va='center',
+            fontsize=14, color=GEN_COLORS['muted'],
+        )
+        ax_right.set_axis_off()
+
+    fig.suptitle(
+        'Personal Accounts -- Deposit Recency Analysis Across Snapshots',
+        fontsize=20, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02,
+    )
+    fig.text(
+        0.5, -0.02,
+        'Recency Ratio > 1.0 = accelerating  |  < 1.0 = decelerating  |  '
+        'Dashed = mailer waves  |  Bars = 33d (solid) / 99d (faded)',
+        ha='center', fontsize=11, color=GEN_COLORS['muted'],
+    )
     plt.tight_layout()
     plt.show()

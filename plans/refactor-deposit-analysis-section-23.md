@@ -22,7 +22,7 @@ The section needs a clean restructure: sequential numbering, one chart per cell,
 | **Account Status** | `Business?`, `Stat Code`, `Stat Desc`, `Prod Code`, `Prod Desc`, `Debit?` | `Business?` drives personal/business split; `Stat Code` = 'O' filters open accounts |
 | **Dates** | `DOB`, `Date Opened`, `Date Closed` | `Account Holder Age`, `Account Age` are derived |
 | **Balances** | `Avg Bal`, `Curr Bal` | Account-level current state |
-| **Monthly Deposits (MTD)** | `{Mon}{YY} MTD` (e.g., `Sep24 MTD` through `Feb26 MTD`) | ~17 months of monthly deposit totals; auto-discovered as `mtd_cols` |
+| **Monthly OD Items (MTD)** | `{Mon}{YY} MTD` (e.g., `Sep24 MTD` through `Feb26 MTD`) | ~17 months of monthly overdraft item counts (NOT deposits); auto-discovered as `od_mtd_cols` |
 | **Monthly Spend** | `{Mon}{YY} Spend` (e.g., `Sep24 Spend` through `Feb26 Spend`) | Auto-discovered as `spend_cols` |
 | **Monthly Swipes** | `{Mon}{YY} Swipes` | Auto-discovered as `swipes_cols` |
 | **Monthly PIN $/#** | `{Mon}{YY} PIN $`, `{Mon}{YY} PIN #` | Auto-discovered as `pin_amt_cols`, `pin_cnt_cols` |
@@ -85,7 +85,7 @@ ODDD (rewards_df)                    ZAccounts (zaccounts_df)
 ```
 
 The merged `deposits_df` gives every cell access to:
-- **ODDD monthly time series** (spend, swipes, MTD deposits, PIN/Sig) for trend analysis
+- **ODDD monthly time series** (spend, swipes, OD items, PIN/Sig) for trend analysis
 - **ZAccounts deposit windows** (33/66/99/365) for velocity and acceleration
 - **ZAccounts risk signals** (repayment, fee ratios, trend indicators)
 - **ODDD campaign data** (response grouping, segmentation) for responder analysis
@@ -210,7 +210,7 @@ Working DataFrame: `deposits_personal_df` (open accounts, `acct_type == 'Persona
 |------|------|---------|-------------|------------|
 | 09 | `deposits_vs_fees_vs_swipes` | **NEW.** The triangle: 365-day deposit amount vs fee ratio vs swipe count. Grouped bar or multi-metric view. | ZAccounts + ODDD | `depAmt365`, `nsfodfeestodepositsratio90days`, `SIG_365`, `PIN_365` |
 | 10 | `deposit_spend_correlation` | Scatter: annual deposit amount (ZAccounts) vs annual spend (ODDD). Color by velocity tier. Are heavy depositors heavy spenders? | ZAccounts + ODDD | `depAmt365`, `Total Spend` |
-| 11 | `monthly_deposits_vs_spend` | Dual-line chart: monthly aggregate deposit total (MTD cols) vs monthly aggregate spend (Spend cols) over full period. Shows whether deposits and spend move together. | ODDD | `mtd_cols`, `spend_cols` (auto-discovered monthly columns) |
+| 11 | `monthly_deposits_vs_spend` | Grouped bar: deposit amounts (depAmt365) at each ZAccounts snapshot vs cumulative card spend in the same trailing-365 window. Shows whether deposits and spend move together. | ZAccounts + ODDD | `depAmt365_{label}`, `spend_cols` |
 
 ### Longitudinal (Conditional — only if `ZA_HAS_MULTIPLE == True`)
 | Cell | Name | Purpose | Data Source | Key Fields |
@@ -234,7 +234,7 @@ Working DataFrame: `deposits_personal_df` (open accounts, `acct_type == 'Persona
 ### Monthly Trends
 | Cell | Name | Purpose | Data Source | Key Fields |
 |------|------|---------|-------------|------------|
-| 19 | `monthly_deposit_trend` | Monthly aggregate deposit total with 3-month rolling average overlay. Line chart showing deposit trend over full period. | ODDD | `mtd_cols` (via `deposits_personal_df`) |
+| 19 | ~~`monthly_deposit_trend`~~ | **DELETED.** MTD columns are overdraft items, not deposits. Monthly deposit trends are impossible without monthly deposit data. Deposit trends are covered by snapshot-based cells (12, 21). | -- | -- |
 
 ### Summary
 | Cell | Name | Purpose | Data Source | Key Fields |
@@ -274,7 +274,7 @@ Working DataFrame: `deposits_business_df` (open accounts, `acct_type == 'Busines
 | 16 | `business_repayment_health` | Same as S23 cell 16 |
 | 17 | `business_deposit_risk_profile` | Same as S23 cell 17 |
 | 18 | `business_closed_account_patterns` | Same as S23 cell 18 |
-| 19 | `business_monthly_deposit_trend` | Same as S23 cell 19 |
+| 19 | ~~`business_monthly_deposit_trend`~~ | **DELETED** (same as S23 cell 19) |
 | 20 | `business_deposit_summary` | Same as S23 cell 20 |
 
 ---
@@ -329,7 +329,7 @@ Working DataFrame: `deposits_business_df` (open accounts, `acct_type == 'Busines
   → Filters open accounts (Stat Code = 'O')
   → Preserves deposits_closed_df BEFORE filter (for cell 18)
   → Splits: deposits_personal_df, deposits_business_df
-  → Auto-discovers monthly column maps (mtd_cols, spend_cols, etc.)
+  → Auto-discovers monthly column maps (od_mtd_cols, spend_cols, etc.)
   → Builds longitudinal snapshot metadata (ZA_SNAPSHOT_META)
   |
   +-- deposits_personal_df (Section 23, cells 02-20)
@@ -337,7 +337,7 @@ Working DataFrame: `deposits_business_df` (open accounts, `acct_type == 'Busines
   +-- deposits_closed_df (Section 23 cell 18, Section 24 cell 18)
   |
   +-- Cells 12-13: conditional on ZA_HAS_MULTIPLE
-  +-- Monthly columns: mtd_cols, spend_cols, swipes_cols, pin_amt_cols, etc.
+  +-- Monthly columns: od_mtd_cols (OD items), spend_cols, swipes_cols, pin_amt_cols, etc.
 ```
 
 ---

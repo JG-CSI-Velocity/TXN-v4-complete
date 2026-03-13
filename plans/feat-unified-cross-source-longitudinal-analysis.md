@@ -17,7 +17,7 @@ Build a **true unified analysis layer** that fuses all three data sources (ODDD,
 
 | Data Source | Fields | Status | Usage |
 |---|---|---|---|
-| ODDD Monthly (MTD/Spend/Swipes) | 17 months x 7 types | Heavily used | Aggregate trends (cell 11, 19), campaign segmentation (14d) |
+| ODDD Monthly (OD Items/Spend/Swipes) | 17 months x 7 types | Heavily used | Card spend trends (cell 11, 14d). NOTE: MTD = overdraft items, NOT deposits |
 | ZAccounts Latest Snapshot | 77 fields | Heavily used | Static KPIs, distributions, cross-source joins |
 | ZAccounts Multi-Snapshot | 21 fields x 3 snapshots | Conditional use | Trajectory (cells 12, 13), delta (14i) — **isolated from ODDD** |
 | ZTrends Events | 56 fields | **Never used** | Loaded in setup, orphaned |
@@ -26,7 +26,7 @@ Build a **true unified analysis layer** that fuses all three data sources (ODDD,
 ### What Executives Need
 
 1. **Acceleration story**: "Are deposits growing faster or slower between measurement points? Is it the campaign or organic?"
-2. **Campaign ROI with snapshot validation**: "The Jun25 campaign ran. Monthly MTD shows a bump. Does the Dec25 snapshot confirm sustained deposit growth?"
+2. **Campaign ROI with snapshot validation**: "The Jun25 campaign ran. Does the Dec25 snapshot confirm sustained deposit growth compared to the Jun25 snapshot?"
 3. **Risk-deposit connection**: "Accounts that had OD events — did their deposit patterns change? Did they recover?"
 4. **Momentum classification**: "Which accounts have positive deposit momentum right now?"
 
@@ -69,33 +69,30 @@ Section 23 (Personal)                       Section 24 (Business)
 
 ### Cell 21: Snapshot-Monthly Fusion Timeline
 
-**Purpose:** Align ZAccounts snapshot measurements with ODDD monthly deposits to show how monthly behavior leads up to and follows each snapshot.
+**Purpose:** Analyze deposit recency across ZAccounts snapshots using nested rolling windows.
 
-**The Core Question:** "Does the monthly deposit trend from ODDD match what the snapshot says?"
+**The Core Question:** "Are deposits accelerating or decelerating at each snapshot — and does it differ by campaign status?"
 
-**Algorithm:**
+**Algorithm (CORRECTED — MTD columns are OD items, NOT deposits):**
 
 ```
 For each snapshot S (nov24, jun25, dec25):
-  1. Get snapshot date → identify the 3 ODDD months leading up to it
-     e.g., Jun25 snapshot → Apr25 MTD, May25 MTD, Jun25 MTD
-  2. Get snapshot depAmt365_{label} for the account
-  3. Compare: sum(3-month pre MTD) vs depAmt365 (rolling 365-day)
-  4. Compute "recency ratio" = 3-month pre / (depAmt365/4)
+  1. Get snapshot deposit windows: DepAmt33_{label}, DepAmt99_{label}, depAmt365_{label}
+  2. Compute recency ratios using ONLY ZAccounts fields:
+     - ratio_33 = (DepAmt33 / 33 * 365) / depAmt365
+     - ratio_99 = (DepAmt99 / 99 * 365) / depAmt365
      - Ratio > 1 = deposits accelerating recently
      - Ratio < 1 = deposits decelerating recently
+  3. Break down by campaign status (Responder/Non-Responder/Never Mailed)
 
 For visualization:
-  - X-axis: full 17-month ODDD timeline
-  - Y-axis left: median monthly deposits (MTD) as line
-  - Y-axis right: snapshot depAmt365 as large markers at snapshot dates
-  - Vertical bands: 3-month windows leading up to each snapshot
-  - Segmented by campaign status (Responder/Non-Responder/Never Mailed)
+  - LEFT panel: recency ratio grouped bars per snapshot per campaign group
+  - RIGHT panel: ODDD card spend trend overlay (spend_cols) with mailer markers for context
 ```
 
 **Data Dependencies:**
-- `deposits_personal_df` with snapshot-suffixed columns (`depAmt365_nov24`, etc.)
-- `mtd_cols` from setup
+- `deposits_personal_df` with snapshot-suffixed columns (`depAmt365_nov24`, `DepAmt33_nov24`, etc.)
+- `spend_cols` from setup (for card spend context only — NOT used as deposit proxy)
 - `ZA_SNAPSHOT_META` for snapshot dates and labels
 - `CAMP_*` shared classification for segmentation
 
@@ -151,9 +148,9 @@ For each account with all 3 snapshots present:
 
 ### Cell 23: Campaign-Snapshot Validation
 
-**Purpose:** For each campaign wave, validate the DiD lift (from cell 14g) against ZAccounts snapshot changes. Does the monthly MTD lift translate into real deposit growth at the next snapshot?
+**Purpose:** For each campaign wave, compute snapshot-based DiD and validate with both amount and count metrics. (CORRECTED: no longer compares MTD DID vs snapshot DID since MTD is OD items, not deposits.)
 
-**The Core Question:** "The Jun25 campaign showed a $X/mo DiD lift in MTD. Did the Dec25 snapshot confirm it?"
+**The Core Question:** "Did the campaign produce a measurable deposit lift between bracketing snapshots, confirmed by both amount AND count?"
 
 **Algorithm:**
 
@@ -168,25 +165,17 @@ For each campaign wave W:
   2. For Responders vs Non-Responders in wave W:
      - Compute snapshot delta: depAmt365_{after} - depAmt365_{before}
      - Compute snapshot DID: resp_snapshot_delta - nonresp_snapshot_delta
-  3. Compare:
-     - MTD-based DID (from 14g pattern, monthly ODDD data)
-     - Snapshot-based DID (from ZAccounts rolling 365-day window)
-  4. Agreement score: Do both methods show positive/negative lift?
-
-For Jun25 specifically (your cleanest case):
-  - Pre-campaign MTD: Mar25, Apr25, May25 from ODDD
-  - Post-campaign MTD: Jul25, Aug25, Sep25 from ODDD
-  - Snapshot validation: depAmt365_jun25 → depAmt365_dec25
-  - This gives BOTH monthly and snapshot confirmation
+  3. Also compute depCount365-based DID for frequency confirmation
+  4. Agreement: Do amount and count DID show same direction?
 ```
 
 **Edge Cases:**
-- Wave has no post-snapshot (Dec25 wave): show MTD-based DID only, note "awaiting next snapshot"
+- Wave has no post-snapshot (Dec25/Feb26 waves): skip, note "awaiting next snapshot"
 - Wave falls between same snapshot pair: multiple waves validated against same delta
 - Account missing from pre/post snapshot: exclude from that wave's snapshot DID
 
 **Output:**
-- Table: Wave, MTD DID, Snapshot DID, Agreement (Yes/No), N
+- Table: Wave, Snapshots, Amount DID, Count DID, Same Direction?, N
 - Chart: Paired bar per wave showing MTD-DID vs Snapshot-DID side by side
 - Callout: "Jun25 campaign: MTD shows $X/mo lift, snapshot confirms $Y annual lift"
 
@@ -304,7 +293,7 @@ For Jun25 specifically (your cleanest case):
 **Data Dependencies:**
 - `balance_{label}` for all 3 snapshots
 - `depAmt365_{label}`, `depCount365_{label}`
-- `mtd_cols` for monthly deposit sums
+- `depAmt365` from latest snapshot (replaces sum of MTD, which was OD items not deposits)
 - Campaign classification
 
 **Output:**
@@ -388,8 +377,8 @@ For Jun25 specifically (your cleanest case):
                   │          Cell 21             │
                   │   Snapshot-Monthly Fusion    │
                   │                             │
-  ODDD Monthly ──►│  MTD timeline + snapshot    │◄── ZAccounts Snapshots
-  (mtd_cols)      │  markers aligned on dates   │    (depAmt365_{label})
+  ODDD Spend ────►│  Card spend context +       │◄── ZAccounts Snapshots
+  (spend_cols)    │  recency ratios (33/99/365) │    (DepAmt33/99/365_{label})
                   └─────────────────────────────┘
 
                   ┌─────────────────────────────┐
@@ -405,8 +394,8 @@ For Jun25 specifically (your cleanest case):
                   │          Cell 23             │
                   │   Campaign-Snapshot Valid.   │
                   │                             │
-  ODDD Monthly ──►│  MTD-DID vs Snapshot-DID    │◄── ZAccounts Snapshots
-  Campaign Waves─►│  per wave, agreement score  │    (depAmt365_{label})
+                  │  Amount DID + Count DID     │◄── ZAccounts Snapshots
+  Campaign Waves─►│  per wave, direction check   │    (depAmt365/depCount365)
                   └─────────────────────────────┘
 
                   ┌─────────────────────────────┐
@@ -440,9 +429,9 @@ For Jun25 specifically (your cleanest case):
 
 ### Functional Requirements
 
-- [ ] Cell 21 produces dual-axis chart aligning ODDD monthly trend with snapshot measurement points
+- [ ] Cell 21 produces recency ratio analysis using ZAccounts nested windows (DepAmt33/99/365) with card spend context
 - [ ] Cell 22 classifies every multi-snapshot account into one of 6 acceleration categories
-- [ ] Cell 23 compares MTD-based DID with snapshot-based DID for each campaign wave
+- [ ] Cell 23 computes snapshot-based DID (amount + count) for each campaign wave with direction confirmation
 - [ ] Cell 24 analyzes ZTrends data for the first time — OD recovery patterns
 - [ ] Cell 25 uses orphaned trend indicator fields for momentum scoring
 - [ ] Cell 26 connects balance trajectory to deposit behavior and campaign status
@@ -489,8 +478,8 @@ For Jun25 specifically (your cleanest case):
 - `ZA_SNAPSHOT_META`: OrderedDict with snapshot dates and labels
 - `ZA_HAS_MULTIPLE`: Boolean for multi-snapshot availability
 - `_LONGITUDINAL_FIELDS`: List of 21 fields tracked per snapshot
-- `mtd_cols`, `spend_cols`, `swipes_cols`: ODDD monthly column maps
-- `DEP_MONTHS`: Chronological list of all monthly period keys
+- `od_mtd_cols` (OD items, NOT deposits), `spend_cols`, `swipes_cols`: ODDD monthly column maps
+- `ODDD_MONTHS`: Chronological list of all monthly period keys
 - `CAMP_MAILER_KEYS`, `CAMP_MAIL_COLS`, `CAMP_RESP_COLS`: Campaign wave data
 - `camp_is_success()`, `camp_challenge_tier()`: Classification functions
 - `ztrends_df`: ZTrends DataFrame (loaded but currently unused)

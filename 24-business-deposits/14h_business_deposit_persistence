@@ -1,5 +1,5 @@
 # ===========================================================================
-# BUSINESS DEPOSITS: Deposit Persistence (1mo / 3mo / 6mo)
+# BUSINESS DEPOSITS: Deposit Persistence (Nested Window Analysis)
 # ===========================================================================
 # Mirror of Section 23 cell 14h for business accounts.
 
@@ -14,123 +14,121 @@ if len(_df) < _MIN_ACCOUNTS:
     print(f"    14h Skipped: {len(_df)} business accounts (below {_MIN_ACCOUNTS} threshold)")
 elif not HAS_CAMPAIGN_DATA:
     print("    14h Skipped: no campaign data")
-elif not mtd_cols:
-    print("    14h Skipped: no MTD columns")
+elif not ZA_HAS_MULTIPLE:
+    print("    14h Skipped: requires 2+ ZAccounts snapshots")
 else:
-    _all_mtd_keys = sorted(mtd_cols.keys(), key=_camp_month_sort_key)
-    _all_mtd_dates = {}
-    for mk in _all_mtd_keys:
-        _mo_map = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
-                   'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
-        _all_mtd_dates[mk] = (int(mk[3:]) + 2000, _mo_map.get(mk[:3], 1))
+    _mo_map = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
+               'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
+    _snap_keys = sorted(ZA_SNAPSHOT_META.keys())
+    _snap_labels = [ZA_SNAPSHOT_META[sk]['label'] for sk in _snap_keys]
+    _snap_dates = {ZA_SNAPSHOT_META[sk]['label']: ZA_SNAPSHOT_META[sk]['date']
+                   for sk in _snap_keys}
 
     _WAVE_CONFIG = {}
     for wk in CAMP_MAILER_KEYS:
-        _mail_col = CAMP_MAIL_COLS[wk]
-        _resp_col = CAMP_RESP_COLS[wk]
-        _mo_map = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
-                   'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12}
         _w_yr = int(wk[3:]) + 2000
         _w_mn = _mo_map.get(wk[:3], 1)
-        _pre_months, _post_1mo, _post_3mo, _post_6mo = [], [], [], []
-        for mk in _all_mtd_keys:
-            _m_yr, _m_mn = _all_mtd_dates[mk]
-            _diff = (_w_yr - _m_yr) * 12 + (_w_mn - _m_mn)
-            if 1 <= _diff <= 3:
-                _pre_months.append(mk)
-            _diff_post = (_m_yr - _w_yr) * 12 + (_m_mn - _w_mn)
-            if _diff_post == 1:
-                _post_1mo.append(mk)
-            if 1 <= _diff_post <= 3:
-                _post_3mo.append(mk)
-            if 1 <= _diff_post <= 6:
-                _post_6mo.append(mk)
-        if len(_post_1mo) > 0 and len(_pre_months) >= 2:
+        _wave_ym = _w_yr * 12 + _w_mn
+        _after_label = None
+        for lbl in _snap_labels:
+            _sd = _snap_dates[lbl]
+            if _sd.year * 12 + _sd.month > _wave_ym and _after_label is None:
+                _after_label = lbl
+        if _after_label:
             _WAVE_CONFIG[wk] = {
-                'mail_col': _mail_col, 'resp_col': _resp_col,
-                'pre_months': _pre_months, 'post_1mo': _post_1mo,
-                'post_3mo': _post_3mo if len(_post_3mo) >= 2 else _post_1mo,
-                'post_6mo': _post_6mo if len(_post_6mo) >= 4 else None,
+                'mail_col': CAMP_MAIL_COLS[wk], 'resp_col': CAMP_RESP_COLS[wk],
+                'post_label': _after_label,
             }
 
-    def _compute_did(resp_mask, nonresp_mask, pre_cols, post_cols, pre_valid):
-        _post_mean = _df[post_cols].mean(axis=1)
-        _pre_mean = _df[pre_cols].mean(axis=1)
-        _delta = _post_mean - _pre_mean
-        _rd = _delta[resp_mask & pre_valid]
-        _nd = _delta[nonresp_mask & pre_valid]
-        if len(_rd) < _MIN_DID_ACCOUNTS or len(_nd) < _MIN_DID_ACCOUNTS:
-            return np.nan
-        return _rd.median() - _nd.median()
-
+    _windows = [('33d', 'DepAmt33', 33), ('66d', 'DepAmt66', 66), ('99d', 'DepAmt99', 99)]
     _persist_results = []
-    _windows = ['1mo', '3mo', '6mo']
+
     for wk, wc in _WAVE_CONFIG.items():
         _mailed = _df[wc['mail_col']].notna()
         _responded = _df[wc['resp_col']].map(camp_is_success)
         _resp_mask = _mailed & _responded
         _nonresp_mask = _mailed & ~_responded
-        if int(_resp_mask.sum()) < _MIN_DID_ACCOUNTS or int(_nonresp_mask.sum()) < _MIN_DID_ACCOUNTS:
+        _n_resp = int(_resp_mask.sum())
+        _n_nonresp = int(_nonresp_mask.sum())
+        if _n_resp < _MIN_DID_ACCOUNTS or _n_nonresp < _MIN_DID_ACCOUNTS:
             continue
-        _pre_cols = [mtd_cols[m] for m in wc['pre_months'] if m in mtd_cols]
-        if not _pre_cols:
+
+        _post = wc['post_label']
+        _dep365_col = f"depAmt365_{_post}"
+        if _dep365_col not in _df.columns:
             continue
-        _pre_valid = _df[_pre_cols].notna().sum(axis=1) >= 2
-        _row = {'wave': wk, 'label': f"{wk[:3]} '{wk[3:]}", 'n_resp': int(_resp_mask.sum())}
-        for window in _windows:
-            _w_months = wc.get(f'post_{window}')
-            if _w_months is None:
-                _row[window] = np.nan; continue
-            _post_cols = [mtd_cols[m] for m in _w_months if m in mtd_cols]
-            if not _post_cols:
-                _row[window] = np.nan; continue
-            _row[window] = _compute_did(_resp_mask, _nonresp_mask, _pre_cols, _post_cols, _pre_valid)
+
+        _row = {'wave': wk, 'label': f"{wk[:3]} '{wk[3:]}", 'post_snap': _post,
+                'n_resp': _n_resp, 'n_nonresp': _n_nonresp}
+
+        for _wname, _field, _days in _windows:
+            _w_col = f"{_field}_{_post}"
+            if _w_col not in _df.columns:
+                _row[f'resp_{_wname}_rate'] = np.nan
+                _row[f'nonresp_{_wname}_rate'] = np.nan
+                continue
+            _valid = _df[_w_col].notna() & _df[_dep365_col].notna() & (_df[_dep365_col] > 0)
+            _annualized = _df[_w_col] / _days * 365
+            _ratio = _annualized / _df[_dep365_col]
+            _resp_ratio = _ratio[_resp_mask & _valid]
+            _nonresp_ratio = _ratio[_nonresp_mask & _valid]
+            _row[f'resp_{_wname}_rate'] = _resp_ratio.median() if len(_resp_ratio) >= _MIN_DID_ACCOUNTS else np.nan
+            _row[f'nonresp_{_wname}_rate'] = _nonresp_ratio.median() if len(_nonresp_ratio) >= _MIN_DID_ACCOUNTS else np.nan
+
         _persist_results.append(_row)
 
     if _persist_results:
-        print(f"\n{'=' * 100}")
-        print(f"  BUSINESS DEPOSITS — DEPOSIT LIFT PERSISTENCE (Cell 14h)")
-        print(f"{'=' * 100}")
-        print(f"  Waves analyzed: {len(_persist_results)}")
+        print(f"\n{'=' * 120}")
+        print(f"  BUSINESS DEPOSITS -- DEPOSIT PERSISTENCE VIA NESTED WINDOWS (Cell 14h)")
+        print(f"{'=' * 120}")
+        print(f"  Recency ratio = (DepAmtN annualized) / depAmt365 at post-wave snapshot")
         print()
-        _hdr = f"  {'Wave':<10s}  {'N Resp':>8s}  {'1mo Lift':>12s}  {'3mo Lift':>12s}  {'6mo Lift':>12s}"
+        _hdr = (f"  {'Wave':<10s}  {'Snap':<8s}  {'N Resp':>7s}"
+                f"  {'R 33d':>7s}  {'R 66d':>7s}  {'R 99d':>7s}"
+                f"  {'NR 33d':>7s}  {'NR 66d':>7s}  {'NR 99d':>7s}"
+                f"  {'R-NR 33d':>9s}")
         print(_hdr)
-        print(f"  {'-'*10}  {'-'*8}  {'-'*12}  {'-'*12}  {'-'*12}")
+        print(f"  {'-'*10}  {'-'*8}  {'-'*7}  {'-'*7}  {'-'*7}  {'-'*7}  {'-'*7}  {'-'*7}  {'-'*7}  {'-'*9}")
         for r in _persist_results:
-            _fmt = lambda v: f"{'${:>,.0f}'.format(v)}" if not np.isnan(v) else 'N/A'
-            print(f"  {r['label']:<10s}  {r['n_resp']:>8,}  {_fmt(r.get('1mo', np.nan)):>12s}"
-                  f"  {_fmt(r.get('3mo', np.nan)):>12s}  {_fmt(r.get('6mo', np.nan)):>12s}")
-        print(f"{'=' * 100}")
+            _fmt = lambda v: f"{v:.2f}" if not np.isnan(v) else 'N/A'
+            _gap = r.get('resp_33d_rate', np.nan) - r.get('nonresp_33d_rate', np.nan)
+            _gap_str = f"{_gap:+.2f}" if not np.isnan(_gap) else 'N/A'
+            print(f"  {r['label']:<10s}  {r['post_snap']:<8s}  {r['n_resp']:>7,}"
+                  f"  {_fmt(r.get('resp_33d_rate', np.nan)):>7s}"
+                  f"  {_fmt(r.get('resp_66d_rate', np.nan)):>7s}"
+                  f"  {_fmt(r.get('resp_99d_rate', np.nan)):>7s}"
+                  f"  {_fmt(r.get('nonresp_33d_rate', np.nan)):>7s}"
+                  f"  {_fmt(r.get('nonresp_66d_rate', np.nan)):>7s}"
+                  f"  {_fmt(r.get('nonresp_99d_rate', np.nan)):>7s}"
+                  f"  {_gap_str:>9s}")
+        print(f"{'=' * 120}")
 
-        _waves_with_data = [r for r in _persist_results if not np.isnan(r.get('1mo', np.nan))]
-        if _waves_with_data:
-            fig, ax = plt.subplots(figsize=(max(12, len(_waves_with_data) * 3), 7))
-            x = np.arange(len(_waves_with_data))
-            _w = 0.22
-            _window_colors = {'1mo': GEN_COLORS['success'], '3mo': GEN_COLORS['info'],
-                              '6mo': GEN_COLORS['primary']}
-            for wi, window in enumerate(_windows):
-                _vals = [r.get(window, np.nan) for r in _waves_with_data]
+        _valid_results = [r for r in _persist_results if not np.isnan(r.get('resp_33d_rate', np.nan))]
+        if _valid_results:
+            fig, ax = plt.subplots(figsize=(max(14, len(_valid_results) * 3.5), 7))
+            x = np.arange(len(_valid_results))
+            _w = 0.12
+            for _key, _label, _color, _offset in [
+                ('resp_33d_rate', 'Resp 33d', GEN_COLORS['success'], -2.5),
+                ('resp_66d_rate', 'Resp 66d', GEN_COLORS['info'], -1.5),
+                ('resp_99d_rate', 'Resp 99d', GEN_COLORS['primary'], -0.5),
+                ('nonresp_33d_rate', 'NR 33d', GEN_COLORS['warning'], 0.5),
+                ('nonresp_66d_rate', 'NR 66d', GEN_COLORS['muted'], 1.5),
+                ('nonresp_99d_rate', 'NR 99d', '#999999', 2.5),
+            ]:
+                _vals = [r.get(_key, 0) for r in _valid_results]
                 _vals_plot = [v if not np.isnan(v) else 0 for v in _vals]
-                offset = (wi - 1) * _w
-                bars = ax.bar(x + offset, _vals_plot, _w, label=f'{window} post',
-                              color=_window_colors.get(window, GEN_COLORS['muted']),
-                              edgecolor='white')
-                for bar, val in zip(bars, _vals):
-                    if not np.isnan(val) and val != 0:
-                        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
-                                gen_fmt_dollar(val, None), ha='center',
-                                va='bottom' if val >= 0 else 'top',
-                                fontsize=11, fontweight='bold')
-            ax.axhline(y=0, color=GEN_COLORS['muted'], linewidth=1)
+                ax.bar(x + _offset * _w, _vals_plot, _w, label=_label,
+                       color=_color, edgecolor='white', alpha=0.85)
+            ax.axhline(y=1.0, color=GEN_COLORS['dark_text'], linewidth=1.5, linestyle='--', alpha=0.5)
             ax.set_xticks(x)
-            ax.set_xticklabels([r['label'] for r in _waves_with_data], fontsize=13, rotation=20, ha='right')
-            ax.set_ylabel('DID Deposit Lift ($/month)', fontsize=14, fontweight='bold')
-            ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
-            ax.legend(fontsize=13, frameon=False)
+            ax.set_xticklabels([r['label'] for r in _valid_results], fontsize=13, rotation=20, ha='right')
+            ax.set_ylabel('Recency Ratio', fontsize=14, fontweight='bold')
+            ax.legend(fontsize=10, frameon=False, ncol=2, loc='upper right')
             gen_clean_axes(ax)
-            fig.suptitle('Business Accounts \u2014 Deposit Lift Persistence',
+            fig.suptitle('Business Accounts -- Deposit Persistence: Recency Ratios',
                          fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
-            plt.tight_layout(); plt.show()
+            plt.tight_layout()
+            plt.show()
     else:
         print("    14h: No waves had sufficient business data for persistence analysis")

@@ -33,7 +33,7 @@ else:
     # Build per-account stats (mirrors camp_acct from Section 09)
     _df['_times_mailed'] = _df[CAMP_MAIL_COL_LIST].notna().sum(axis=1)
     _df['_times_responded'] = _df[CAMP_RESP_COL_LIST].apply(
-        lambda col: col.map(campcamp_is_success)).sum(axis=1)
+        lambda col: col.map(camp_is_success)).sum(axis=1)
     _df['_times_nu14'] = _df[CAMP_RESP_COL_LIST].apply(
         lambda col: col.map(camp_is_nu_partial)).sum(axis=1)
 

@@ -2,17 +2,15 @@
 # PERSONAL DEPOSITS: SO-SR Deposit Deep Dive
 # ===========================================================================
 # Single Offer, Single Response accounts are the cleanest attribution signal.
-# They received one offer, responded once — no confounds from multi-wave
+# They received one offer, responded once -- no confounds from multi-wave
 # exposure or graduated challenge complexity.
 #
 # This cell:
 #   1. Filters to SO-SR accounts (Response Grouping = 'SO-SR')
-#   2. Identifies the single wave they were mailed in
-#   3. Computes mini-DiD: pre/post MTD deposits for SO-SR responders vs
-#      SO-SR non-responders from the same wave
-#   4. Shows monthly deposit trend (pre/post) with vertical line at mail date
+#   2. Compares ZAccounts deposit metrics for responders vs non-responders
+#   3. Shows depAmt365 at each ZAccounts snapshot as a grouped bar chart
 #
-# Cross-source: ODDD (Response Grouping, Mail/Resp cols, MTD cols)
+# Cross-source: ODDD (Response Grouping, Mail/Resp cols), ZAccounts snapshots
 # Data: deposits_personal_df
 
 import matplotlib.pyplot as plt
@@ -27,8 +25,6 @@ if not HAS_CAMPAIGN_DATA:
     print("    14k Skipped: no campaign data")
 elif _RESP_GRP_FIELD not in _df.columns:
     print(f"    14k Skipped: '{_RESP_GRP_FIELD}' column not found")
-elif not mtd_cols:
-    print("    14k Skipped: no MTD columns")
 else:
     # -----------------------------------------------------------------
     # 1. Filter to SO-SR accounts
@@ -65,7 +61,7 @@ else:
                 _so_sr_df.loc[_newly_mailed, '_wave'] = mk
 
             # -----------------------------------------------------------------
-            # 2. ZAccounts deposit comparison
+            # 2. ZAccounts deposit comparison table
             # -----------------------------------------------------------------
             _compare = [
                 ('depAmt365', 'Deposit Amt (365d)', gen_fmt_dollar),
@@ -78,7 +74,7 @@ else:
             _avail = [(f, l, fmt) for f, l, fmt in _compare if f in _so_sr_df.columns]
 
             print(f"\n{'=' * 90}")
-            print(f"  PERSONAL DEPOSITS — SO-SR DEPOSIT DEEP DIVE (Cell 14k)")
+            print(f"  PERSONAL DEPOSITS -- SO-SR DEPOSIT DEEP DIVE (Cell 14k)")
             print(f"{'=' * 90}")
             print(f"  SO-SR = Single Offer, Single Response (cleanest attribution signal)")
             print(f"  SO-SR accounts: {_n_so_sr:,}")
@@ -115,90 +111,145 @@ else:
                 print(f"{'=' * 90}")
 
             # -----------------------------------------------------------------
-            # 3. Monthly deposit trend: SO-SR Responders vs Non-Responders
+            # 3. Snapshot-based depAmt365 grouped bar chart
             # -----------------------------------------------------------------
-            _all_mtd_keys = sorted(mtd_cols.keys(), key=_camp_month_sort_key)
-
-            if len(_all_mtd_keys) >= 6 and _n_resp >= _MIN_SO_SR:
-                # Compute median monthly deposits per group
-                _resp_medians = []
-                _nonresp_medians = []
-                _labels = []
-                _resp_df = _so_sr_df[_so_sr_df['_is_responder']]
-                _nr_df = _so_sr_df[~_so_sr_df['_is_responder']]
-
-                for mk in _all_mtd_keys:
-                    _col = mtd_cols[mk]
-                    _resp_med = _resp_df[_col].dropna().median()
-                    _nr_med = _nr_df[_col].dropna().median()
-                    _resp_medians.append(_resp_med if not np.isnan(_resp_med) else 0)
-                    _nonresp_medians.append(_nr_med if not np.isnan(_nr_med) else 0)
-                    _labels.append(f"{mk[:3]} '{mk[3:]}")
-
-                # Find mail wave positions for vertical lines
-                _wave_positions = []
-                for mk in CAMP_MAILER_KEYS:
-                    if mk in _all_mtd_keys:
-                        _wave_positions.append(_all_mtd_keys.index(mk))
-
-                fig, ax = plt.subplots(figsize=(18, 8))
-                x = np.arange(len(_labels))
-
-                ax.plot(x, _resp_medians, color=GEN_COLORS['success'], linewidth=3,
-                        marker='o', markersize=5,
-                        label=f'SO-SR Responder (n={_n_resp:,})', zorder=3)
-                ax.plot(x, _nonresp_medians, color=GEN_COLORS['muted'], linewidth=3,
-                        marker='s', markersize=5,
-                        label=f'SO-SR Non-Responder (n={_n_nonresp:,})', zorder=3)
-
-                # Mark mail waves
-                for wp in _wave_positions:
-                    ax.axvline(x=wp, color=GEN_COLORS['accent'], alpha=0.4,
-                               linestyle='--', linewidth=1.5)
-
-                ax.fill_between(x, _resp_medians, alpha=0.08, color=GEN_COLORS['success'])
-                ax.fill_between(x, _nonresp_medians, alpha=0.08, color=GEN_COLORS['muted'])
-
-                # X-axis thinning
-                _step = max(1, len(_labels) // 15)
-                _visible = list(range(0, len(_labels), _step))
-                if (len(_labels) - 1) not in _visible:
-                    _visible.append(len(_labels) - 1)
-                ax.set_xticks([x[i] for i in _visible])
-                ax.set_xticklabels([_labels[i] for i in _visible],
-                                   fontsize=12, rotation=30, ha='right')
-
-                ax.set_ylabel('Median Monthly Deposits ($)', fontsize=14, fontweight='bold')
-                ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
-                ax.legend(fontsize=13, frameon=False, loc='upper left')
-                gen_clean_axes(ax)
-
-                # DiD callout
-                # Find the most common wave for SO-SR accounts
-                _top_wave = _wave_dist.index[0] if len(_wave_dist) > 0 else None
-                if _top_wave and _top_wave in _all_mtd_keys:
-                    _wi = _all_mtd_keys.index(_top_wave)
-                    _pre_idx = max(0, _wi - 3)
-                    _post_idx = min(len(_all_mtd_keys), _wi + 4)
-                    _pre_r = np.mean(_resp_medians[_pre_idx:_wi]) if _wi > _pre_idx else 0
-                    _post_r = np.mean(_resp_medians[_wi+1:_post_idx]) if _post_idx > _wi+1 else 0
-                    _pre_n = np.mean(_nonresp_medians[_pre_idx:_wi]) if _wi > _pre_idx else 0
-                    _post_n = np.mean(_nonresp_medians[_wi+1:_post_idx]) if _post_idx > _wi+1 else 0
-                    _did = (_post_r - _pre_r) - (_post_n - _pre_n)
-                    ax.text(0.98, 0.95,
-                            f"DID \u2248 ${_did:,.0f}/mo",
-                            transform=ax.transAxes, ha='right', va='top',
-                            fontsize=16, fontweight='bold',
-                            color=GEN_COLORS['success'] if _did >= 0 else GEN_COLORS['warning'],
-                            bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
-                                      edgecolor=GEN_COLORS['muted'], alpha=0.9))
-
-                fig.suptitle('Personal Accounts \u2014 SO-SR Monthly Deposit Trend',
-                             fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
-                fig.text(0.5, -0.02,
-                         f'Dashed lines = mailer waves  |  {_n_so_sr:,} SO-SR accounts',
-                         ha='center', fontsize=12, color=GEN_COLORS['muted'])
-                plt.tight_layout()
-                plt.show()
+            if not ZA_HAS_MULTIPLE:
+                print("    Snapshot chart skipped: only one ZAccounts snapshot")
+            elif _n_resp < _MIN_SO_SR:
+                print("    Snapshot chart skipped: not enough responders")
             else:
-                print("    Not enough data for monthly trend chart")
+                _snap_keys = sorted(ZA_SNAPSHOT_META.keys())
+                _snap_labels = []
+                _resp_meds = []
+                _nonresp_meds = []
+                _snap_dates = []
+                _resp_sub = _so_sr_df[_so_sr_df['_is_responder']]
+                _nr_sub = _so_sr_df[~_so_sr_df['_is_responder']]
+
+                for _sk in _snap_keys:
+                    _meta = ZA_SNAPSHOT_META[_sk]
+                    _col = f"depAmt365_{_meta['label']}"
+                    if _col not in _so_sr_df.columns:
+                        continue
+                    _rm = _resp_sub[_col].dropna().median()
+                    _nm = _nr_sub[_col].dropna().median()
+                    _resp_meds.append(_rm if not pd.isna(_rm) else 0)
+                    _nonresp_meds.append(_nm if not pd.isna(_nm) else 0)
+                    _snap_labels.append(_meta['label'].title())
+                    _snap_dates.append(_meta['date'])
+
+                if len(_snap_labels) >= 2:
+                    fig, ax = plt.subplots(figsize=(18, 8))
+                    _n_snaps = len(_snap_labels)
+                    _bar_w = 0.35
+                    x = np.arange(_n_snaps)
+
+                    ax.bar(x - _bar_w / 2, _resp_meds,
+                           width=_bar_w, color=GEN_COLORS['success'],
+                           label=f'SO-SR Responder (n={_n_resp:,})',
+                           zorder=3, edgecolor='white', linewidth=0.5)
+                    ax.bar(x + _bar_w / 2, _nonresp_meds,
+                           width=_bar_w, color=GEN_COLORS['muted'],
+                           label=f'SO-SR Non-Responder (n={_n_nonresp:,})',
+                           zorder=3, edgecolor='white', linewidth=0.5)
+
+                    # Annotate bar values
+                    for _i in range(_n_snaps):
+                        ax.text(x[_i] - _bar_w / 2, _resp_meds[_i],
+                                f'${_resp_meds[_i]:,.0f}',
+                                ha='center', va='bottom', fontsize=10,
+                                fontweight='bold', color=GEN_COLORS['success'])
+                        ax.text(x[_i] + _bar_w / 2, _nonresp_meds[_i],
+                                f'${_nonresp_meds[_i]:,.0f}',
+                                ha='center', va='bottom', fontsize=10,
+                                color=GEN_COLORS['muted'])
+
+                    # Annotate mailer waves between snapshots
+                    # Map each wave to its approximate date for placement
+                    _mo_map = {'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4,
+                               'May': 5, 'Jun': 6, 'Jul': 7, 'Aug': 8,
+                               'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12}
+                    from datetime import datetime as _dt
+
+                    _wave_dates = {}
+                    for mk in CAMP_MAILER_KEYS:
+                        _m_num = _mo_map.get(mk[:3], 1)
+                        _y_num = int(mk[3:]) + 2000
+                        _wave_dates[mk] = _dt(_y_num, _m_num, 15)
+
+                    # Group waves by which snapshot interval they fall in
+                    _y_max = max(max(_resp_meds), max(_nonresp_meds))
+                    _annot_y = _y_max * 0.92
+
+                    for _i in range(_n_snaps - 1):
+                        _start = _snap_dates[_i]
+                        _end = _snap_dates[_i + 1]
+                        _between = [mk for mk, wd in _wave_dates.items()
+                                    if _start <= wd < _end]
+                        if _between:
+                            _mid_x = (x[_i] + x[_i + 1]) / 2
+                            _wave_txt = 'Waves: ' + ', '.join(_between)
+                            ax.annotate(
+                                _wave_txt,
+                                xy=(_mid_x, _annot_y),
+                                ha='center', va='top', fontsize=9,
+                                color=GEN_COLORS['accent'],
+                                fontstyle='italic',
+                                bbox=dict(boxstyle='round,pad=0.2',
+                                          facecolor='white',
+                                          edgecolor=GEN_COLORS['accent'],
+                                          alpha=0.8))
+
+                    # Waves before the first snapshot
+                    _before_first = [mk for mk, wd in _wave_dates.items()
+                                     if wd < _snap_dates[0]]
+                    if _before_first:
+                        ax.annotate(
+                            'Waves: ' + ', '.join(_before_first),
+                            xy=(x[0], _annot_y),
+                            ha='center', va='top', fontsize=9,
+                            color=GEN_COLORS['accent'], fontstyle='italic',
+                            bbox=dict(boxstyle='round,pad=0.2',
+                                      facecolor='white',
+                                      edgecolor=GEN_COLORS['accent'],
+                                      alpha=0.8))
+
+                    # Waves after the last snapshot
+                    _after_last = [mk for mk, wd in _wave_dates.items()
+                                   if wd >= _snap_dates[-1]]
+                    if _after_last:
+                        ax.annotate(
+                            'Waves: ' + ', '.join(_after_last),
+                            xy=(x[-1], _annot_y),
+                            ha='center', va='top', fontsize=9,
+                            color=GEN_COLORS['accent'], fontstyle='italic',
+                            bbox=dict(boxstyle='round,pad=0.2',
+                                      facecolor='white',
+                                      edgecolor=GEN_COLORS['accent'],
+                                      alpha=0.8))
+
+                    ax.set_xticks(x)
+                    ax.set_xticklabels(_snap_labels, fontsize=13,
+                                       fontweight='bold')
+                    ax.set_ylabel('Median depAmt365 ($)', fontsize=14,
+                                  fontweight='bold')
+                    ax.yaxis.set_major_formatter(
+                        mticker.FuncFormatter(gen_fmt_dollar))
+                    ax.legend(fontsize=13, frameon=False, loc='upper left')
+                    gen_clean_axes(ax)
+
+                    fig.suptitle(
+                        'Personal Accounts -- SO-SR Deposit Amount (365d) '
+                        'by Snapshot',
+                        fontsize=22, fontweight='bold',
+                        color=GEN_COLORS['dark_text'], y=1.02)
+                    fig.text(0.5, -0.02,
+                             f'ZAccounts snapshots  |  '
+                             f'{_n_so_sr:,} SO-SR accounts',
+                             ha='center', fontsize=12,
+                             color=GEN_COLORS['muted'])
+                    plt.tight_layout()
+                    plt.show()
+                else:
+                    print("    Snapshot chart skipped: fewer than 2 "
+                          "snapshots with depAmt365 data")

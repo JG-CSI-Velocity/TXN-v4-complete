@@ -5,10 +5,10 @@
 # Which deposit patterns lead to balance growth vs decline?
 #
 # Balance trajectory: Grew (>10%), Stable (-10% to +10%), Declined (<-10%)
-# Deposit efficiency: balance_change / sum(MTD deposits in period)
-#   High = deposits staying in account; Low = deposits immediately spent
+# Deposit efficiency: balance_change / depAmt365 x 100
+#   What fraction of annual deposits converted to balance growth
 #
-# Cross-source: ZAccounts (balance snapshots) + ODDD (MTD deposits) + campaign
+# Cross-source: ZAccounts (balance snapshots + depAmt365) + campaign
 # Data: deposits_personal_df
 
 import matplotlib.pyplot as plt
@@ -26,22 +26,32 @@ else:
 
     _bal_early = f"balance_{_earliest}"
     _bal_late = f"balance_{_latest}"
+    _dep_amt_col = f"depAmt365_{_latest}"
 
     if _bal_early not in _df.columns or _bal_late not in _df.columns:
         print(f"    26 Skipped: balance snapshot columns not found")
+    elif _dep_amt_col not in _df.columns:
+        print(f"    26 Skipped: {_dep_amt_col} not found")
     else:
-        _valid = _df[_bal_early].notna() & _df[_bal_late].notna() & (_df[_bal_early] > 0)
+        _valid = (
+            _df[_bal_early].notna()
+            & _df[_bal_late].notna()
+            & (_df[_bal_early] > 0)
+            & _df[_dep_amt_col].notna()
+        )
         _vdf = _df[_valid].copy()
         _n_valid = len(_vdf)
 
         if _n_valid < 50:
-            print(f"    26 Skipped: only {_n_valid} accounts with valid balance snapshots")
+            print(f"    26 Skipped: only {_n_valid} accounts with valid data")
         else:
             # ---------------------------------------------------------
             # 1. Classify balance trajectory
             # ---------------------------------------------------------
             _vdf['_bal_change'] = _vdf[_bal_late] - _vdf[_bal_early]
-            _vdf['_bal_pct_change'] = _vdf['_bal_change'] / _vdf[_bal_early] * 100
+            _vdf['_bal_pct_change'] = (
+                _vdf['_bal_change'] / _vdf[_bal_early] * 100
+            )
 
             def _classify_trajectory(pct):
                 if pct > 10:
@@ -51,65 +61,89 @@ else:
                 else:
                     return 'Balance Declined (<-10%)'
 
-            _vdf['_bal_trajectory'] = _vdf['_bal_pct_change'].apply(_classify_trajectory)
-            _traj_order = ['Balance Grew (>10%)', 'Stable (-10% to +10%)', 'Balance Declined (<-10%)']
-            _traj_order = [t for t in _traj_order if t in _vdf['_bal_trajectory'].values]
+            _vdf['_bal_trajectory'] = _vdf['_bal_pct_change'].apply(
+                _classify_trajectory
+            )
+            _traj_order = [
+                'Balance Grew (>10%)',
+                'Stable (-10% to +10%)',
+                'Balance Declined (<-10%)',
+            ]
+            _traj_order = [
+                t for t in _traj_order
+                if t in _vdf['_bal_trajectory'].values
+            ]
 
             # Campaign status
             if HAS_CAMPAIGN_DATA:
-                _times_mailed = _vdf[CAMP_MAIL_COL_LIST].notna().sum(axis=1)
+                _times_mailed = (
+                    _vdf[CAMP_MAIL_COL_LIST].notna().sum(axis=1)
+                )
                 _times_success = _vdf[CAMP_RESP_COL_LIST].apply(
-                    lambda col: col.map(camp_is_success)).sum(axis=1)
+                    lambda col: col.map(camp_is_success)
+                ).sum(axis=1)
                 _vdf['_camp_status'] = 'Never Mailed'
-                _vdf.loc[_times_mailed > 0, '_camp_status'] = 'Non-Responder'
-                _vdf.loc[_times_success > 0, '_camp_status'] = 'Responder'
+                _vdf.loc[
+                    _times_mailed > 0, '_camp_status'
+                ] = 'Non-Responder'
+                _vdf.loc[
+                    _times_success > 0, '_camp_status'
+                ] = 'Responder'
             else:
                 _vdf['_camp_status'] = 'All Accounts'
 
             # ---------------------------------------------------------
-            # 2. Compute deposit efficiency ratio
+            # 2. Compute deposit efficiency using depAmt365
             # ---------------------------------------------------------
-            # Sum all MTD deposits across the timeline
-            _all_mtd_keys = sorted(mtd_cols.keys(), key=_camp_month_sort_key)
-            _mtd_col_list = [mtd_cols[mk] for mk in _all_mtd_keys if mk in mtd_cols]
+            _vdf['_dep_amt'] = _vdf[_dep_amt_col].fillna(0)
+            _vdf['_efficiency'] = np.where(
+                _vdf['_dep_amt'] > 0,
+                _vdf['_bal_change'] / _vdf['_dep_amt'] * 100,
+                0,
+            )
 
-            if _mtd_col_list:
-                _vdf['_total_mtd'] = _vdf[_mtd_col_list].fillna(0).sum(axis=1)
-                _vdf['_efficiency'] = np.where(
-                    _vdf['_total_mtd'] > 0,
-                    _vdf['_bal_change'] / _vdf['_total_mtd'] * 100,
-                    0
-                )
-            else:
-                _vdf['_total_mtd'] = 0
-                _vdf['_efficiency'] = 0
-
-            _camp_groups = ['Responder', 'Non-Responder', 'Never Mailed'] if HAS_CAMPAIGN_DATA else ['All Accounts']
-            _camp_groups = [g for g in _camp_groups if g in _vdf['_camp_status'].values]
+            _camp_groups = (
+                ['Responder', 'Non-Responder', 'Never Mailed']
+                if HAS_CAMPAIGN_DATA
+                else ['All Accounts']
+            )
+            _camp_groups = [
+                g for g in _camp_groups
+                if g in _vdf['_camp_status'].values
+            ]
 
             # ---------------------------------------------------------
             # 3. Conference table
             # ---------------------------------------------------------
-            _dep_fields = [
-                ('depAmt365', f'Med depAmt365 ({_latest})', gen_fmt_dollar),
-                ('depCount365', f'Med depCount365 ({_latest})', gen_fmt_count),
-            ]
-            _dep_avail = [(f, l, fmt) for f, l, fmt in _dep_fields if f in _vdf.columns]
-
             print(f"\n{'=' * 120}")
-            print(f"  PERSONAL DEPOSITS — BALANCE-DEPOSIT DYNAMICS (Cell 26)")
+            print(
+                f"  PERSONAL DEPOSITS "
+                f"-- BALANCE-DEPOSIT DYNAMICS (Cell 26)"
+            )
             print(f"{'=' * 120}")
             print(f"  Snapshots: {_earliest} to {_latest}")
-            print(f"  Accounts with valid balance at both snapshots: {_n_valid:,}")
-            print(f"  Deposit Efficiency = balance change / total MTD deposits x 100")
+            print(
+                f"  Accounts with valid balance + depAmt365: "
+                f"{_n_valid:,}"
+            )
+            print(
+                f"  Deposit Efficiency = balance change / "
+                f"depAmt365 ({_latest}) x 100"
+            )
             print()
 
-            _hdr = f"  {'Trajectory':<28s}  {'N':>7s}  {'Share':>6s}  {'Med Bal Chg':>14s}  {'Med Eff %':>10s}"
+            _hdr = (
+                f"  {'Trajectory':<28s}  {'N':>7s}  {'Share':>6s}"
+                f"  {'Med Bal Chg':>14s}  {'Med Eff %':>10s}"
+            )
             for g in _camp_groups:
                 _hdr += f"  {g[:12] + ' %':>14s}"
             print(_hdr)
-            print(f"  {'-'*28}  {'-'*7}  {'-'*6}  {'-'*14}  {'-'*10}" +
-                  (f"  {'-'*14}" * len(_camp_groups)))
+            print(
+                f"  {'-'*28}  {'-'*7}  {'-'*6}"
+                f"  {'-'*14}  {'-'*10}"
+                + (f"  {'-'*14}" * len(_camp_groups))
+            )
 
             for traj in _traj_order:
                 _t_df = _vdf[_vdf['_bal_trajectory'] == traj]
@@ -121,13 +155,22 @@ else:
                 _med_eff = _t_df['_efficiency'].median()
 
                 _sign = '+' if _med_chg >= 0 else ''
-                _row = (f"  {traj:<28s}  {_n:>7,}  {_pct:>5.1f}%"
-                        f"  {_sign + '${:,.0f}'.format(_med_chg):>14s}"
-                        f"  {_med_eff:>9.1f}%")
+                _row = (
+                    f"  {traj:<28s}  {_n:>7,}  {_pct:>5.1f}%"
+                    f"  {_sign + '${:,.0f}'.format(_med_chg):>14s}"
+                    f"  {_med_eff:>9.1f}%"
+                )
                 for g in _camp_groups:
-                    _g_in_t = len(_t_df[_t_df['_camp_status'] == g])
-                    _g_total = len(_vdf[_vdf['_camp_status'] == g])
-                    _g_pct = _g_in_t / _g_total * 100 if _g_total > 0 else 0
+                    _g_in_t = len(
+                        _t_df[_t_df['_camp_status'] == g]
+                    )
+                    _g_total = len(
+                        _vdf[_vdf['_camp_status'] == g]
+                    )
+                    _g_pct = (
+                        _g_in_t / _g_total * 100
+                        if _g_total > 0 else 0
+                    )
                     _row += f"  {_g_pct:>13.1f}%"
                 print(_row)
             print(f"{'=' * 120}")
@@ -137,45 +180,81 @@ else:
                 _g_df = _vdf[_vdf['_camp_status'] == g]
                 if len(_g_df) == 0:
                     continue
-                _grew = len(_g_df[_g_df['_bal_trajectory'] == 'Balance Grew (>10%)'])
+                _grew = len(
+                    _g_df[
+                        _g_df['_bal_trajectory']
+                        == 'Balance Grew (>10%)'
+                    ]
+                )
                 _grew_pct = _grew / len(_g_df) * 100
                 _med_eff = _g_df['_efficiency'].median()
-                print(f"  {g}: {_grew_pct:.0f}% grew balance >10%, "
-                      f"median efficiency {_med_eff:.1f}%")
+                print(
+                    f"  {g}: {_grew_pct:.0f}% grew balance >10%, "
+                    f"median efficiency {_med_eff:.1f}%"
+                )
 
             # ---------------------------------------------------------
-            # 4. Chart: scatter of balance change vs total deposits
+            # 4. Scatter: balance change vs depAmt365
             # ---------------------------------------------------------
             if len(_camp_groups) >= 2 and len(_vdf) >= 100:
                 fig, ax = plt.subplots(figsize=(16, 9))
 
-                _palette = {'Responder': GEN_COLORS['success'],
-                            'Non-Responder': GEN_COLORS['muted'],
-                            'Never Mailed': GEN_COLORS['info'],
-                            'All Accounts': GEN_COLORS['primary']}
+                _palette = {
+                    'Responder': GEN_COLORS['success'],
+                    'Non-Responder': GEN_COLORS['muted'],
+                    'Never Mailed': GEN_COLORS['info'],
+                    'All Accounts': GEN_COLORS['primary'],
+                }
 
                 for g in _camp_groups:
                     _g_df = _vdf[_vdf['_camp_status'] == g]
-                    # Sample if too many points
-                    _plot_df = _g_df.sample(min(500, len(_g_df)), random_state=42)
-                    ax.scatter(_plot_df['_total_mtd'], _plot_df['_bal_change'],
-                               color=_palette.get(g, GEN_COLORS['warning']),
-                               alpha=0.3, s=15, label=f"{g} (n={len(_g_df):,})")
+                    _plot_df = _g_df.sample(
+                        min(500, len(_g_df)), random_state=42
+                    )
+                    ax.scatter(
+                        _plot_df['_dep_amt'],
+                        _plot_df['_bal_change'],
+                        color=_palette.get(
+                            g, GEN_COLORS['warning']
+                        ),
+                        alpha=0.3, s=15,
+                        label=f"{g} (n={len(_g_df):,})",
+                    )
 
-                ax.axhline(y=0, color=GEN_COLORS['dark_text'], linewidth=0.8, linestyle='-')
-                ax.set_xlabel('Total MTD Deposits ($)', fontsize=14, fontweight='bold')
-                ax.set_ylabel(f'Balance Change: {_earliest} \u2192 {_latest} ($)',
-                              fontsize=14, fontweight='bold')
-                ax.xaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
-                ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+                ax.axhline(
+                    y=0, color=GEN_COLORS['dark_text'],
+                    linewidth=0.8, linestyle='-',
+                )
+                ax.set_xlabel(
+                    f'depAmt365 ({_latest})',
+                    fontsize=14, fontweight='bold',
+                )
+                ax.set_ylabel(
+                    f'Balance Change: {_earliest} -> {_latest} ($)',
+                    fontsize=14, fontweight='bold',
+                )
+                ax.xaxis.set_major_formatter(
+                    mticker.FuncFormatter(gen_fmt_dollar)
+                )
+                ax.yaxis.set_major_formatter(
+                    mticker.FuncFormatter(gen_fmt_dollar)
+                )
                 ax.legend(fontsize=12, frameon=False, loc='upper left')
                 gen_clean_axes(ax)
 
-                fig.suptitle('Personal Accounts \u2014 Balance Change vs Total Deposits',
-                             fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
-                fig.text(0.5, -0.02,
-                         f'Above zero = balance grew  |  {_n_valid:,} accounts  |  '
-                         f'{_earliest} \u2192 {_latest}',
-                         ha='center', fontsize=12, color=GEN_COLORS['muted'])
+                fig.suptitle(
+                    'Personal Accounts -- Balance Change vs '
+                    'Annual Deposits (depAmt365)',
+                    fontsize=22, fontweight='bold',
+                    color=GEN_COLORS['dark_text'], y=1.02,
+                )
+                fig.text(
+                    0.5, -0.02,
+                    f'Above zero = balance grew  |  '
+                    f'{_n_valid:,} accounts  |  '
+                    f'{_earliest} -> {_latest}',
+                    ha='center', fontsize=12,
+                    color=GEN_COLORS['muted'],
+                )
                 plt.tight_layout()
                 plt.show()
