@@ -1,0 +1,188 @@
+# ===========================================================================
+# PERSONAL DEPOSITS: Deposit Acceleration Profile
+# ===========================================================================
+# Classifies every account's deposit trajectory across 3 snapshots into
+# one of 6 acceleration categories:
+#   - Accelerating: delta_1 > 0 AND delta_2 > delta_1
+#   - Stable Growth: delta_1 > 0 AND delta_2 > 0 AND delta_2 <= delta_1
+#   - Peaked & Declining: delta_1 > 0 AND delta_2 <= 0
+#   - Recovering: delta_1 <= 0 AND delta_2 > 0
+#   - Stable Decline: delta_1 <= 0 AND delta_2 <= 0 AND delta_2 >= delta_1
+#   - Accelerating Decline: delta_1 <= 0 AND delta_2 <= 0 AND delta_2 < delta_1
+#
+# Cross-source: ZAccounts (3 snapshots) + ODDD campaign classification
+# Data: deposits_personal_df
+
+import matplotlib.pyplot as plt
+import numpy as np
+
+_df = deposits_personal_df.copy()
+
+if not ZA_HAS_MULTIPLE:
+    print("    22 Skipped: requires 2+ ZAccounts snapshots")
+else:
+    _snap_keys = sorted(ZA_SNAPSHOT_META.keys())
+
+    if len(_snap_keys) < 3:
+        print("    22 Note: Only 2 snapshots — using simplified Growth/Decline classification")
+
+    _labels_sorted = [ZA_SNAPSHOT_META[sk]['label'] for sk in _snap_keys]
+
+    # -----------------------------------------------------------------
+    # 1. Compute inter-snapshot deltas for depAmt365
+    # -----------------------------------------------------------------
+    _field = 'depAmt365'
+    _snap_cols = [f"{_field}_{lbl}" for lbl in _labels_sorted]
+    _all_present = all(c in _df.columns for c in _snap_cols)
+
+    if not _all_present:
+        print(f"    22 Skipped: missing snapshot columns for {_field}")
+    else:
+        # Filter to accounts with all snapshots
+        _valid = _df[_snap_cols].notna().all(axis=1)
+        _vdf = _df[_valid].copy()
+        _n_valid = len(_vdf)
+
+        if _n_valid < 50:
+            print(f"    22 Skipped: only {_n_valid} accounts with all snapshots")
+        else:
+            # Classify campaign status
+            if HAS_CAMPAIGN_DATA:
+                _times_mailed = _vdf[CAMP_MAIL_COL_LIST].notna().sum(axis=1)
+                _times_success = _vdf[CAMP_RESP_COL_LIST].apply(
+                    lambda col: col.map(camp_is_success)).sum(axis=1)
+                _vdf['_camp_status'] = 'Never Mailed'
+                _vdf.loc[_times_mailed > 0, '_camp_status'] = 'Non-Responder'
+                _vdf.loc[_times_success > 0, '_camp_status'] = 'Responder'
+            else:
+                _vdf['_camp_status'] = 'All Accounts'
+
+            if len(_snap_cols) >= 3:
+                _vdf['_delta_1'] = _vdf[_snap_cols[1]] - _vdf[_snap_cols[0]]
+                _vdf['_delta_2'] = _vdf[_snap_cols[2]] - _vdf[_snap_cols[1]]
+
+                def _classify_accel(row):
+                    d1, d2 = row['_delta_1'], row['_delta_2']
+                    if d1 > 0 and d2 > d1:
+                        return 'Accelerating'
+                    elif d1 > 0 and d2 > 0 and d2 <= d1:
+                        return 'Stable Growth'
+                    elif d1 > 0 and d2 <= 0:
+                        return 'Peaked & Declining'
+                    elif d1 <= 0 and d2 > 0:
+                        return 'Recovering'
+                    elif d1 <= 0 and d2 <= 0 and d2 >= d1:
+                        return 'Stable Decline'
+                    else:
+                        return 'Accelerating Decline'
+
+                _vdf['_accel_cat'] = _vdf.apply(_classify_accel, axis=1)
+                _cat_order = ['Accelerating', 'Stable Growth', 'Peaked & Declining',
+                              'Recovering', 'Stable Decline', 'Accelerating Decline']
+            else:
+                _vdf['_delta_1'] = _vdf[_snap_cols[1]] - _vdf[_snap_cols[0]]
+                _vdf['_accel_cat'] = np.where(_vdf['_delta_1'] > 0, 'Growth', 'Decline')
+                _cat_order = ['Growth', 'Decline']
+
+            # ---------------------------------------------------------
+            # 2. Conference table: category x campaign status
+            # ---------------------------------------------------------
+            _camp_groups = ['Responder', 'Non-Responder', 'Never Mailed'] if HAS_CAMPAIGN_DATA else ['All Accounts']
+            _camp_groups = [g for g in _camp_groups if g in _vdf['_camp_status'].values]
+
+            _latest_col = _snap_cols[-1]
+
+            print(f"\n{'=' * 110}")
+            print(f"  PERSONAL DEPOSITS — DEPOSIT ACCELERATION PROFILE (Cell 22)")
+            print(f"{'=' * 110}")
+            print(f"  Snapshots: {' -> '.join([l.upper() for l in _labels_sorted])}")
+            print(f"  Accounts with all snapshots: {_n_valid:,}")
+            print(f"  Metric: {_field} (rolling 365-day deposit amount)")
+            print()
+
+            _hdr = f"  {'Category':<24s}  {'N':>7s}  {'Share':>6s}"
+            for g in _camp_groups:
+                _hdr += f"  {g + ' %':>16s}"
+            _hdr += f"  {'Med Latest':>14s}"
+            print(_hdr)
+            print(f"  {'-'*24}  {'-'*7}  {'-'*6}" +
+                  (f"  {'-'*16}" * len(_camp_groups)) + f"  {'-'*14}")
+
+            for cat in _cat_order:
+                _c_df = _vdf[_vdf['_accel_cat'] == cat]
+                _n = len(_c_df)
+                if _n == 0:
+                    continue
+                _pct = _n / _n_valid * 100
+                _row = f"  {cat:<24s}  {_n:>7,}  {_pct:>5.1f}%"
+                for g in _camp_groups:
+                    _g_in_cat = len(_c_df[_c_df['_camp_status'] == g])
+                    _g_total = len(_vdf[_vdf['_camp_status'] == g])
+                    _g_pct = _g_in_cat / _g_total * 100 if _g_total > 0 else 0
+                    _row += f"  {_g_pct:>15.1f}%"
+                _med_latest = _c_df[_latest_col].median()
+                _row += f"  {'${:>,.0f}'.format(_med_latest):>14s}"
+                print(_row)
+
+            print(f"{'=' * 110}")
+
+            # Narrative
+            for g in _camp_groups:
+                _g_df = _vdf[_vdf['_camp_status'] == g]
+                _g_total = len(_g_df)
+                if _g_total == 0:
+                    continue
+                _positive_cats = ['Accelerating', 'Stable Growth', 'Recovering', 'Growth']
+                _pos = len(_g_df[_g_df['_accel_cat'].isin(_positive_cats)])
+                print(f"  {g}: {_pos / _g_total * 100:.0f}% positive trajectory")
+
+            # ---------------------------------------------------------
+            # 3. Chart: stacked bar by campaign status
+            # ---------------------------------------------------------
+            if len(_camp_groups) >= 2:
+                _cat_colors = {
+                    'Accelerating': '#2ecc71', 'Stable Growth': '#82e0aa',
+                    'Peaked & Declining': '#f39c12', 'Recovering': '#5dade2',
+                    'Stable Decline': '#aab7b8', 'Accelerating Decline': '#e74c3c',
+                    'Growth': GEN_COLORS['success'], 'Decline': GEN_COLORS['warning'],
+                }
+
+                fig, ax = plt.subplots(figsize=(max(12, len(_camp_groups) * 4), 8))
+                x = np.arange(len(_camp_groups))
+
+                _bottoms = np.zeros(len(_camp_groups))
+                for cat in _cat_order:
+                    _vals = []
+                    for g in _camp_groups:
+                        _g_df = _vdf[_vdf['_camp_status'] == g]
+                        _g_total = len(_g_df)
+                        _c_in_g = len(_g_df[_g_df['_accel_cat'] == cat])
+                        _vals.append(_c_in_g / _g_total * 100 if _g_total > 0 else 0)
+                    bars = ax.bar(x, _vals, bottom=_bottoms, width=0.6,
+                                  label=cat, color=_cat_colors.get(cat, '#95a5a6'),
+                                  edgecolor='white')
+                    for i, (bar, val) in enumerate(zip(bars, _vals)):
+                        if val >= 5:
+                            ax.text(bar.get_x() + bar.get_width() / 2,
+                                    _bottoms[i] + val / 2,
+                                    f"{val:.0f}%", ha='center', va='center',
+                                    fontsize=11, fontweight='bold', color='white')
+                    _bottoms += _vals
+
+                ax.set_xticks(x)
+                ax.set_xticklabels([f"{g}\n(n={len(_vdf[_vdf['_camp_status'] == g]):,})"
+                                    for g in _camp_groups], fontsize=13)
+                ax.set_ylabel('% of Accounts', fontsize=14, fontweight='bold')
+                ax.set_ylim(0, 105)
+                ax.legend(fontsize=11, frameon=False, loc='upper right',
+                          bbox_to_anchor=(1.25, 1))
+                gen_clean_axes(ax)
+
+                fig.suptitle('Personal Accounts \u2014 Deposit Acceleration Profile',
+                             fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+                fig.text(0.5, -0.02,
+                         f'{_n_valid:,} accounts with all {len(_snap_keys)} snapshots  |  '
+                         f'Metric: depAmt365',
+                         ha='center', fontsize=12, color=GEN_COLORS['muted'])
+                plt.tight_layout()
+                plt.show()

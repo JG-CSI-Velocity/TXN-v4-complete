@@ -1,0 +1,154 @@
+# ===========================================================================
+# BUSINESS DEPOSITS: ZTrends OD-Deposit Recovery Analysis
+# ===========================================================================
+# Mirror of Section 23 cell 24 for business accounts.
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import numpy as np
+
+_df = deposits_business_df.copy()
+_MIN_OD = 30
+
+if len(_df) < _MIN_ACCOUNTS:
+    print(f"    24 Skipped: {len(_df)} business accounts (below {_MIN_ACCOUNTS} threshold)")
+elif ztrends_df.empty:
+    print("    24 Skipped: ztrends_df is empty or not loaded")
+else:
+    _zt = ztrends_df.copy()
+    _join_key_zt = 'acctid' if 'acctid' in _zt.columns else None
+    _join_key_dep = 'Acct Number' if 'Acct Number' in _df.columns else None
+
+    if not _join_key_zt:
+        _possible = [c for c in _zt.columns if 'hashed' in c.lower() or 'account' in c.lower()]
+        _join_key_zt = _possible[0] if _possible else None
+
+    if not _join_key_zt or not _join_key_dep:
+        print("    24 Skipped: cannot find join key")
+    else:
+        _zt[_join_key_zt] = _zt[_join_key_zt].astype(str).str.strip()
+        _df[_join_key_dep] = _df[_join_key_dep].astype(str).str.strip()
+        _merged = _df.merge(_zt, left_on=_join_key_dep, right_on=_join_key_zt,
+                            how='inner', suffixes=('', '_zt'))
+
+        if len(_merged) == 0 and 'HASHED_ACCOUNT' in _df.columns:
+            _merged = _df.merge(_zt, left_on='HASHED_ACCOUNT', right_on=_join_key_zt,
+                                how='inner', suffixes=('', '_zt'))
+
+        _fee_cols = [c for c in ['PossibleFees', 'CollectedFees'] if c in _merged.columns]
+        if not _fee_cols or len(_merged) == 0:
+            print("    24 Skipped: no fee data or no matching accounts")
+        else:
+            for fc in _fee_cols:
+                _merged[fc] = pd.to_numeric(_merged[fc], errors='coerce')
+            _od_mask = _merged[_fee_cols].fillna(0).sum(axis=1) > 0
+            _od_events = _merged[_od_mask].copy()
+            _n_od_accts = len(_od_events[_join_key_dep].unique()) if len(_od_events) > 0 else 0
+
+            if _n_od_accts < _MIN_OD:
+                print(f"    24 Skipped: only {_n_od_accts} business accounts with OD events")
+            else:
+                _has_recovery_dates = ('Last_Positive_Date' in _od_events.columns and
+                                       'Next_Positive_Date' in _od_events.columns)
+                if _has_recovery_dates:
+                    _od_events['_last_pos'] = pd.to_datetime(_od_events['Last_Positive_Date'], errors='coerce')
+                    _od_events['_next_pos'] = pd.to_datetime(_od_events['Next_Positive_Date'], errors='coerce')
+                    _od_events['_recovery_days'] = (_od_events['_next_pos'] - _od_events['_last_pos']).dt.days
+
+                    def _classify_recovery(days):
+                        if pd.isna(days) or days < 0:
+                            return 'No Recovery'
+                        elif days <= 7:
+                            return 'Quick (1-7d)'
+                        elif days <= 30:
+                            return 'Moderate (8-30d)'
+                        elif days <= 90:
+                            return 'Slow (31-90d)'
+                        else:
+                            return 'No Recovery'
+                    _od_events['_recovery_cat'] = _od_events['_recovery_days'].apply(_classify_recovery)
+                else:
+                    _od_events['_recovery_cat'] = 'Unknown'
+
+                _od_events['_noticedate'] = pd.to_datetime(
+                    _od_events['noticedate'] if 'noticedate' in _od_events.columns else np.nan,
+                    errors='coerce')
+                _od_latest = _od_events.sort_values('_noticedate', ascending=False).drop_duplicates(
+                    subset=[_join_key_dep], keep='first')
+
+                _recovery_cats = ['Quick (1-7d)', 'Moderate (8-30d)', 'Slow (31-90d)', 'No Recovery']
+                if not _has_recovery_dates:
+                    _recovery_cats = ['Unknown']
+                _recovery_cats = [c for c in _recovery_cats if c in _od_latest['_recovery_cat'].values]
+
+                _compare = [
+                    ('depAmt365', 'Deposit Amt (365d)', gen_fmt_dollar),
+                    ('depCount365', 'Deposit Count (365d)', gen_fmt_count),
+                    ('balance', 'Balance', gen_fmt_dollar),
+                ]
+                _avail = [(f, l, fmt) for f, l, fmt in _compare if f in _od_latest.columns]
+
+                print(f"\n{'=' * 100}")
+                print(f"  BUSINESS DEPOSITS — ZTRENDS OD-DEPOSIT RECOVERY (Cell 24)")
+                print(f"{'=' * 100}")
+                print(f"  Accounts with OD events: {_n_od_accts:,}")
+                print(f"  Total OD events: {len(_od_events):,}")
+                print()
+
+                _hdr = f"  {'Recovery':<20s}  {'N':>7s}  {'Share':>6s}"
+                for _, lbl, _ in _avail:
+                    _hdr += f"  {'Med ' + lbl:>22s}"
+                print(_hdr)
+                print(f"  {'-'*20}  {'-'*7}  {'-'*6}" + (f"  {'-'*22}" * len(_avail)))
+
+                for cat in _recovery_cats:
+                    _c_df = _od_latest[_od_latest['_recovery_cat'] == cat]
+                    _n = len(_c_df)
+                    if _n == 0:
+                        continue
+                    _pct = _n / len(_od_latest) * 100
+                    _ast = '*' if _n < 10 else ''
+                    _row = f"  {cat + _ast:<20s}  {_n:>7,}  {_pct:>5.1f}%"
+                    for field, _, fmt in _avail:
+                        _med = _c_df[field].dropna().median()
+                        if pd.isna(_med):
+                            _row += f"  {'N/A':>22s}"
+                        elif fmt == gen_fmt_dollar:
+                            _row += f"  {'${:>,.0f}'.format(_med):>22s}"
+                        elif fmt == gen_fmt_count:
+                            _row += f"  {_med:>22,.0f}"
+                        else:
+                            _row += f"  {fmt(_med, None):>22s}"
+                    print(_row)
+                print(f"{'=' * 100}")
+
+                _chart_cats = [c for c in _recovery_cats if len(_od_latest[_od_latest['_recovery_cat'] == c]) >= 10]
+                if len(_chart_cats) >= 2 and _avail:
+                    _chart_field = 'depAmt365' if 'depAmt365' in _od_latest.columns else _avail[0][0]
+                    fig, ax = plt.subplots(figsize=(max(12, len(_chart_cats) * 3), 7))
+                    _bar_vals = []
+                    _bar_labels = []
+                    _colors = ['#2ecc71', '#5dade2', '#f39c12', '#e74c3c'][:len(_chart_cats)]
+                    for i, cat in enumerate(_chart_cats):
+                        _c_df = _od_latest[_od_latest['_recovery_cat'] == cat]
+                        _med = _c_df[_chart_field].dropna().median()
+                        _bar_vals.append(_med if not pd.isna(_med) else 0)
+                        _bar_labels.append(f"{cat}\n(n={len(_c_df):,})")
+                    x = np.arange(len(_bar_vals))
+                    bars = ax.bar(x, _bar_vals, color=_colors, edgecolor='white', width=0.6)
+                    for bar, val in zip(bars, _bar_vals):
+                        if val > 0:
+                            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                                     gen_fmt_dollar(val, None), ha='center', va='bottom',
+                                     fontsize=12, fontweight='bold')
+                    ax.set_xticks(x)
+                    ax.set_xticklabels(_bar_labels, fontsize=11)
+                    ax.set_ylabel('Median Deposit Amt (365d)', fontsize=14, fontweight='bold')
+                    ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+                    gen_clean_axes(ax)
+                    fig.suptitle('Business Accounts \u2014 OD Recovery & Deposit Patterns',
+                                 fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+                    fig.text(0.5, -0.02,
+                             f'{_n_od_accts:,} accounts with OD events  |  Source: ZTrends',
+                             ha='center', fontsize=12, color=GEN_COLORS['muted'])
+                    plt.tight_layout(); plt.show()

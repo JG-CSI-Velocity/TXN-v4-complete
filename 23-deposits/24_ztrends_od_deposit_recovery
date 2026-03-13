@@ -1,0 +1,257 @@
+# ===========================================================================
+# PERSONAL DEPOSITS: ZTrends OD-Deposit Recovery Analysis
+# ===========================================================================
+# First real use of ztrends_df! Analyzes deposit patterns around overdraft
+# events — do depositors recover? How quickly? What deposit behavior
+# characterizes quick vs slow recovery?
+#
+# ZTrends fields used:
+#   - PossibleFees, CollectedFees: OD event severity
+#   - depcount33/66/99, deptotal33/66/99: deposit activity at event time
+#   - Last_Positive_Date, Next_Positive_Date: recovery timing
+#   - Last_Positive_Date_Balance, Next_Positive_Date_Balance: balance recovery
+#
+# Cross-source: ZTrends (OD events) + ZAccounts (deposit metrics via deposits_df)
+# Data: deposits_personal_df + ztrends_df
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import numpy as np
+
+_df = deposits_personal_df.copy()
+_MIN_OD = 50
+
+if ztrends_df.empty:
+    print("    24 Skipped: ztrends_df is empty or not loaded")
+else:
+    # -----------------------------------------------------------------
+    # 1. Join ztrends_df to deposits_personal_df
+    # -----------------------------------------------------------------
+    # ZTrends uses 'acctid'; deposits_df uses 'Acct Number' or HASHED_ACCOUNT
+    _zt = ztrends_df.copy()
+    _join_key_zt = 'acctid' if 'acctid' in _zt.columns else None
+    _join_key_dep = 'Acct Number' if 'Acct Number' in _df.columns else None
+
+    if not _join_key_zt:
+        # Fallback: look for hashed account
+        _possible = [c for c in _zt.columns if 'hashed' in c.lower() or 'account' in c.lower()]
+        _join_key_zt = _possible[0] if _possible else None
+
+    if not _join_key_zt or not _join_key_dep:
+        print("    24 Skipped: cannot find join key between ztrends and deposits")
+    else:
+        # Try join — ZTrends may have multiple rows per account (event-level)
+        # First check if join keys are compatible types
+        _zt[_join_key_zt] = _zt[_join_key_zt].astype(str).str.strip()
+        _df[_join_key_dep] = _df[_join_key_dep].astype(str).str.strip()
+
+        # Try direct join
+        _merged = _df.merge(_zt, left_on=_join_key_dep, right_on=_join_key_zt,
+                            how='inner', suffixes=('', '_zt'))
+        _match_rate = len(_merged[_join_key_dep].unique()) / len(_df) * 100 if len(_df) > 0 else 0
+
+        print(f"    24 ZTrends Join:")
+        print(f"      ZTrends rows: {len(_zt):,}")
+        print(f"      Deposit accounts: {len(_df):,}")
+        print(f"      Matched events: {len(_merged):,}")
+        print(f"      Matched accounts: {len(_merged[_join_key_dep].unique()):,} "
+              f"({_match_rate:.1f}%)")
+
+        if _match_rate < 1:
+            # Try HASHED_ACCOUNT fallback
+            if 'HASHED_ACCOUNT' in _df.columns:
+                _merged = _df.merge(_zt, left_on='HASHED_ACCOUNT', right_on=_join_key_zt,
+                                    how='inner', suffixes=('', '_zt'))
+                _match_rate = len(_merged['HASHED_ACCOUNT'].unique()) / len(_df) * 100
+                print(f"      HASHED_ACCOUNT fallback: {len(_merged):,} events, "
+                      f"{_match_rate:.1f}% match")
+
+        # -----------------------------------------------------------------
+        # 2. Filter to OD events
+        # -----------------------------------------------------------------
+        _fee_cols = [c for c in ['PossibleFees', 'CollectedFees'] if c in _merged.columns]
+        if not _fee_cols:
+            print("    24 Skipped: no fee columns found in ZTrends")
+        elif len(_merged) == 0:
+            print("    24 Skipped: no matching accounts between ZTrends and deposits")
+        else:
+            # OD events: any row with fees > 0
+            _has_od = False
+            for fc in _fee_cols:
+                _merged[fc] = pd.to_numeric(_merged[fc], errors='coerce')
+            _od_mask = _merged[_fee_cols].fillna(0).sum(axis=1) > 0
+            _od_events = _merged[_od_mask].copy()
+            _n_od_accts = len(_od_events[_join_key_dep].unique()) if len(_od_events) > 0 else 0
+
+            if _n_od_accts < _MIN_OD:
+                print(f"    24 Skipped: only {_n_od_accts} accounts with OD events (need {_MIN_OD}+)")
+            else:
+                # ---------------------------------------------------------
+                # 3. Classify recovery timing
+                # ---------------------------------------------------------
+                _has_recovery_dates = ('Last_Positive_Date' in _od_events.columns and
+                                       'Next_Positive_Date' in _od_events.columns)
+
+                if _has_recovery_dates:
+                    _od_events['_last_pos'] = pd.to_datetime(_od_events['Last_Positive_Date'], errors='coerce')
+                    _od_events['_next_pos'] = pd.to_datetime(_od_events['Next_Positive_Date'], errors='coerce')
+                    _od_events['_recovery_days'] = (_od_events['_next_pos'] - _od_events['_last_pos']).dt.days
+
+                    def _classify_recovery(days):
+                        if pd.isna(days) or days < 0:
+                            return 'No Recovery'
+                        elif days <= 7:
+                            return 'Quick (1-7d)'
+                        elif days <= 30:
+                            return 'Moderate (8-30d)'
+                        elif days <= 90:
+                            return 'Slow (31-90d)'
+                        else:
+                            return 'No Recovery'
+
+                    _od_events['_recovery_cat'] = _od_events['_recovery_days'].apply(_classify_recovery)
+                else:
+                    _od_events['_recovery_cat'] = 'Unknown'
+
+                # Use most recent OD event per account for analysis
+                _od_events['_noticedate'] = pd.to_datetime(
+                    _od_events['noticedate'] if 'noticedate' in _od_events.columns else np.nan,
+                    errors='coerce')
+                _od_latest = _od_events.sort_values('_noticedate', ascending=False).drop_duplicates(
+                    subset=[_join_key_dep], keep='first')
+
+                _recovery_cats = ['Quick (1-7d)', 'Moderate (8-30d)', 'Slow (31-90d)', 'No Recovery']
+                if not _has_recovery_dates:
+                    _recovery_cats = ['Unknown']
+                _recovery_cats = [c for c in _recovery_cats if c in _od_latest['_recovery_cat'].values]
+
+                # Deposit metrics to compare
+                _compare = [
+                    ('depAmt365', 'Deposit Amt (365d)', gen_fmt_dollar),
+                    ('depCount365', 'Deposit Count (365d)', gen_fmt_count),
+                    ('balance', 'Balance', gen_fmt_dollar),
+                    ('avgdaysbetweendeposits', 'Avg Days Between Deps', gen_fmt_count),
+                ]
+                _avail = [(f, l, fmt) for f, l, fmt in _compare if f in _od_latest.columns]
+
+                # ---------------------------------------------------------
+                # 4. Conference table
+                # ---------------------------------------------------------
+                print(f"\n{'=' * 110}")
+                print(f"  PERSONAL DEPOSITS — ZTRENDS OD-DEPOSIT RECOVERY (Cell 24)")
+                print(f"{'=' * 110}")
+                print(f"  First use of ZTrends data!")
+                print(f"  Accounts with OD events: {_n_od_accts:,}")
+                print(f"  Total OD events: {len(_od_events):,}")
+                if _has_recovery_dates:
+                    _med_recovery = _od_latest['_recovery_days'].dropna().median()
+                    print(f"  Median recovery time: {_med_recovery:.0f} days" if not np.isnan(_med_recovery) else "")
+                print()
+
+                _hdr = f"  {'Recovery':<20s}  {'N':>7s}  {'Share':>6s}"
+                for _, lbl, _ in _avail:
+                    _hdr += f"  {'Med ' + lbl:>22s}"
+                print(_hdr)
+                print(f"  {'-'*20}  {'-'*7}  {'-'*6}" + (f"  {'-'*22}" * len(_avail)))
+
+                for cat in _recovery_cats:
+                    _c_df = _od_latest[_od_latest['_recovery_cat'] == cat]
+                    _n = len(_c_df)
+                    if _n == 0:
+                        continue
+                    _pct = _n / len(_od_latest) * 100
+                    _ast = '*' if _n < 20 else ''
+                    _row = f"  {cat + _ast:<20s}  {_n:>7,}  {_pct:>5.1f}%"
+                    for field, _, fmt in _avail:
+                        _med = _c_df[field].dropna().median()
+                        if pd.isna(_med):
+                            _row += f"  {'N/A':>22s}"
+                        elif fmt == gen_fmt_dollar:
+                            _row += f"  {'${:>,.0f}'.format(_med):>22s}"
+                        elif fmt == gen_fmt_count:
+                            _row += f"  {_med:>22,.0f}"
+                        else:
+                            _row += f"  {fmt(_med, None):>22s}"
+                    print(_row)
+
+                # Also show non-OD accounts for comparison
+                _non_od_accts = _df[~_df[_join_key_dep].isin(_od_latest[_join_key_dep])]
+                if len(_non_od_accts) > 20:
+                    _row = f"  {'No OD Events':<20s}  {len(_non_od_accts):>7,}  {'--':>6s}"
+                    for field, _, fmt in _avail:
+                        _med = _non_od_accts[field].dropna().median()
+                        if pd.isna(_med):
+                            _row += f"  {'N/A':>22s}"
+                        elif fmt == gen_fmt_dollar:
+                            _row += f"  {'${:>,.0f}'.format(_med):>22s}"
+                        elif fmt == gen_fmt_count:
+                            _row += f"  {_med:>22,.0f}"
+                        else:
+                            _row += f"  {fmt(_med, None):>22s}"
+                    print(_row)
+                print(f"{'=' * 110}")
+
+                # ---------------------------------------------------------
+                # 5. Chart: recovery distribution + deposit comparison
+                # ---------------------------------------------------------
+                _chart_cats = [c for c in _recovery_cats if len(_od_latest[_od_latest['_recovery_cat'] == c]) >= 10]
+
+                if len(_chart_cats) >= 2 and _avail:
+                    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 8),
+                                                    gridspec_kw={'width_ratios': [1, 2]})
+
+                    # Left: donut chart of recovery distribution
+                    _donut_vals = [len(_od_latest[_od_latest['_recovery_cat'] == c]) for c in _chart_cats]
+                    _donut_colors = ['#2ecc71', '#5dade2', '#f39c12', '#e74c3c'][:len(_chart_cats)]
+                    wedges, texts, autotexts = ax1.pie(
+                        _donut_vals, labels=_chart_cats, colors=_donut_colors,
+                        autopct='%1.0f%%', startangle=90, pctdistance=0.75,
+                        textprops={'fontsize': 11})
+                    for at in autotexts:
+                        at.set_fontweight('bold')
+                    _centre = plt.Circle((0, 0), 0.5, fc='white')
+                    ax1.add_patch(_centre)
+                    ax1.set_title('Recovery Distribution', fontsize=14, fontweight='bold')
+
+                    # Right: grouped bar of deposit metrics by recovery category
+                    _chart_field = 'depAmt365' if 'depAmt365' in _od_latest.columns else _avail[0][0]
+                    _chart_label = next((l for f, l, _ in _avail if f == _chart_field), _chart_field)
+                    _bar_vals = []
+                    _bar_labels = []
+                    _bar_colors = []
+                    for i, cat in enumerate(_chart_cats):
+                        _c_df = _od_latest[_od_latest['_recovery_cat'] == cat]
+                        _med = _c_df[_chart_field].dropna().median()
+                        _bar_vals.append(_med if not pd.isna(_med) else 0)
+                        _bar_labels.append(f"{cat}\n(n={len(_c_df):,})")
+                        _bar_colors.append(_donut_colors[i])
+
+                    # Add non-OD baseline
+                    if len(_non_od_accts) > 20:
+                        _med_no_od = _non_od_accts[_chart_field].dropna().median()
+                        _bar_vals.append(_med_no_od if not pd.isna(_med_no_od) else 0)
+                        _bar_labels.append(f"No OD\n(n={len(_non_od_accts):,})")
+                        _bar_colors.append(GEN_COLORS['muted'])
+
+                    x = np.arange(len(_bar_vals))
+                    bars = ax2.bar(x, _bar_vals, color=_bar_colors, edgecolor='white', width=0.6)
+                    for bar, val in zip(bars, _bar_vals):
+                        if val > 0:
+                            ax2.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                                     gen_fmt_dollar(val, None), ha='center', va='bottom',
+                                     fontsize=12, fontweight='bold')
+                    ax2.set_xticks(x)
+                    ax2.set_xticklabels(_bar_labels, fontsize=11)
+                    ax2.set_ylabel(f'Median {_chart_label}', fontsize=14, fontweight='bold')
+                    ax2.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+                    gen_clean_axes(ax2)
+
+                    fig.suptitle('Personal Accounts \u2014 OD Recovery & Deposit Patterns',
+                                 fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+                    fig.text(0.5, -0.02,
+                             f'{_n_od_accts:,} accounts with OD events  |  Source: ZTrends + ZAccounts',
+                             ha='center', fontsize=12, color=GEN_COLORS['muted'])
+                    plt.tight_layout()
+                    plt.show()
+                else:
+                    print("    Not enough recovery categories for chart")

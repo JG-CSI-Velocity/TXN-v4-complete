@@ -1,0 +1,164 @@
+# ===========================================================================
+# BUSINESS DEPOSITS: Deposit Momentum Indicators
+# ===========================================================================
+# Mirror of Section 23 cell 25 for business accounts.
+
+import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
+import numpy as np
+
+_df = deposits_business_df.copy()
+
+_TREND_FIELDS = {
+    'DepositTrendCount33': 'Deposit Trend',
+    'CashFlowTrendCount33': 'Cash Flow Trend',
+    'WindfallTrendCount33': 'Windfall Trend',
+    'RepaymentTrendCount33': 'Repayment Trend',
+}
+
+if len(_df) < _MIN_ACCOUNTS:
+    print(f"    25 Skipped: {len(_df)} business accounts (below {_MIN_ACCOUNTS} threshold)")
+else:
+    _avail_trends = {}
+    for field, label in _TREND_FIELDS.items():
+        if field in _df.columns:
+            _avail_trends[field] = {'col': field, 'label': label}
+        else:
+            _snap_keys = sorted(ZA_SNAPSHOT_META.keys()) if 'ZA_SNAPSHOT_META' in dir() else []
+            if _snap_keys:
+                _latest_label = ZA_SNAPSHOT_META[_snap_keys[-1]]['label']
+                _suffixed = f"{field}_{_latest_label}"
+                if _suffixed in _df.columns:
+                    _avail_trends[field] = {'col': _suffixed, 'label': label}
+
+    if not _avail_trends:
+        print("    25 Skipped: no trend indicator fields found")
+    else:
+        for field, info in _avail_trends.items():
+            _df[info['col']] = pd.to_numeric(_df[info['col']], errors='coerce')
+
+        _has_data = False
+        for field, info in _avail_trends.items():
+            if _df[info['col']].notna().sum() > 20 and (_df[info['col']].fillna(0) != 0).sum() > 5:
+                _has_data = True
+                break
+
+        if not _has_data:
+            print("    25 Skipped: trend fields are all null or zero")
+        else:
+            if HAS_CAMPAIGN_DATA:
+                _times_mailed = _df[CAMP_MAIL_COL_LIST].notna().sum(axis=1)
+                _times_success = _df[CAMP_RESP_COL_LIST].apply(
+                    lambda col: col.map(camp_is_success)).sum(axis=1)
+                _df['_camp_status'] = 'Never Mailed'
+                _df.loc[_times_mailed > 0, '_camp_status'] = 'Non-Responder'
+                _df.loc[_times_success > 0, '_camp_status'] = 'Responder'
+            else:
+                _df['_camp_status'] = 'All Accounts'
+
+            _dep_col = _avail_trends.get('DepositTrendCount33', {}).get('col')
+            _cf_col = _avail_trends.get('CashFlowTrendCount33', {}).get('col')
+            _wf_col = _avail_trends.get('WindfallTrendCount33', {}).get('col')
+
+            def _classify_momentum(row):
+                _dep = row.get(_dep_col, 0) if _dep_col else 0
+                _cf = row.get(_cf_col, 0) if _cf_col else 0
+                _wf = row.get(_wf_col, 0) if _wf_col else 0
+                if pd.isna(_dep): _dep = 0
+                if pd.isna(_cf): _cf = 0
+                if pd.isna(_wf): _wf = 0
+                if _wf > 2:
+                    return 'Windfall-Driven'
+                elif _dep > 0 and _cf > 0:
+                    return 'Strong Positive'
+                elif _dep > 0 or _cf > 0:
+                    return 'Mild Positive'
+                elif _dep == 0 and _cf == 0:
+                    return 'Neutral'
+                elif _dep < 0 or _cf < 0:
+                    return 'Mild Negative'
+                else:
+                    return 'Neutral'
+
+            _df['_momentum'] = _df.apply(_classify_momentum, axis=1)
+            _mom_order = ['Strong Positive', 'Mild Positive', 'Windfall-Driven',
+                          'Neutral', 'Mild Negative']
+            _mom_order = [m for m in _mom_order if m in _df['_momentum'].values]
+
+            _camp_groups = ['Responder', 'Non-Responder', 'Never Mailed'] if HAS_CAMPAIGN_DATA else ['All Accounts']
+            _camp_groups = [g for g in _camp_groups if g in _df['_camp_status'].values]
+
+            _dep_metric = 'depAmt365'
+            _has_dep = _dep_metric in _df.columns
+
+            print(f"\n{'=' * 100}")
+            print(f"  BUSINESS DEPOSITS — DEPOSIT MOMENTUM INDICATORS (Cell 25)")
+            print(f"{'=' * 100}")
+            print(f"  Available: {', '.join([info['label'] for info in _avail_trends.values()])}")
+            print()
+
+            _hdr = f"  {'Momentum':<20s}  {'N':>7s}  {'Share':>6s}"
+            for g in _camp_groups:
+                _hdr += f"  {g + ' %':>16s}"
+            if _has_dep:
+                _hdr += f"  {'Med depAmt365':>16s}"
+            print(_hdr)
+            print(f"  {'-'*20}  {'-'*7}  {'-'*6}" +
+                  (f"  {'-'*16}" * len(_camp_groups)) +
+                  (f"  {'-'*16}" if _has_dep else ''))
+
+            for mom in _mom_order:
+                _m_df = _df[_df['_momentum'] == mom]
+                _n = len(_m_df)
+                if _n == 0:
+                    continue
+                _pct = _n / len(_df) * 100
+                _row = f"  {mom:<20s}  {_n:>7,}  {_pct:>5.1f}%"
+                for g in _camp_groups:
+                    _g_in_m = len(_m_df[_m_df['_camp_status'] == g])
+                    _g_total = len(_df[_df['_camp_status'] == g])
+                    _g_pct = _g_in_m / _g_total * 100 if _g_total > 0 else 0
+                    _row += f"  {_g_pct:>15.1f}%"
+                if _has_dep:
+                    _med = _m_df[_dep_metric].dropna().median()
+                    if pd.isna(_med):
+                        _row += f"  {'N/A':>16s}"
+                    else:
+                        _row += f"  {'${:>,.0f}'.format(_med):>16s}"
+                print(_row)
+            print(f"{'=' * 100}")
+
+            if len(_mom_order) >= 2 and _has_dep:
+                fig, ax = plt.subplots(figsize=(max(12, len(_mom_order) * 3), 7))
+                x = np.arange(len(_mom_order))
+                _vals = []
+                _bar_colors = {'Strong Positive': '#2ecc71', 'Mild Positive': '#82e0aa',
+                               'Windfall-Driven': '#5dade2', 'Neutral': '#aab7b8',
+                               'Mild Negative': '#e74c3c'}
+                for mom in _mom_order:
+                    _m_df = _df[_df['_momentum'] == mom]
+                    _med = _m_df[_dep_metric].dropna().median()
+                    _vals.append(_med if not pd.isna(_med) else 0)
+                bars = ax.bar(x, _vals,
+                              color=[_bar_colors.get(m, GEN_COLORS['muted']) for m in _mom_order],
+                              edgecolor='white', width=0.6)
+                for bar, val, mom in zip(bars, _vals, _mom_order):
+                    if val > 0:
+                        _n_mom = len(_df[_df['_momentum'] == mom])
+                        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                                gen_fmt_dollar(val, None), ha='center', va='bottom',
+                                fontsize=12, fontweight='bold')
+                        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() * 0.5,
+                                f"n={_n_mom:,}", ha='center', va='center',
+                                fontsize=10, fontweight='bold', color='white')
+                ax.set_xticks(x)
+                ax.set_xticklabels(_mom_order, fontsize=12, rotation=15, ha='right')
+                ax.set_ylabel('Median Deposit Amt (365d)', fontsize=14, fontweight='bold')
+                ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+                gen_clean_axes(ax)
+                fig.suptitle('Business Accounts \u2014 Deposit Momentum Indicators',
+                             fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+                fig.text(0.5, -0.02,
+                         'Momentum from 33-day trend signals',
+                         ha='center', fontsize=12, color=GEN_COLORS['muted'])
+                plt.tight_layout(); plt.show()
