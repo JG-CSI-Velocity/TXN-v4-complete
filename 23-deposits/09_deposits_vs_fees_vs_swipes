@@ -16,6 +16,8 @@ _dep_field = 'depAmt365'
 _fee_field = 'nsfodfeestodepositsratio90days'
 _sig_field = 'SIG_365'
 _pin_field = 'PIN_365'
+_oddd_swipes = 'last 12-mon swipes'
+_oddd_spend = 'last 12-mon spend'
 
 _required = [_dep_field]
 _missing = [f for f in _required if f not in _df.columns]
@@ -39,76 +41,129 @@ else:
         GEN_COLORS['primary'],
     ]
 
-    print(f"    09 Data Decisions:")
-    print(f"      Source: deposits_personal_df (cross-source: ZAccounts + ODDD)")
-    print(f"      Accounts with 365d deposits > 0: {_total:,}")
-    print(f"      Deposit tiers: {_dep_tiers}")
-    _tier_counts = _df['dep_tier'].value_counts().reindex(_dep_tiers).fillna(0).astype(int)
-    for t, cnt in zip(_dep_tiers, _tier_counts):
-        print(f"        {t}: {cnt:,}")
+    # Determine swipe source: prefer SIG+PIN from ZAccounts, fall back to ODDD
+    _has_za_swipes = (_sig_field in _df.columns and _pin_field in _df.columns
+                      and _df[_sig_field].notna().sum() > 0)
+    _has_oddd_swipes = _oddd_swipes in _df.columns and _df[_oddd_swipes].notna().sum() > 0
+    _has_fees = _fee_field in _df.columns and _df[_fee_field].notna().sum() > 0
+    _has_oddd_spend = _oddd_spend in _df.columns and _df[_oddd_spend].notna().sum() > 0
+
+    if _has_za_swipes:
+        _swipe_label = 'Median Annual Swipes (SIG + PIN)'
+        _swipe_source = 'ZAccounts SIG_365 + PIN_365'
+    elif _has_oddd_swipes:
+        _swipe_label = 'Median Annual Swipes (12mo)'
+        _swipe_source = 'ODDD last 12-mon swipes'
+    else:
+        _swipe_label = None
+        _swipe_source = None
 
     # Compute medians per tier
     _tier_data = []
     for tier in _dep_tiers:
         _tdf = _df[_df['dep_tier'] == tier]
         _row = {'tier': tier, 'count': len(_tdf)}
-        _row['fee_ratio'] = _tdf[_fee_field].median() if _fee_field in _tdf.columns else np.nan
-        _row['swipes'] = (
-            (_tdf[_sig_field].fillna(0) + _tdf[_pin_field].fillna(0)).median()
-            if _sig_field in _tdf.columns and _pin_field in _tdf.columns
-            else np.nan
-        )
+
+        # Fee ratio
+        _row['fee_ratio'] = _tdf[_fee_field].dropna().median() if _has_fees else np.nan
+
+        # Swipes
+        if _has_za_swipes:
+            _row['swipes'] = (_tdf[_sig_field].fillna(0) + _tdf[_pin_field].fillna(0)).median()
+        elif _has_oddd_swipes:
+            _row['swipes'] = _tdf[_oddd_swipes].dropna().median()
+        else:
+            _row['swipes'] = np.nan
+
+        # Spend (ODDD fallback for fee panel if no fee data)
+        _row['spend'] = _tdf[_oddd_spend].dropna().median() if _has_oddd_spend else np.nan
+
+        _row['dep_median'] = _tdf[_dep_field].dropna().median()
         _tier_data.append(_row)
 
-    # ---------------------------------------------------------------------------
-    # Chart: grouped bar — fee ratio and swipes per deposit tier
-    # ---------------------------------------------------------------------------
-    _has_fees = not all(np.isnan(r['fee_ratio']) for r in _tier_data)
-    _has_swipes = not all(np.isnan(r['swipes']) for r in _tier_data)
+    # ----- Conference-format summary table -----
+    print(f"\n{'=' * 90}")
+    print(f"  PERSONAL DEPOSITS — DEPOSITS vs FEES vs SWIPES (Cell 09)")
+    print(f"{'=' * 90}")
+    print(f"  Source: deposits_personal_df (cross-source: ZAccounts + ODDD)")
+    print(f"  Accounts with 365d deposits > 0: {_total:,}")
+    print(f"  Fee data available: {_has_fees}  |  Swipe source: {_swipe_source or 'none'}")
+    print(f"  ODDD spend available: {_has_oddd_spend}")
+    print()
+    _hdr = f"  {'Deposit Tier':<16s}  {'N':>8s}  {'Med Deposit':>14s}"
+    if _has_fees:
+        _hdr += f"  {'Med Fee Ratio':>14s}"
+    if _swipe_source:
+        _hdr += f"  {'Med Swipes':>12s}"
+    if _has_oddd_spend:
+        _hdr += f"  {'Med Spend':>14s}"
+    print(_hdr)
+    _sep = f"  {'-'*16}  {'-'*8}  {'-'*14}"
+    if _has_fees:
+        _sep += f"  {'-'*14}"
+    if _swipe_source:
+        _sep += f"  {'-'*12}"
+    if _has_oddd_spend:
+        _sep += f"  {'-'*14}"
+    print(_sep)
+    for r in _tier_data:
+        _row = f"  {r['tier']:<16s}  {r['count']:>8,}  {'${:>,.0f}'.format(r['dep_median']):>14s}"
+        if _has_fees:
+            _fv = f"{r['fee_ratio']:.3f}" if not np.isnan(r['fee_ratio']) else 'N/A'
+            _row += f"  {_fv:>14s}"
+        if _swipe_source:
+            _sv = f"{r['swipes']:>,.0f}" if not np.isnan(r['swipes']) else 'N/A'
+            _row += f"  {_sv:>12s}"
+        if _has_oddd_spend:
+            _spv = '${:>,.0f}'.format(r['spend']) if not np.isnan(r['spend']) else 'N/A'
+            _row += f"  {_spv:>14s}"
+        print(_row)
+    print(f"{'=' * 90}")
 
-    if _has_fees or _has_swipes:
-        fig, axes = plt.subplots(1, 2, figsize=(18, 7))
+    # ---------------------------------------------------------------------------
+    # Chart: determine which panels to show
+    # ---------------------------------------------------------------------------
+    # Build panel list dynamically based on available data
+    _panels = []
+    if _has_fees:
+        _panels.append(('fee_ratio', 'Median Fee-to-Deposit Ratio', lambda v: f"{v:.3f}"))
+    if _swipe_source:
+        _panels.append(('swipes', _swipe_label, lambda v: gen_fmt_count(v, None)))
+    if _has_oddd_spend and not _has_fees:
+        # Use spend as replacement panel if no fee data
+        _panels.append(('spend', 'Median Card Spend (12mo)', lambda v: gen_fmt_dollar(v, None)))
+    elif _has_oddd_spend:
+        _panels.append(('spend', 'Median Card Spend (12mo)', lambda v: gen_fmt_dollar(v, None)))
+
+    if _panels:
+        _np = len(_panels)
+        fig, axes = plt.subplots(1, _np, figsize=(7 * _np, 7))
+        if _np == 1:
+            axes = [axes]
 
         x = np.arange(len(_dep_tiers))
 
-        if _has_fees:
-            ax = axes[0]
-            _fee_vals = [r['fee_ratio'] if not np.isnan(r['fee_ratio']) else 0 for r in _tier_data]
-            bars = ax.bar(x, _fee_vals, color=_tier_colors, edgecolor='white', width=0.6)
-            for bar, val in zip(bars, _fee_vals):
-                ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
-                        f"{val:.2f}", ha='center', va='bottom',
-                        fontsize=14, fontweight='bold')
-            ax.set_title('Median Fee-to-Deposit Ratio', fontsize=16, fontweight='bold',
+        for i, (key, title, formatter) in enumerate(_panels):
+            ax = axes[i]
+            _vals = [r[key] if not np.isnan(r[key]) else 0 for r in _tier_data]
+            bars = ax.bar(x, _vals, color=_tier_colors, edgecolor='white', width=0.6)
+            for bar, val in zip(bars, _vals):
+                if val > 0:
+                    ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
+                            formatter(val), ha='center', va='bottom',
+                            fontsize=14, fontweight='bold')
+            ax.set_title(title, fontsize=16, fontweight='bold',
                          color=GEN_COLORS['dark_text'])
             ax.set_xticks(x)
             ax.set_xticklabels(_dep_tiers, fontsize=12, rotation=15, ha='right')
-            ax.set_ylabel('Fee Ratio', fontsize=14, fontweight='bold')
             gen_clean_axes(ax)
-        else:
-            axes[0].set_visible(False)
-
-        if _has_swipes:
-            ax = axes[1]
-            _swipe_vals = [r['swipes'] if not np.isnan(r['swipes']) else 0 for r in _tier_data]
-            bars = ax.bar(x, _swipe_vals, color=_tier_colors, edgecolor='white', width=0.6)
-            for bar, val in zip(bars, _swipe_vals):
-                ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
-                        gen_fmt_count(val, None), ha='center', va='bottom',
-                        fontsize=14, fontweight='bold')
-            ax.set_title('Median Annual Swipes (SIG + PIN)', fontsize=16, fontweight='bold',
-                         color=GEN_COLORS['dark_text'])
-            ax.set_xticks(x)
-            ax.set_xticklabels(_dep_tiers, fontsize=12, rotation=15, ha='right')
-            ax.set_ylabel('Swipes', fontsize=14, fontweight='bold')
-            ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
-            gen_clean_axes(ax)
-        else:
-            axes[1].set_visible(False)
 
         fig.suptitle('Personal Accounts \u2014 Deposits vs Fees vs Swipes',
                      fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+        fig.text(0.5, -0.02,
+                 f'Tiered by 365-day deposit amount  |  {_total:,} accounts',
+                 ha='center', fontsize=12, color=GEN_COLORS['muted'])
         plt.tight_layout()
         plt.show()
     else:
-        print("    No fee or swipe data available for chart")
+        print("    No fee, swipe, or spend data available for chart")

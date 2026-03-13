@@ -19,15 +19,18 @@ _avail_spend = [f for f in _spend_fields if f in _df.columns]
 if _ad_field not in _df.columns or len(_avail_spend) == 0:
     print(f"    WARNING: Missing required fields {_missing} -- skipping")
 else:
+    # Only keep accounts that actually matched to ZAccounts (non-null autodeposit).
+    # Unmatched accounts have NaN for all ZA fields, which inflates "No Auto-Deposit"
+    # with members whose autodeposit status is simply unknown.
+    _pre_total = len(_df)
+    _df = _df[_df[_ad_field].notna()].copy()
+
     _ad = _df[_ad_field].astype(str).str.strip().str.lower()
     _df['_has_ad'] = _ad.map(
         lambda v: 'Auto-Deposit' if v in ('yes', 'y', 'true', '1', '1.0') else 'No Auto-Deposit'
     )
 
     # Filter to accounts with actual card spend activity (> 0)
-    # Accounts with zero or NaN spend dilute the comparison — we want
-    # to answer "among people who use their card, do auto-depositors
-    # spend more?" not "do auto-depositors have cards?"
     _pre_filter = len(_df)
     _spend_filter = (_df[_avail_spend[0]].fillna(0) > 0)
     for _sf in _avail_spend[1:]:
@@ -47,19 +50,35 @@ else:
         'last 12-mon swipes': gen_fmt_count,
     }
 
-    print(f"    06 Data Decisions:")
-    print(f"      Source: deposits_personal_df (cross-source: ZAccounts + ODDD)")
-    print(f"      Auto-deposit field: {_ad_field}")
-    print(f"      Spend fields: {_avail_spend}")
-    print(f"      Total accounts: {_pre_filter:,}")
-    print(f"      Accounts with card activity (spend or swipes > 0): {len(_df):,}")
-    print(f"      Excluded (no card activity): {_pre_filter - len(_df):,}")
+    # ----- Conference-format summary table -----
+    print(f"\n{'=' * 80}")
+    print(f"  PERSONAL DEPOSITS — AUTO-DEPOSIT x CARD SPEND (Cell 06)")
+    print(f"{'=' * 80}")
+    print(f"  Source: deposits_personal_df (cross-source: ZAccounts + ODDD)")
+    print(f"  Total personal accounts: {_pre_total:,}")
+    print(f"  With ZAccounts match: {_pre_filter:,}")
+    print(f"  With card activity (spend or swipes > 0): {len(_df):,}")
+    print(f"  Excluded (no ZA match): {_pre_total - _pre_filter:,}")
+    print(f"  Excluded (no card activity): {_pre_filter - len(_df):,}")
+    print()
+    _hdr = f"  {'Group':<22s}  {'N':>8s}"
+    for _sf in _avail_spend:
+        _lbl = _labels_map.get(_sf, _sf)
+        _hdr += f"  {'Med ' + _lbl:>18s}  {'Mean ' + _lbl:>18s}"
+    print(_hdr)
+    print(f"  {'-'*22}  {'-'*8}" + (f"  {'-'*18}  {'-'*18}" * len(_avail_spend)))
     for g in _group_names:
         _g_df = _df[_df['_has_ad'] == g]
-        print(f"      {g}: {len(_g_df):,}")
+        _row = f"  {g:<22s}  {len(_g_df):>8,}"
         for _sf in _avail_spend:
             _med = _g_df[_sf].dropna().median()
-            print(f"        {_sf}: median = {_med:,.0f}, non-zero = {(_g_df[_sf].fillna(0) > 0).sum():,}")
+            _mean = _g_df[_sf].dropna().mean()
+            if 'spend' in _sf.lower():
+                _row += f"  {'${:>,.0f}'.format(_med):>18s}  {'${:>,.0f}'.format(_mean):>18s}"
+            else:
+                _row += f"  {_med:>18,.0f}  {_mean:>18,.0f}"
+        print(_row)
+    print(f"{'=' * 80}")
 
     if len(_group_names) == 2:
         _n = len(_avail_spend)
@@ -75,19 +94,24 @@ else:
         for i, field in enumerate(_avail_spend):
             ax = axes[i]
             _vals = []
+            _ns = []
             for g in _group_names:
                 _gdata = _groups.get_group(g)[field].dropna()
                 _vals.append(_gdata.median())
+                _ns.append(len(_gdata))
 
             bars = ax.bar(_group_names, _vals,
                           color=[_colors[g] for g in _group_names],
                           edgecolor='white', width=0.5)
 
             _formatter = _fmt_map.get(field, gen_fmt_count)
-            for bar, val in zip(bars, _vals):
+            for bar, val, n in zip(bars, _vals, _ns):
                 ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
                         _formatter(val, None),
                         ha='center', va='bottom', fontsize=16, fontweight='bold')
+                ax.text(bar.get_x() + bar.get_width() / 2, 0,
+                        f"n={n:,}", ha='center', va='bottom',
+                        fontsize=11, color=GEN_COLORS['muted'])
 
             ax.set_title(_labels_map.get(field, field), fontsize=16, fontweight='bold',
                          color=GEN_COLORS['dark_text'])
@@ -97,6 +121,9 @@ else:
 
         fig.suptitle('Personal Accounts \u2014 Do Auto-Depositors Spend More?',
                      fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+        fig.text(0.5, -0.02,
+                 'Median values  |  Filtered to accounts with ZAccounts match + card activity > 0',
+                 ha='center', fontsize=12, color=GEN_COLORS['muted'])
         plt.tight_layout()
         plt.show()
     else:

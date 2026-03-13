@@ -15,24 +15,59 @@ _mob_field = 'Mobile_Deposits_90'
 if _mob_field not in _df.columns:
     print(f"    WARNING: '{_mob_field}' not available -- skipping")
 else:
+    # Only include accounts that actually have ZAccounts data joined.
+    # Unmatched accounts have NaN for ZA fields and often NaN for spend
+    # fields too, which drags down medians and produces misleadingly low values.
+    _pre_total = len(_df)
+    _df = _df[_df[_mob_field].notna()].copy()
+
     _df['_mobile_user'] = np.where(_df[_mob_field] > 0, 'Mobile Depositor', 'Non-Mobile')
+
+    _compare = [
+        ('last 12-mon spend', 'Spend (12mo)', gen_fmt_dollar),
+        ('last 12-mon swipes', 'Swipes (12mo)', gen_fmt_count),
+        ('depAmt365', 'Deposit Amt (365d)', gen_fmt_dollar),
+    ]
+    _avail = [(f, l, fmt) for f, l, fmt in _compare if f in _df.columns]
+
+    # Filter to accounts with actual card activity for spend comparison
+    _spend_fields = [f for f, _, _ in _avail if 'spend' in f.lower() or 'swipe' in f.lower()]
+    if _spend_fields:
+        _card_filter = (_df[_spend_fields[0]].fillna(0) > 0)
+        for _sf in _spend_fields[1:]:
+            _card_filter = _card_filter | (_df[_sf].fillna(0) > 0)
+        _df = _df[_card_filter].copy()
 
     _groups = _df.groupby('_mobile_user')
     _group_names = ['Mobile Depositor', 'Non-Mobile']
     _group_names = [g for g in _group_names if g in _groups.groups]
 
-    _compare = [
-        ('last 12-mon spend', 'Spend (12mo)', gen_fmt_dollar),
-        ('last 12-mon swipes', 'Swipes (12mo)', gen_fmt_count),
-        ('depAmt365', 'Deposit Amount (365d)', gen_fmt_dollar),
-    ]
-    _avail = [(f, l, fmt) for f, l, fmt in _compare if f in _df.columns]
-
-    print(f"    08 Data Decisions:")
-    print(f"      Source: deposits_personal_df (cross-source: ZAccounts + ODDD)")
-    print(f"      Mobile field: {_mob_field}")
+    # ----- Conference-format summary table -----
+    print(f"\n{'=' * 80}")
+    print(f"  PERSONAL DEPOSITS — MOBILE DEPOSITORS vs CARD SPEND (Cell 08)")
+    print(f"{'=' * 80}")
+    print(f"  Source: deposits_personal_df (cross-source: ZAccounts + ODDD)")
+    print(f"  Total personal accounts: {_pre_total:,}")
+    print(f"  With ZAccounts match: {_df[_mob_field].notna().sum() + (_pre_total - len(_df)):,}")
+    print(f"  With card activity: {len(_df):,}")
+    print()
+    _hdr = f"  {'Group':<22s}  {'N':>8s}"
+    for _, lbl, _ in _avail:
+        _hdr += f"  {'Med ' + lbl:>20s}  {'Mean ' + lbl:>20s}"
+    print(_hdr)
+    print(f"  {'-'*22}  {'-'*8}" + (f"  {'-'*20}  {'-'*20}" * len(_avail)))
     for g in _group_names:
-        print(f"      {g}: {(_df['_mobile_user'] == g).sum():,}")
+        _g_df = _df[_df['_mobile_user'] == g]
+        _row = f"  {g:<22s}  {len(_g_df):>8,}"
+        for field, _, fmt in _avail:
+            _med = _g_df[field].dropna().median()
+            _mean = _g_df[field].dropna().mean()
+            if fmt == gen_fmt_dollar:
+                _row += f"  {'${:>,.0f}'.format(_med):>20s}  {'${:>,.0f}'.format(_mean):>20s}"
+            else:
+                _row += f"  {_med:>20,.0f}  {_mean:>20,.0f}"
+        print(_row)
+    print(f"{'=' * 80}")
 
     if len(_group_names) == 2 and len(_avail) >= 2:
         _n = len(_avail)
@@ -47,16 +82,24 @@ else:
 
         for i, (field, label, formatter) in enumerate(_avail):
             ax = axes[i]
-            _vals = [_groups.get_group(g)[field].dropna().median() for g in _group_names]
+            _vals = []
+            _ns = []
+            for g in _group_names:
+                _gdata = _groups.get_group(g)[field].dropna()
+                _vals.append(_gdata.median())
+                _ns.append(len(_gdata))
 
             bars = ax.bar(_group_names, _vals,
                           color=[_colors[g] for g in _group_names],
                           edgecolor='white', width=0.5)
 
-            for bar, val in zip(bars, _vals):
+            for bar, val, n in zip(bars, _vals, _ns):
                 ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height(),
                         formatter(val, None),
                         ha='center', va='bottom', fontsize=16, fontweight='bold')
+                ax.text(bar.get_x() + bar.get_width() / 2, 0,
+                        f"n={n:,}", ha='center', va='bottom',
+                        fontsize=11, color=GEN_COLORS['muted'])
 
             ax.set_title(label, fontsize=16, fontweight='bold',
                          color=GEN_COLORS['dark_text'])
@@ -66,6 +109,9 @@ else:
 
         fig.suptitle('Personal Accounts \u2014 Do Mobile Depositors Spend More?',
                      fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+        fig.text(0.5, -0.02,
+                 'Median values  |  Filtered to ZAccounts-matched accounts with card activity > 0',
+                 ha='center', fontsize=12, color=GEN_COLORS['muted'])
         plt.tight_layout()
         plt.show()
     else:

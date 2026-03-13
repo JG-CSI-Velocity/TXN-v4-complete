@@ -1,8 +1,8 @@
 # ===========================================================================
-# PERSONAL DEPOSITS: Deposit-Spend Correlation Scatter
+# PERSONAL DEPOSITS: Deposit-Spend Correlation Scatter (by Segment)
 # ===========================================================================
 # Scatter plot: annual deposit amount (ZAccounts) vs annual spend (ODDD).
-# Are heavy depositors also heavy spenders?
+# Split into three charts by velocity segment (Accelerating, Stable, Decelerating).
 # Cross-source: ZAccounts (depAmt365) + ODDD (last 12-mon spend)
 # Data: deposits_personal_df
 
@@ -27,7 +27,7 @@ else:
     _df['_dep_plot'] = _df[_dep_field].clip(upper=_dep_cap)
     _df['_spend_plot'] = _df[_spend_field].clip(upper=_spend_cap)
 
-    # Color by velocity if available
+    # Velocity classification
     _has_velocity = all(f in _df.columns for f in ['DepCount33', 'depCount365'])
     if _has_velocity:
         _ratio = (_df['DepCount33'] / 33) / (_df['depCount365'] / 365).replace(0, np.nan)
@@ -36,60 +36,90 @@ else:
             np.where(_ratio < 0.8, 'Decelerating', 'Stable')
         )
         _df.loc[(_df['DepCount33'] == 0) & (_df['depCount365'] > 0), '_vel'] = 'Decelerating'
-        _vel_colors = {
-            'Accelerating': GEN_COLORS['success'],
-            'Stable': GEN_COLORS['info'],
-            'Decelerating': GEN_COLORS['accent'],
-        }
     else:
         _df['_vel'] = 'All'
-        _vel_colors = {'All': GEN_COLORS['primary']}
 
-    _corr = _df[_dep_field].corr(_df[_spend_field])
+    _vel_order = ['Accelerating', 'Stable', 'Decelerating'] if _has_velocity else ['All']
+    _vel_colors = {
+        'Accelerating': GEN_COLORS['success'],
+        'Stable': GEN_COLORS['info'],
+        'Decelerating': GEN_COLORS['accent'],
+        'All': GEN_COLORS['primary'],
+    }
 
-    print(f"    10 Data Decisions:")
-    print(f"      Source: deposits_personal_df (cross-source: ZAccounts + ODDD)")
-    print(f"      Accounts with both deposit + spend > 0: {_total:,}")
-    print(f"      Deposit cap (99th pctl): ${_dep_cap:,.0f}")
-    print(f"      Spend cap (99th pctl): ${_spend_cap:,.0f}")
-    print(f"      Correlation (Pearson): {_corr:.3f}")
-    if _has_velocity:
-        for v in ['Accelerating', 'Stable', 'Decelerating']:
-            _cnt = (_df['_vel'] == v).sum()
-            print(f"      {v}: {_cnt:,}")
+    # ----- Conference-format summary table -----
+    print(f"\n{'=' * 80}")
+    print(f"  PERSONAL DEPOSITS — DEPOSIT vs SPEND CORRELATION (Cell 10)")
+    print(f"{'=' * 80}")
+    print(f"  Source: deposits_personal_df (cross-source: ZAccounts + ODDD)")
+    print(f"  Accounts with both deposit + spend > 0: {_total:,}")
+    print(f"  Deposit cap (99th pctl): ${_dep_cap:,.0f}")
+    print(f"  Spend cap (99th pctl): ${_spend_cap:,.0f}")
+    print()
+    _hdr = f"  {'Segment':<18s}  {'N':>8s}  {'Med Deposit':>14s}  {'Med Spend':>14s}  {'Corr (r)':>10s}"
+    print(_hdr)
+    print(f"  {'-'*18}  {'-'*8}  {'-'*14}  {'-'*14}  {'-'*10}")
+    for v in _vel_order:
+        _v_df = _df[_df['_vel'] == v]
+        _n = len(_v_df)
+        _med_dep = _v_df[_dep_field].median()
+        _med_spend = _v_df[_spend_field].median()
+        _corr = _v_df[_dep_field].corr(_v_df[_spend_field])
+        print(f"  {v:<18s}  {_n:>8,}  {'${:>,.0f}'.format(_med_dep):>14s}  "
+              f"{'${:>,.0f}'.format(_med_spend):>14s}  {_corr:>10.3f}")
+    _overall_corr = _df[_dep_field].corr(_df[_spend_field])
+    print(f"  {'OVERALL':<18s}  {_total:>8,}  "
+          f"{'${:>,.0f}'.format(_df[_dep_field].median()):>14s}  "
+          f"{'${:>,.0f}'.format(_df[_spend_field].median()):>14s}  "
+          f"{_overall_corr:>10.3f}")
+    print(f"{'=' * 80}")
 
     # ---------------------------------------------------------------------------
-    # Chart: Scatter
+    # Chart: One scatter per velocity segment (side by side)
     # ---------------------------------------------------------------------------
-    fig, ax = plt.subplots(figsize=(14, 9))
+    _n_panels = len(_vel_order)
+    fig, axes = plt.subplots(1, _n_panels, figsize=(7 * _n_panels, 8))
+    if _n_panels == 1:
+        axes = [axes]
 
-    for vel_label in ['Decelerating', 'Stable', 'Accelerating'] if _has_velocity else ['All']:
+    for i, vel_label in enumerate(_vel_order):
+        ax = axes[i]
         _subset = _df[_df['_vel'] == vel_label]
+        _n = len(_subset)
+        _corr = _subset[_dep_field].corr(_subset[_spend_field])
+
         ax.scatter(
             _subset['_dep_plot'], _subset['_spend_plot'],
-            alpha=0.3, s=20,
+            alpha=0.25, s=15,
             color=_vel_colors[vel_label],
-            label=vel_label,
             edgecolors='none',
         )
 
-    ax.set_title('Personal Accounts \u2014 Deposit Amount vs Card Spend',
-                 fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], pad=15)
-    ax.set_xlabel('Annual Deposit Amount (365d)', fontsize=16, fontweight='bold')
-    ax.set_ylabel('Card Spend (12mo)', fontsize=16, fontweight='bold')
-    ax.xaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
-    ax.tick_params(axis='both', labelsize=13)
+        ax.set_title(vel_label, fontsize=18, fontweight='bold',
+                     color=_vel_colors[vel_label], pad=12)
+        ax.set_xlabel('Deposit Amount (365d)', fontsize=13, fontweight='bold')
+        if i == 0:
+            ax.set_ylabel('Card Spend (12mo)', fontsize=13, fontweight='bold')
+        ax.xaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+        ax.tick_params(axis='both', labelsize=11)
 
-    if _has_velocity:
-        ax.legend(fontsize=14, loc='upper left', markerscale=3)
+        # Annotation box
+        ax.text(0.97, 0.03, f"r = {_corr:.3f}\nn = {_n:,}",
+                transform=ax.transAxes, ha='right', va='bottom',
+                fontsize=12, color=GEN_COLORS['dark_text'],
+                bbox=dict(boxstyle='round,pad=0.4', facecolor=GEN_COLORS['light_bg'],
+                          edgecolor=GEN_COLORS['grid']))
 
-    ax.text(0.98, 0.02, f"r = {_corr:.3f}  |  n = {_total:,}",
-            transform=ax.transAxes, ha='right', va='bottom',
-            fontsize=13, color=GEN_COLORS['muted'],
-            bbox=dict(boxstyle='round,pad=0.3', facecolor=GEN_COLORS['light_bg'],
-                      edgecolor=GEN_COLORS['grid']))
+        # Set consistent axis limits across panels
+        ax.set_xlim(0, _dep_cap * 1.05)
+        ax.set_ylim(0, _spend_cap * 1.05)
+        gen_clean_axes(ax)
 
-    gen_clean_axes(ax)
+    fig.suptitle('Personal Accounts \u2014 Deposit Amount vs Card Spend by Velocity',
+                 fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+    fig.text(0.5, -0.02,
+             f'Capped at 99th percentile  |  Overall r = {_overall_corr:.3f}  |  {_total:,} accounts',
+             ha='center', fontsize=12, color=GEN_COLORS['muted'])
     plt.tight_layout()
     plt.show()
