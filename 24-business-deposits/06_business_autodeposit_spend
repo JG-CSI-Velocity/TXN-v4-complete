@@ -8,7 +8,7 @@ import numpy as np
 
 _df = deposits_business_df.copy()
 _ad_field = 'autodeposit'
-_spend_fields = ['Total Spend', 'Total Swipes', 'MonthlySpend12']
+_spend_fields = ['last 12-mon spend', 'last 12-mon swipes']
 
 if len(_df) < _MIN_ACCOUNTS:
     print(f"    06 Skipped: {len(_df)} business accounts (below {_MIN_ACCOUNTS} threshold)")
@@ -21,14 +21,23 @@ else:
     else:
         _ad = _df[_ad_field].astype(str).str.strip().str.lower()
         _df['_has_ad'] = _ad.map(lambda v: 'Auto-Deposit' if v in ('yes','y','true','1','1.0') else 'No Auto-Deposit')
+
+        # Filter to accounts with valid spend data (joined from ODDD)
+        _spend_filter = _df[_avail_spend[0]].notna()
+        for _sf in _avail_spend[1:]:
+            _spend_filter = _spend_filter | _df[_sf].notna()
+        _pre_filter = len(_df)
+        _df = _df[_spend_filter].copy()
+
         _groups = _df.groupby('_has_ad')
         _group_names = [g for g in ['Auto-Deposit', 'No Auto-Deposit'] if g in _groups.groups]
 
-        _labels_map = {'Total Spend': 'Total Spend', 'Total Swipes': 'Total Swipes', 'MonthlySpend12': 'Monthly Spend (12mo)'}
-        _fmt_map = {'Total Spend': gen_fmt_dollar, 'Total Swipes': gen_fmt_count, 'MonthlySpend12': gen_fmt_dollar}
+        _labels_map = {'last 12-mon spend': 'Spend (12mo)', 'last 12-mon swipes': 'Swipes (12mo)'}
+        _fmt_map = {'last 12-mon spend': gen_fmt_dollar, 'last 12-mon swipes': gen_fmt_count}
 
         print(f"    06 Data Decisions:")
         print(f"      Source: deposits_business_df (cross-source)")
+        print(f"      Filtered to accounts with spend data: {len(_df):,} of {_pre_filter:,}")
         for g in _group_names:
             print(f"      {g}: {(_df['_has_ad']==g).sum():,}")
 

@@ -11,7 +11,7 @@ import numpy as np
 
 _df = deposits_personal_df.copy()
 _ad_field = 'autodeposit'
-_spend_fields = ['Total Spend', 'Total Swipes', 'MonthlySpend12']
+_spend_fields = ['last 12-mon spend', 'last 12-mon swipes']
 
 _missing = [f for f in [_ad_field] + _spend_fields if f not in _df.columns]
 _avail_spend = [f for f in _spend_fields if f in _df.columns]
@@ -24,25 +24,33 @@ else:
         lambda v: 'Auto-Deposit' if v in ('yes', 'y', 'true', '1', '1.0') else 'No Auto-Deposit'
     )
 
+    # Filter to accounts with valid spend data (joined from ODDD)
+    # Without this, "No Auto-Deposit" is dominated by accounts with no
+    # ODDD match, making all their spend/swipe medians zero.
+    _spend_filter = _df[_avail_spend[0]].notna()
+    for _sf in _avail_spend[1:]:
+        _spend_filter = _spend_filter | _df[_sf].notna()
+    _pre_filter = len(_df)
+    _df = _df[_spend_filter].copy()
+
     _groups = _df.groupby('_has_ad')
     _group_names = ['Auto-Deposit', 'No Auto-Deposit']
     _group_names = [g for g in _group_names if g in _groups.groups]
 
     _labels_map = {
-        'Total Spend': 'Total Spend',
-        'Total Swipes': 'Total Swipes',
-        'MonthlySpend12': 'Monthly Spend (12mo)',
+        'last 12-mon spend': 'Spend (12mo)',
+        'last 12-mon swipes': 'Swipes (12mo)',
     }
     _fmt_map = {
-        'Total Spend': gen_fmt_dollar,
-        'Total Swipes': gen_fmt_count,
-        'MonthlySpend12': gen_fmt_dollar,
+        'last 12-mon spend': gen_fmt_dollar,
+        'last 12-mon swipes': gen_fmt_count,
     }
 
     print(f"    06 Data Decisions:")
     print(f"      Source: deposits_personal_df (cross-source: ZAccounts + ODDD)")
     print(f"      Auto-deposit field: {_ad_field}")
     print(f"      Spend fields: {_avail_spend}")
+    print(f"      Filtered to accounts with spend data: {len(_df):,} of {_pre_filter:,}")
     for g in _group_names:
         print(f"      {g}: {(_df['_has_ad'] == g).sum():,}")
 
