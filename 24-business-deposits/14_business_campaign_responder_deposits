@@ -9,10 +9,10 @@
 # Mail columns: non-null = mailed, values = challenge segment (NU, TH-10, etc.)
 # Resp columns: outcome values — NU split into NU 1-4 and NU 5+
 #
-# Uses monthly Spend and MTD (deposit) columns to compute pre/post mailer
-# behavior changes instead of relying on rolling aggregates.
+# Summary table uses ZAccounts deposit fields (depAmt365, depCount365, etc.)
+# Trend chart uses monthly ODDD Spend and MTD columns to show behavior over time.
 #
-# Cross-source: ODDD (Mail/Resp cols, monthly Spend/MTD/Swipes)
+# Cross-source: ODDD (Mail/Resp cols, monthly Spend/MTD)
 #             + ZAccounts (deposit fields)
 # Data: deposits_business_df
 
@@ -26,23 +26,20 @@ _df = deposits_business_df.copy()
 if len(_df) < _MIN_ACCOUNTS:
     print(f"    14 Skipped: {len(_df)} business accounts (below {_MIN_ACCOUNTS} threshold)")
 else:
-    # ---- Discover all column families ----
+    # ---- Discover column families ----
     _mail_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Mail$')
     _resp_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Resp$')
     _spend_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Spend$')
     _mtd_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+MTD$')
-    _swipes_pattern = re.compile(r'^([A-Z][a-z]{2}\d{2})\s+Swipes$')
 
     _mail_cols = {}
     _resp_cols = {}
     _spend_cols = {}
     _mtd_cols = {}
-    _swipes_cols = {}
 
     for col in _df.columns:
         for pat, target in [(_mail_pattern, _mail_cols), (_resp_pattern, _resp_cols),
-                            (_spend_pattern, _spend_cols), (_mtd_pattern, _mtd_cols),
-                            (_swipes_pattern, _swipes_cols)]:
+                            (_spend_pattern, _spend_cols), (_mtd_pattern, _mtd_cols)]:
             m = pat.match(col)
             if m:
                 target[m.group(1)] = col
@@ -54,7 +51,6 @@ else:
         return (int(k[3:])+2000, _month_order.get(k[:3], 0))
 
     _mailer_keys = sorted([k for k in _mail_cols if k in _resp_cols], key=_msort)
-    _all_months = sorted(set(list(_spend_cols.keys()) + list(_mtd_cols.keys())), key=_msort)
 
     if not _mailer_keys:
         print("    WARNING: No paired Mail/Resp columns found -- skipping")
@@ -93,50 +89,24 @@ else:
         _status_counts = _df['_camp_status'].value_counts()
         _total = len(_df)
 
-        # ---- Find first mail period and first response period per account ----
-        _df['_first_mail'] = None
-        _df['_first_resp'] = None
-        for mk in _mailer_keys:
-            _m_col = _mail_cols[mk]
-            _r_col = _resp_cols[mk]
-            _was_mailed = _df[_m_col].notna() & _df['_first_mail'].isna()
-            _df.loc[_was_mailed, '_first_mail'] = mk
-            _did_respond = _df[_r_col].map(_is_success) & _df['_first_resp'].isna()
-            _df.loc[_did_respond, '_first_resp'] = mk
+        # ---- Comparison metrics: actual ZAccounts deposit + ODDD fields ----
+        _compare = [
+            ('depAmt365', 'Deposit Amt (365d)', gen_fmt_dollar),
+            ('depCount365', 'Deposit Count (365d)', gen_fmt_count),
+            ('balance', 'Balance', gen_fmt_dollar),
+            ('avgdaysbetweendeposits', 'Avg Days Between Deps', gen_fmt_count),
+            ('last 12-mon spend', 'Card Spend (12mo)', gen_fmt_dollar),
+            ('last 12-mon swipes', 'Card Swipes (12mo)', gen_fmt_count),
+        ]
+        _avail = [(f, l, fmt) for f, l, fmt in _compare if f in _df.columns]
 
-        # ---- Compute monthly spend and deposits from MmmYY columns ----
-        if _spend_cols:
-            _spend_col_list = [_spend_cols[k] for k in sorted(_spend_cols.keys(), key=_msort)]
-            _df['_avg_monthly_spend'] = _df[_spend_col_list].apply(
-                lambda row: row.dropna().mean(), axis=1)
-            _df['_total_spend'] = _df[_spend_col_list].sum(axis=1)
-        if _mtd_cols:
-            _mtd_col_list = [_mtd_cols[k] for k in sorted(_mtd_cols.keys(), key=_msort)]
-            _df['_avg_monthly_dep'] = _df[_mtd_col_list].apply(
-                lambda row: row.dropna().mean(), axis=1)
-            _df['_total_dep'] = _df[_mtd_col_list].sum(axis=1)
-
-        # ---- Metrics using monthly data ----
-        _compare = []
-        if '_avg_monthly_spend' in _df.columns:
-            _compare.append(('_avg_monthly_spend', 'Avg Monthly Spend', gen_fmt_dollar))
-        if '_avg_monthly_dep' in _df.columns:
-            _compare.append(('_avg_monthly_dep', 'Avg Monthly Deposits', gen_fmt_dollar))
-        if 'depAmt365' in _df.columns:
-            _compare.append(('depAmt365', 'ZA Deposit Amt (365d)', gen_fmt_dollar))
-        if 'depCount365' in _df.columns:
-            _compare.append(('depCount365', 'ZA Deposit Count (365d)', gen_fmt_count))
-        _avail = _compare
-
-        # ---- Conference-format summary ----
+        # ---- Summary ----
         print(f"\n{'=' * 90}")
         print(f"  BUSINESS DEPOSITS — CAMPAIGN RESPONDER BEHAVIOR (Cell 14)")
         print(f"{'=' * 90}")
         print(f"  Source: deposits_business_df (cross-source: ODDD + ZAccounts)")
         print(f"  Total accounts: {_total:,}")
         print(f"  Mailer periods (Mail + Resp pairs): {len(_mailer_keys)}")
-        print(f"  Monthly Spend columns: {len(_spend_cols)}")
-        print(f"  Monthly MTD (deposit) columns: {len(_mtd_cols)}")
         print(f"  Classification (from Resp columns, same as Section 09):")
         for status in ['Responder', 'NU 1-4 (Partial)', 'Non-Responder', 'Never Mailed']:
             _cnt = _status_counts.get(status, 0)
@@ -200,35 +170,41 @@ else:
 
         # ---- Per-mailer response rate ----
         print(f"  PER-MAILER RESPONSE RATE")
-        print(f"  {'Mailer':<12s}  {'Mailed':>8s}  {'Success':>10s}  {'NU 1-4':>8s}  {'Rate':>8s}  {'Resp Codes':>24s}")
-        print(f"  {'-'*12}  {'-'*8}  {'-'*10}  {'-'*8}  {'-'*8}  {'-'*24}")
+        print(f"  {'Mailer':<12s}  {'Mailed':>8s}  {'Success':>10s}  {'NU 1-4':>8s}  {'NU 5+':>8s}  {'Rate':>8s}  {'Resp Codes':>30s}")
+        print(f"  {'-'*12}  {'-'*8}  {'-'*10}  {'-'*8}  {'-'*8}  {'-'*8}  {'-'*30}")
         for mk in _mailer_keys:
             _m_col = _mail_cols[mk]
             _r_col = _resp_cols[mk]
             _mailed_count = _df[_m_col].notna().sum()
             _success_count = _df[_r_col].map(_is_success).sum()
             _nu14_period = _df[_r_col].map(_is_nu_partial).sum()
+
+            _resp_vals = _df[_r_col].dropna().astype(str).str.strip().str.upper()
+            _nu5_count = _resp_vals.isin(['NU 5+', 'NU5+', 'NU 5']).sum()
+
             _rate = _success_count / _mailed_count * 100 if _mailed_count > 0 else 0
 
-            _resp_codes = _df[_r_col].dropna().astype(str).str.strip().value_counts().head(4)
+            _resp_codes = _df[_r_col].dropna().astype(str).str.strip().value_counts().head(5)
             _resp_str = ', '.join([f"{v}:{c}" for v, c in _resp_codes.items()]) if len(_resp_codes) > 0 else '--'
 
             _lbl = f"{mk[:3]} '{mk[3:]}"
-            print(f"  {_lbl:<12s}  {_mailed_count:>8,}  {_success_count:>10,}  {_nu14_period:>8,}  {_rate:>7.1f}%  {_resp_str:>24s}")
+            print(f"  {_lbl:<12s}  {_mailed_count:>8,}  {_success_count:>10,}  {_nu14_period:>8,}  {_nu5_count:>8,}  {_rate:>7.1f}%  {_resp_str:>30s}")
         print()
 
         # =========================================================================
-        # CHART 1: Responder vs Non-Responder Metric Comparison
+        # CHART 1: Campaign Status — ZAccounts Deposit Comparison
         # =========================================================================
-        if len(_avail) >= 2 and len(_camp_groups) >= 2:
-            _n = min(len(_avail), 4)
+        _chart_fields = [(f, l, fmt) for f, l, fmt in _avail
+                         if f in ('depAmt365', 'depCount365', 'balance', 'last 12-mon spend')]
+        if len(_chart_fields) >= 2 and len(_camp_groups) >= 2:
+            _n = min(len(_chart_fields), 4)
             _cols_c = 2
             _rows_c = (_n + _cols_c - 1) // _cols_c
             fig, axes = plt.subplots(_rows_c, _cols_c, figsize=(9 * _cols_c, 6 * _rows_c))
             axes = axes.flatten() if _n > 1 else [axes]
             _palette = [GEN_COLORS['success'], GEN_COLORS['warning'], GEN_COLORS['muted']]
 
-            for i, (field, label, formatter) in enumerate(_avail[:_n]):
+            for i, (field, label, formatter) in enumerate(_chart_fields[:_n]):
                 ax = axes[i]
                 _vals = []
                 _ns = []
@@ -254,16 +230,16 @@ else:
             for j in range(_n, len(axes)):
                 axes[j].set_visible(False)
 
-            fig.suptitle('Business Accounts \u2014 Campaign Status: Spend & Deposit Comparison',
+            fig.suptitle('Business Accounts \u2014 Campaign Status: Deposit & Spend Comparison',
                          fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
             fig.text(0.5, -0.01,
-                     f'Metrics from monthly ODDD + ZAccounts  |  {_total:,} accounts',
+                     f'ZAccounts deposit fields + ODDD spend  |  {_total:,} accounts',
                      ha='center', fontsize=12, color=GEN_COLORS['muted'])
             plt.tight_layout()
             plt.show()
 
         # =========================================================================
-        # CHART 2: Pre vs Post Mailer — Spend and Deposit Trend
+        # CHART 2: Monthly Spend and Deposit Trends by Campaign Status
         # =========================================================================
         _has_spend = bool(_spend_cols)
         _has_mtd = bool(_mtd_cols)
@@ -282,8 +258,8 @@ else:
             _chart_idx = 0
 
             for _metric_cols, _metric_label, _metric_fmt in [
-                (_spend_cols, 'Median Monthly Spend', gen_fmt_dollar),
-                (_mtd_cols, 'Median Monthly Deposits', gen_fmt_dollar),
+                (_spend_cols, 'Median Monthly Card Spend', gen_fmt_dollar),
+                (_mtd_cols, 'Median Monthly Deposits (MTD)', gen_fmt_dollar),
             ]:
                 if not _metric_cols:
                     continue
@@ -303,7 +279,7 @@ else:
                             linewidth=2, color=_trend_colors.get(g, GEN_COLORS['info']),
                             label=f"{g} (n={len(_g_df):,})")
 
-                # Mark mailer periods on x-axis
+                # Mark mailer periods
                 for mk in _mailer_keys:
                     if mk in _m_keys:
                         _xi = _m_keys.index(mk)
@@ -322,7 +298,7 @@ else:
             fig.suptitle('Business Accounts \u2014 Monthly Spend & Deposits by Campaign Status',
                          fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
             fig.text(0.5, -0.02,
-                     'Dashed lines = mailer periods  |  Do responders show spend/deposit increases after campaigns?',
+                     'Dashed lines = mailer periods  |  Do responders show behavior changes around campaigns?',
                      ha='center', fontsize=12, color=GEN_COLORS['muted'])
             plt.tight_layout()
             plt.show()
