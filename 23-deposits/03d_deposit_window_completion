@@ -1,46 +1,61 @@
 # ===========================================================================
-# DEPOSIT WINDOWS: Window Completion Rates
+# DEPOSIT WINDOWS: Active Depositor Rates by Window
 # ===========================================================================
-# Heatmap showing what percentage of accounts have at least one deposit
-# in each time window (33/66/99/365 days).
+# Horizontal bar chart: what percentage of accounts have at least one
+# deposit in each time window (33/66/99/365 days). Shows where accounts
+# drop off -- big gaps between windows mean irregular depositors.
 #
 # Requires: 01_deposit_setup (zaccounts_df)
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-_windows = ['33', '66', '99', '365']
 _count_cols = ['DepCount33', 'DepCount66', 'DepCount99', 'depCount365']
 _window_labels = ['33 Days', '66 Days', '99 Days', '365 Days']
 
-_completion_rates = []
+_rates = []
+_totals = []
 for cc in _count_cols:
     if cc in zaccounts_df.columns:
-        _completion_rates.append((zaccounts_df[cc] > 0).mean() * 100)
+        _active = (zaccounts_df[cc] > 0).sum()
+        _total = zaccounts_df[cc].notna().sum()
+        _rates.append(_active / _total * 100 if _total > 0 else 0)
+        _totals.append(_active)
     else:
-        _completion_rates.append(0)
+        _rates.append(0)
+        _totals.append(0)
 
-fig, ax = plt.subplots(figsize=(10, 3))
-ax.set_title('Deposit Window Completion Rates',
-             fontsize=18, fontweight='bold', color=GEN_COLORS['dark_text'], pad=15)
+_bar_colors = [GEN_COLORS['success'], GEN_COLORS['info'],
+               GEN_COLORS['warning'], GEN_COLORS['primary']]
 
-_cr_data = np.array([_completion_rates])
-_im = ax.imshow(_cr_data, cmap='YlGnBu', aspect='auto', vmin=0, vmax=100)
+fig, ax = plt.subplots(figsize=(12, 5))
 
-ax.set_xticks(np.arange(len(_window_labels)))
-ax.set_xticklabels(_window_labels, fontsize=14)
-ax.set_yticks([0])
-ax.set_yticklabels(['% with Deposits'], fontsize=14)
+bars = ax.barh(_window_labels, _rates, color=_bar_colors,
+               edgecolor='white', linewidth=1.5, height=0.5)
 
-for j, val in enumerate(_completion_rates):
-    _text_color = 'white' if val > 60 else GEN_COLORS['dark_text']
-    ax.text(j, 0, f'{val:.1f}%', ha='center', va='center',
-            fontsize=18, fontweight='bold', color=_text_color)
+for bar, rate, total in zip(bars, _rates, _totals):
+    ax.text(bar.get_width() + 1, bar.get_y() + bar.get_height()/2,
+            f"{rate:.1f}%  ({total:,} accounts)",
+            ha='left', va='center',
+            fontsize=15, fontweight='bold', color=GEN_COLORS['dark_text'])
 
-plt.colorbar(_im, ax=ax, shrink=0.6, label='%')
+ax.set_title('Active Depositors by Time Window',
+             fontsize=20, fontweight='bold', color=GEN_COLORS['dark_text'],
+             pad=15)
+ax.set_xlabel('% of Accounts with at Least One Deposit', fontsize=14,
+              fontweight='bold')
+ax.set_xlim(0, 110)
+ax.invert_yaxis()
+gen_clean_axes(ax, keep_left=False)
+
+# Highlight the drop-off between windows
+if len(_rates) >= 2 and _rates[-1] > 0:
+    _drop = _rates[-1] - _rates[0]
+    ax.text(0.98, 0.05,
+            f"{_rates[0]:.0f}% deposited in 33 days vs {_rates[-1]:.0f}% in 365 days\n"
+            f"{_rates[-1] - _rates[0]:.0f} percentage point gap",
+            transform=ax.transAxes, ha='right', va='bottom',
+            fontsize=12, fontstyle='italic', color=GEN_COLORS['muted'])
+
 plt.tight_layout()
 plt.show()
-
-print(f"\n    Window Completion Summary:")
-for lbl, cr in zip(_window_labels, _completion_rates):
-    print(f"      {lbl}: {cr:.1f}% of accounts have deposits")
