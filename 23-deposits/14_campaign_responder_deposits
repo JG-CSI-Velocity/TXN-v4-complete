@@ -135,35 +135,6 @@ else:
             print(_row)
         print(f"{'=' * 90}")
 
-    # ---- Response Grouping breakdown (true responders only) ----
-    _resp_field = 'Response Grouping'
-    _responders_df = _df[_df['_camp_status'] == 'Responder'].copy()
-
-    if _resp_field in _df.columns and len(_responders_df) > 0:
-        _rg_vals = _responders_df[_resp_field].value_counts()
-        _rg_groups = _rg_vals.head(6).index.tolist()
-        print(f"\n  RESPONSE GROUPING (true responders only, n={len(_responders_df):,})")
-        _hdr = f"  {'Response Group':<24s}  {'N':>8s}"
-        for _, lbl, _ in _avail:
-            _hdr += f"  {'Med ' + lbl:>22s}"
-        print(_hdr)
-        print(f"  {'-'*24}  {'-'*8}" + (f"  {'-'*22}" * len(_avail)))
-        for g in _rg_groups:
-            _g_df = _responders_df[_responders_df[_resp_field] == g]
-            _row = f"  {g:<24s}  {len(_g_df):>8,}"
-            for field, _, fmt in _avail:
-                _med = _g_df[field].dropna().median()
-                if pd.isna(_med):
-                    _row += f"  {'N/A':>22s}"
-                elif fmt == gen_fmt_dollar:
-                    _row += f"  {'${:>,.0f}'.format(_med):>22s}"
-                elif fmt == gen_fmt_count:
-                    _row += f"  {_med:>22,.0f}"
-                else:
-                    _row += f"  {fmt(_med, None):>22s}"
-            print(_row)
-        print()
-
     # ---- Per-mailer response rate ----
     print(f"  PER-MAILER RESPONSE RATE")
     print(f"  {'Mailer':<12s}  {'Mailed':>8s}  {'Success':>10s}  {'NU 1-4':>8s}  {'NU 5+':>8s}  {'Rate':>8s}  {'Resp Codes':>30s}")
