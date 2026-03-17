@@ -28,14 +28,146 @@ if 'odd_file' not in dir():
 else:
     _data_dir = odd_file.parent if hasattr(odd_file, 'parent') else Path(odd_file).parent
 
-    # CONFIGURE: map snapshot labels to filenames
-    # The user sets these filenames per client; the directory is auto-detected.
-    SNAPSHOT_CONFIG = {
-        'Nov24': {'filename': 'zaccounts_nov24.csv', 'label': 'Nov 2024'},
-        'Jun25': {'filename': 'zaccounts_jun25.csv', 'label': 'Jun 2025'},
-        'Dec25': {'filename': 'zaccounts_dec25.csv', 'label': 'Dec 2025'},
-    }
-    SNAPSHOT_ORDER = ['Nov24', 'Jun25', 'Dec25']
+    # ---------------------------------------------------------------------------
+    # 1a. Auto-discover zaccounts files in the data directory
+    # ---------------------------------------------------------------------------
+    # Searches for CSV files containing "zaccounts" (case-insensitive) in the
+    # ODDD directory and any parent/sibling directories. Assigns snapshot labels
+    # based on dates found in the filename, or falls back to manual config.
+
+    import re as _re
+    import glob as _glob
+
+    def _find_zaccounts_files(search_dir):
+        """Find all CSV files with 'zaccounts' in the name."""
+        found = []
+        search_path = Path(search_dir)
+        # Search current dir, parent dir, and sibling dirs
+        _search_paths = [search_path]
+        if search_path.parent.exists():
+            _search_paths.append(search_path.parent)
+            for sibling in search_path.parent.iterdir():
+                if sibling.is_dir() and sibling != search_path:
+                    _search_paths.append(sibling)
+
+        for sp in _search_paths:
+            for f in sp.glob('*'):
+                if f.is_file() and 'zaccounts' in f.name.lower() and f.suffix.lower() in ('.csv', '.txt'):
+                    found.append(f)
+        return sorted(set(found))
+
+    def _parse_snapshot_date(filename):
+        """Try to extract a date from a zaccounts filename.
+        Handles patterns like:
+          zaccounts_nov24.csv, zaccounts-12312025.csv, zaccounts_2025-12.csv,
+          zaccounts.csv (no date), 1780-zaccounts-dec2025.csv, etc.
+        Returns (label, sort_key) or None.
+        """
+        stem = Path(filename).stem.lower()
+
+        # Pattern: MonYY or MonYYYY (e.g., nov24, dec2025)
+        m = _re.search(r'(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s*(\d{2,4})', stem)
+        if m:
+            _mon_map = {'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,
+                        'jul':7,'aug':8,'sep':9,'oct':10,'nov':11,'dec':12}
+            mon = _mon_map[m.group(1)]
+            yr = int(m.group(2))
+            if yr < 100:
+                yr += 2000
+            label = f"{m.group(1).capitalize()}{yr % 100:02d}"
+            return label, yr * 100 + mon
+
+        # Pattern: MMDDYYYY or YYYYMMDD (e.g., 12312025, 20251231)
+        m = _re.search(r'(\d{8})', stem)
+        if m:
+            digits = m.group(1)
+            # Try MMDDYYYY
+            try:
+                from datetime import datetime as _dt
+                d = _dt.strptime(digits, '%m%d%Y')
+                _mon_names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+                label = f"{_mon_names[d.month-1]}{d.year % 100:02d}"
+                return label, d.year * 100 + d.month
+            except ValueError:
+                pass
+            # Try YYYYMMDD
+            try:
+                d = _dt.strptime(digits, '%Y%m%d')
+                _mon_names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+                label = f"{_mon_names[d.month-1]}{d.year % 100:02d}"
+                return label, d.year * 100 + d.month
+            except ValueError:
+                pass
+
+        # Pattern: YYYY-MM or YYYY_MM (e.g., 2025-12, 2025_06)
+        m = _re.search(r'(\d{4})[-_](\d{1,2})', stem)
+        if m:
+            yr, mon = int(m.group(1)), int(m.group(2))
+            if 1 <= mon <= 12:
+                _mon_names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+                label = f"{_mon_names[mon-1]}{yr % 100:02d}"
+                return label, yr * 100 + mon
+
+        return None
+
+    # Discover files
+    _discovered = _find_zaccounts_files(_data_dir)
+
+    if _discovered:
+        print(f"  Auto-discovered {len(_discovered)} zaccounts file(s):")
+        for f in _discovered:
+            print(f"    {f.name}  ({f.parent})")
+
+    # Build SNAPSHOT_CONFIG from discovered files
+    _auto_config = {}
+    _undated = []
+    for fpath in _discovered:
+        parsed = _parse_snapshot_date(fpath.name)
+        if parsed:
+            label, sort_key = parsed
+            _auto_config[label] = {
+                'filename': fpath.name,
+                'filepath': fpath,
+                'label': f"{label[:3]} 20{label[3:]}",
+                'sort_key': sort_key,
+            }
+        else:
+            _undated.append(fpath)
+
+    # Sort by date
+    _sorted_keys = sorted(_auto_config.keys(), key=lambda k: _auto_config[k]['sort_key'])
+
+    if len(_sorted_keys) > 0:
+        SNAPSHOT_CONFIG = {k: _auto_config[k] for k in _sorted_keys}
+        SNAPSHOT_ORDER = _sorted_keys
+        print(f"\n  Snapshot config (auto-detected):")
+        for k in SNAPSHOT_ORDER:
+            print(f"    {k}: {SNAPSHOT_CONFIG[k]['filename']} -> {SNAPSHOT_CONFIG[k]['label']}")
+    elif len(_undated) > 0:
+        # Single undated file -- use it as the only snapshot
+        print(f"\n  Found {len(_undated)} undated zaccounts file(s) -- using as single snapshot:")
+        SNAPSHOT_CONFIG = {}
+        for i, fpath in enumerate(_undated):
+            key = f"Snap{i+1}"
+            SNAPSHOT_CONFIG[key] = {
+                'filename': fpath.name,
+                'filepath': fpath,
+                'label': f"Snapshot {i+1}",
+                'sort_key': i,
+            }
+            print(f"    {key}: {fpath.name}")
+        SNAPSHOT_ORDER = list(SNAPSHOT_CONFIG.keys())
+    else:
+        # Fallback: manual config (user must set filenames)
+        print(f"\n  No zaccounts files found in {_data_dir}")
+        print(f"  Also searched: {_data_dir.parent}")
+        print(f"\n  MANUAL CONFIG: Set filenames below to match your files.")
+        SNAPSHOT_CONFIG = {
+            'Nov24': {'filename': 'zaccounts_nov24.csv', 'filepath': None, 'label': 'Nov 2024', 'sort_key': 202411},
+            'Jun25': {'filename': 'zaccounts_jun25.csv', 'filepath': None, 'label': 'Jun 2025', 'sort_key': 202506},
+            'Dec25': {'filename': 'zaccounts_dec25.csv', 'filepath': None, 'label': 'Dec 2025', 'sort_key': 202512},
+        }
+        SNAPSHOT_ORDER = ['Nov24', 'Jun25', 'Dec25']
 
     # ---------------------------------------------------------------------------
     # 2. Load and validate each snapshot
@@ -45,7 +177,12 @@ else:
 
     for snap_key in SNAPSHOT_ORDER:
         cfg = SNAPSHOT_CONFIG[snap_key]
-        fpath = _data_dir / cfg['filename']
+        # Use filepath if auto-discovered, otherwise build from filename
+        if 'filepath' in cfg and cfg['filepath'] is not None:
+            fpath = cfg['filepath']
+        else:
+            fpath = _data_dir / cfg['filename']
+
         if not fpath.exists():
             _load_errors.append(f"  {snap_key}: file not found -- {fpath}")
             continue
