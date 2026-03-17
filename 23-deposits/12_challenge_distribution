@@ -1,15 +1,18 @@
 # ===========================================================================
-# SEGMENT DISTRIBUTION: Per-Wave + Aggregate (Conference Edition)
+# SEGMENT DISTRIBUTION: Per-Mailer + Aggregate (Conference Edition)
 # ===========================================================================
-# Shows segment assignment for EACH wave as a 100% stacked bar, then
+# Shows segment assignment for EACH mailer as a 100% stacked bar, then
 # a summary aggregate. Tells the story: is the NU pool shrinking?
 # Are more accounts moving into TH tiers as the program works?
 #
 # Depends on: wave_cohort_df (23/11), SEGMENT_ORDER (23/11), GEN_COLORS
 
 if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
-    print("    No wave cohort data. Run cell 11 first.")
+    print("    No cohort data. Run cell 11 first.")
 else:
+    # Rename column locally so all downstream code speaks "mailer"
+    _cohort = wave_cohort_df.rename(columns={'wave': 'mailer'})
+
     _seg_colors = {
         'NU': GEN_COLORS['info'],
         'TH-10': '#2EC4B6',
@@ -18,35 +21,35 @@ else:
         'TH-25': GEN_COLORS['primary'],
     }
 
-    _waves = sorted(wave_cohort_df['wave'].unique(),
-                     key=lambda w: pd.to_datetime(w, format='%b%y'))
+    _mailers = sorted(_cohort['mailer'].unique(),
+                       key=lambda m: pd.to_datetime(m, format='%b%y'))
 
-    # Build per-wave segment counts
-    _wave_data = []
-    for wave in _waves:
-        _wdf = wave_cohort_df[wave_cohort_df['wave'] == wave]
-        _total = len(_wdf)
-        _row = {'wave': wave, 'total_mailed': _total}
+    # Build per-mailer segment counts
+    _mailer_data = []
+    for mailer in _mailers:
+        _mdf = _cohort[_cohort['mailer'] == mailer]
+        _total = len(_mdf)
+        _row = {'mailer': mailer, 'total_mailed': _total}
         for seg in SEGMENT_ORDER:
-            _n = len(_wdf[_wdf['segment'] == seg])
+            _n = len(_mdf[_mdf['segment'] == seg])
             _row[seg] = _n
             _row[f'{seg}_pct'] = _n / _total * 100 if _total > 0 else 0
-        _wave_data.append(_row)
+        _mailer_data.append(_row)
 
-    _wave_df = pd.DataFrame(_wave_data)
+    _mailer_df = pd.DataFrame(_mailer_data)
 
     # ---------------------------------------------------------------
-    # Chart 1: 100% stacked bar -- segment mix per wave
+    # Chart 1: 100% stacked bar -- segment mix per mailer
     # ---------------------------------------------------------------
     fig, ax = plt.subplots(figsize=(16, 7))
 
-    _x = np.arange(len(_waves))
-    _bottom = np.zeros(len(_waves))
+    _x = np.arange(len(_mailers))
+    _bottom = np.zeros(len(_mailers))
 
     for seg in SEGMENT_ORDER:
         _pct_col = f'{seg}_pct'
-        if _pct_col in _wave_df.columns:
-            _vals = _wave_df[_pct_col].values
+        if _pct_col in _mailer_df.columns:
+            _vals = _mailer_df[_pct_col].values
             ax.bar(_x, _vals, bottom=_bottom,
                    color=_seg_colors.get(seg, GEN_COLORS['muted']),
                    edgecolor='white', linewidth=0.5, width=0.7,
@@ -54,13 +57,13 @@ else:
             _bottom += _vals
 
     # Annotate total mailed above each bar
-    for j, (wave, total) in enumerate(zip(_waves, _wave_df['total_mailed'])):
+    for j, (mailer, total) in enumerate(zip(_mailers, _mailer_df['total_mailed'])):
         ax.text(j, 102, f"{total:,}",
                 ha='center', va='bottom', fontsize=10, fontweight='bold',
                 color=GEN_COLORS['dark_text'])
 
     ax.set_xticks(_x)
-    ax.set_xticklabels(_waves, fontsize=12, fontweight='bold', rotation=45, ha='right')
+    ax.set_xticklabels(_mailers, fontsize=12, fontweight='bold', rotation=45, ha='right')
     ax.set_ylabel("% of Mailed Accounts", fontsize=16, fontweight='bold', labelpad=10)
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_pct))
     ax.set_ylim(0, 110)
@@ -75,15 +78,15 @@ else:
               frameon=True, facecolor='white', edgecolor=GEN_COLORS['grid'])
 
     # Check if NU % is changing over time
-    _nu_first = _wave_df.iloc[0]['NU_pct'] if 'NU_pct' in _wave_df.columns else 0
-    _nu_last = _wave_df.iloc[-1]['NU_pct'] if 'NU_pct' in _wave_df.columns else 0
+    _nu_first = _mailer_df.iloc[0]['NU_pct'] if 'NU_pct' in _mailer_df.columns else 0
+    _nu_last = _mailer_df.iloc[-1]['NU_pct'] if 'NU_pct' in _mailer_df.columns else 0
     _nu_change = _nu_last - _nu_first
 
-    ax.set_title("Segment Mix by Mailing Wave",
+    ax.set_title("Segment Mix by Mailer",
                   fontsize=26, fontweight='bold',
                   color=GEN_COLORS['dark_text'], pad=35, loc='left')
     ax.text(0.0, 1.02,
-            f"Numbers above = total mailed per wave  |  "
+            f"Numbers above = total mailed per mailer  |  "
             f"NU share: {_nu_first:.0f}% -> {_nu_last:.0f}% "
             f"({'shrinking' if _nu_change < -2 else 'growing' if _nu_change > 2 else 'stable'})",
             transform=ax.transAxes, fontsize=13,
@@ -93,17 +96,17 @@ else:
     plt.show()
 
     # ---------------------------------------------------------------
-    # Print: per-wave summary table
+    # Print: per-mailer summary table
     # ---------------------------------------------------------------
-    print(f"\n  Per-wave segment distribution:")
-    _header = f"  {'Wave':<8s} {'Total':>8s}"
+    print(f"\n  Per-mailer segment distribution:")
+    _header = f"  {'Mailer':<8s} {'Total':>8s}"
     for seg in SEGMENT_ORDER:
         _header += f"  {seg:>8s}"
     print(_header)
     print(f"  {'-' * len(_header)}")
 
-    for _, row in _wave_df.iterrows():
-        _line = f"  {row['wave']:<8s} {int(row['total_mailed']):>8,}"
+    for _, row in _mailer_df.iterrows():
+        _line = f"  {row['mailer']:<8s} {int(row['total_mailed']):>8,}"
         for seg in SEGMENT_ORDER:
             _n = int(row[seg])
             _pct = row[f'{seg}_pct']
@@ -111,10 +114,10 @@ else:
         print(_line.replace('(', '').replace(')', '').replace('%', '%'))
 
     # Aggregate
-    _total_all = _wave_df['total_mailed'].sum()
-    print(f"\n  Aggregate across all {len(_waves)} waves: {_total_all:,} account-wave rows")
+    _total_all = _mailer_df['total_mailed'].sum()
+    print(f"\n  Aggregate across all {len(_mailers)} mailers: {_total_all:,} account-mailer rows")
     for seg in SEGMENT_ORDER:
-        _seg_total = _wave_df[seg].sum()
+        _seg_total = _mailer_df[seg].sum()
         _seg_pct = _seg_total / _total_all * 100 if _total_all > 0 else 0
-        _unique = wave_cohort_df[wave_cohort_df['segment'] == seg]['acct_number'].nunique()
+        _unique = _cohort[_cohort['segment'] == seg]['acct_number'].nunique()
         print(f"    {seg:<8s}: {_seg_total:>8,} mailings ({_seg_pct:.1f}%), {_unique:,} unique accounts")
