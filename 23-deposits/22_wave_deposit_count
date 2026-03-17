@@ -1,0 +1,97 @@
+# ===========================================================================
+# WAVE DEPOSIT COUNT (99d): Per-Wave, Per-Segment (Conference Edition)
+# ===========================================================================
+# One chart per wave. X-axis = 5 segments. Responder vs Non-Responder
+# 99-day deposit COUNT change. Frequency, not amount.
+#
+# Depends on: wave_cohort_df (23/11), SEGMENT_ORDER, GEN_COLORS
+
+if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
+    print("    No wave cohort data. Run cell 11 first.")
+elif 'delta_DepCount99' not in wave_cohort_df.columns:
+    print("    No 99-day deposit count deltas available.")
+else:
+    _valid = wave_cohort_df[
+        wave_cohort_df['before_snap'].notna() & wave_cohort_df['after_snap'].notna()
+        & wave_cohort_df['delta_DepCount99'].notna()
+    ].copy()
+
+    if len(_valid) == 0:
+        print("    No waves with 99-day deposit count delta data.")
+    else:
+        _waves = sorted(_valid['wave'].unique(),
+                         key=lambda w: pd.to_datetime(w, format='%b%y'))
+
+        for wave in _waves:
+            _wdf = _valid[_valid['wave'] == wave]
+            _before = _wdf['before_snap'].iloc[0]
+            _after = _wdf['after_snap'].iloc[0]
+
+            _segs = [s for s in SEGMENT_ORDER if s in _wdf['segment'].values]
+            if len(_segs) == 0:
+                continue
+
+            fig, ax = plt.subplots(figsize=(14, 7))
+            _x = np.arange(len(_segs))
+            _w = 0.35
+
+            _r_vals = []
+            _nr_vals = []
+            _r_n = []
+            _nr_n = []
+
+            for seg in _segs:
+                _seg_data = _wdf[_wdf['segment'] == seg]
+                _r = _seg_data[_seg_data['outcome'] == 'Responder']['delta_DepCount99']
+                _nr = _seg_data[_seg_data['outcome'] == 'Non-Responder']['delta_DepCount99']
+                _r_vals.append(_r.mean() if len(_r) > 0 else 0)
+                _nr_vals.append(_nr.mean() if len(_nr) > 0 else 0)
+                _r_n.append(len(_r))
+                _nr_n.append(len(_nr))
+
+            bars1 = ax.bar(_x - _w / 2, _r_vals, _w,
+                           color=GEN_COLORS['success'], edgecolor='white',
+                           linewidth=1.5, label='Responders', zorder=3)
+            bars2 = ax.bar(_x + _w / 2, _nr_vals, _w,
+                           color=GEN_COLORS['muted'], edgecolor='white',
+                           linewidth=1.5, label='Non-Responders', zorder=3)
+
+            _all_vals = [v for v in _r_vals + _nr_vals if v != 0]
+            _max_abs = max(abs(v) for v in _all_vals) if _all_vals else 1
+
+            for j in range(len(_segs)):
+                for val, offset, n in [(_r_vals[j], -_w/2, _r_n[j]),
+                                        (_nr_vals[j], _w/2, _nr_n[j])]:
+                    _sign = '+' if val >= 0 else ''
+                    _va = 'bottom' if val >= 0 else 'top'
+                    _y = val + (_max_abs * 0.04 if val >= 0 else -_max_abs * 0.04)
+                    ax.text(j + offset, _y,
+                            f"{_sign}{val:.1f}\n({n:,})",
+                            ha='center', va=_va, fontsize=11, fontweight='bold',
+                            color=GEN_COLORS['dark_text'], linespacing=1.2)
+
+            ax.axhline(y=0, color=GEN_COLORS['dark_text'], linewidth=0.8, alpha=0.5)
+            ax.set_xticks(_x)
+            ax.set_xticklabels(_segs, fontsize=14, fontweight='bold')
+            ax.set_ylabel("99-Day Deposit Count Change", fontsize=16,
+                           fontweight='bold', labelpad=10)
+
+            gen_clean_axes(ax)
+            ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+            ax.legend(fontsize=14, loc='upper right', frameon=True,
+                      facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+            _snap_before_label = SNAPSHOT_CONFIG[_before]['label'] if _before in SNAPSHOT_CONFIG else _before
+            _snap_after_label = SNAPSHOT_CONFIG[_after]['label'] if _after in SNAPSHOT_CONFIG else _after
+
+            ax.set_title(f"{wave} Mailer: 99-Day Deposit Count Change by Segment",
+                          fontsize=24, fontweight='bold',
+                          color=GEN_COLORS['dark_text'], pad=35, loc='left')
+            ax.text(0.0, 1.02,
+                    f"How often are they depositing? Before: {_snap_before_label} | After: {_snap_after_label}",
+                    transform=ax.transAxes, fontsize=14,
+                    color=GEN_COLORS['muted'], style='italic')
+
+            plt.tight_layout()
+            plt.show()
