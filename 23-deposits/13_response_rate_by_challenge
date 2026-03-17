@@ -131,13 +131,30 @@ else:
             return ['font-weight: bold; border-top: 2px solid #1B2A4A'] * len(row)
         return [''] * len(row)
 
+    def _highlight_vs_median(col):
+        """Green above median, amber below -- per column, mailer rows only."""
+        if col.name not in _rate_cols + ['Overall']:
+            return [''] * len(col)
+        _mailer_vals = col.iloc[:-1].dropna()
+        if len(_mailer_vals) < 2:
+            return [''] * len(col)
+        _med = _mailer_vals.median()
+        styles = []
+        for i, v in enumerate(col):
+            if i == _last_idx:
+                styles.append('')
+            elif pd.notna(v) and v > _med:
+                styles.append('background-color: rgba(46, 196, 182, 0.2)')
+            elif pd.notna(v) and v < _med:
+                styles.append('background-color: rgba(255, 159, 28, 0.15)')
+            else:
+                styles.append('')
+        return styles
+
     _styled = (
         _display_df.style
         .hide(axis='index')
-        .background_gradient(
-            cmap='RdYlGn', subset=_rate_cols + ['Overall'],
-            axis=0
-        )
+        .apply(_highlight_vs_median)
         .format(
             {**{col: '{:.1f}%' for col in _rate_cols + ['Overall']},
              'Mailed': '{:,.0f}'},
