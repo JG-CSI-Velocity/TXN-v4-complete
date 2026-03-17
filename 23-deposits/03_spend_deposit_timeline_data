@@ -26,9 +26,15 @@ else:
 
     # Auto-discover mail_cols if not already defined
     if 'mail_cols' not in dir():
-        mail_cols = sorted([c for c in _rewards_cols if c.endswith(' Mail')])
+        mail_cols = sorted(
+            [c for c in _rewards_cols if c.endswith(' Mail')],
+            key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y')
+        )
     if 'resp_cols' not in dir():
-        resp_cols = sorted([c for c in _rewards_cols if c.endswith(' Resp')])
+        resp_cols = sorted(
+            [c for c in _rewards_cols if c.endswith(' Resp')],
+            key=lambda c: pd.to_datetime(c.replace(' Resp', ''), format='%b%y')
+        )
 
     # Discover monthly Spend and Swipes columns
     _spend_cols = sorted(

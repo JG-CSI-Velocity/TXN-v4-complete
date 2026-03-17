@@ -71,10 +71,17 @@ else:
     _rewards_cols = [c.strip() for c in rewards_df.columns]
 
     # Auto-discover Mail and Resp columns if not already defined by section 09
+    # Sort chronologically by parsing the month prefix (e.g., "Apr23 Mail" -> Apr 2023)
     if 'mail_cols' not in dir():
-        mail_cols = sorted([c for c in _rewards_cols if c.endswith(' Mail')])
+        mail_cols = sorted(
+            [c for c in _rewards_cols if c.endswith(' Mail')],
+            key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y')
+        )
     if 'resp_cols' not in dir():
-        resp_cols = sorted([c for c in _rewards_cols if c.endswith(' Resp')])
+        resp_cols = sorted(
+            [c for c in _rewards_cols if c.endswith(' Resp')],
+            key=lambda c: pd.to_datetime(c.replace(' Resp', ''), format='%b%y')
+        )
 
     if len(mail_cols) == 0 and len(resp_cols) == 0:
         print("    No Mail/Resp columns found in rewards_df. Skipping response journey.")
