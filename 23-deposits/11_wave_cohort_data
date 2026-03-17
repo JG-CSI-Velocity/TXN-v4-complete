@@ -320,13 +320,15 @@ else:
         print(f"    Waves: {wave_cohort_df['wave'].nunique()}")
         print(f"    Never mailed: {len(_never_mailed):,}")
 
-        # Per-wave snapshot pairing
+        # Per-wave snapshot pairing (chronological)
         _wave_snaps = wave_cohort_df.groupby('wave').first()[['wave_date', 'before_snap', 'after_snap']]
-        print(f"\n  Wave -> Snapshot pairing:")
+        _wave_snaps = _wave_snaps.sort_values('wave_date')
+        print(f"\n  Wave -> Snapshot pairing (chronological):")
         for wave, row in _wave_snaps.iterrows():
             _b = row['before_snap'] if pd.notna(row['before_snap']) else 'none'
             _a = row['after_snap'] if pd.notna(row['after_snap']) else 'none'
-            print(f"    {wave}: before={_b}, after={_a}")
+            _star = ' *' if _b != 'none' and _a != 'none' else ''
+            print(f"    {wave}: before={_b}, after={_a}{_star}")
 
         # Deposit delta availability
         _waves_with_deltas = wave_cohort_df[
