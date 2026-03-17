@@ -1,123 +1,134 @@
 # ===========================================================================
-# TIME TO FIRST RESPONSE: Waves Until First Success (Conference Edition)
+# TIME TO FIRST RESPONSE: How Many Mailings Until Success (Conf. Edition)
 # ===========================================================================
-# Bar chart: distribution of how many waves it took for accounts to first
-# respond (NU 5+ or TH). Accounts that never responded excluded.
-# Overlay: avg deposit balance by time-to-respond bucket.
+# Bar chart: of all accounts that eventually responded, how many mailings
+# did it take? "1st Mailing" = responded the first time they were mailed.
+# "3rd Mailing" = took 3 tries. Excludes never-responders entirely.
 #
-# Depends on: response_journey_df (23/02), deposit_df (23/01), GEN_COLORS
+# Key insight: persistence pays off. X% of eventual responders needed
+# more than one mailing.
+#
+# Depends on: response_journey_df (23/02), rewards_df, mail_cols, GEN_COLORS
 
 if 'response_journey_df' not in dir() or len(response_journey_df) == 0:
     print("    No response journey data. Run cell 02 first.")
 else:
-    # Only accounts that responded at least once
     _responded = response_journey_df[response_journey_df['times_responded'] > 0].copy()
 
     if len(_responded) == 0:
         print("    No responded accounts.")
     else:
-        # Compute waves until first response
-        # first_response_wave is the wave label; we need the wave index
-        _wave_labels = []
-        for mc, rc in zip(mail_cols, resp_cols):
-            _wave_labels.append(mc.replace(' Mail', ''))
-
+        # Build wave label -> index mapping (chronological)
+        _wave_labels = [mc.replace(' Mail', '') for mc in mail_cols]
         _wave_idx_map = {w: i for i, w in enumerate(_wave_labels)}
 
         _responded['first_wave_idx'] = _responded['first_response_wave'].map(_wave_idx_map)
 
-        # For each account, find the first wave they were mailed
-        # We need to go back to rewards_df for this
-        _first_mailed_idx = []
+        # Vectorized: find first mailed wave index per account
         _acct_col = 'Acct Number' if 'Acct Number' in rewards_df.columns else ' Acct Number'
-        _acct_nums = rewards_df[_acct_col].astype(str).str.strip()
         _rewards_cols = [c.strip() for c in rewards_df.columns]
 
-        for _, row in _responded.iterrows():
-            _acct = row['acct_number']
-            _acct_mask = _acct_nums == _acct
-            if _acct_mask.sum() == 0:
-                _first_mailed_idx.append(np.nan)
+        # Build a lookup: acct_number -> first_mailed_wave_index
+        _acct_to_first_mail = {}
+        _acct_nums_rw = rewards_df[_acct_col].astype(str).str.strip()
+
+        for j, (mc, rc) in enumerate(zip(mail_cols, resp_cols)):
+            mc_s = mc.strip()
+            if mc_s not in _rewards_cols:
                 continue
-            _ridx = _acct_mask.idxmax()
-            _first_mail = None
-            for j, (mc, rc) in enumerate(zip(mail_cols, resp_cols)):
-                mc_s = mc.strip()
-                if mc_s in _rewards_cols and pd.notna(rewards_df.at[_ridx, mc_s]):
-                    _first_mail = j
-                    break
-            _first_mailed_idx.append(_first_mail)
+            _mailed_mask = rewards_df[mc_s].notna()
+            for acct in _acct_nums_rw[_mailed_mask]:
+                if acct not in _acct_to_first_mail:
+                    _acct_to_first_mail[acct] = j
 
-        _responded['first_mailed_idx'] = _first_mailed_idx
-        _responded['waves_to_respond'] = _responded['first_wave_idx'] - _responded['first_mailed_idx']
-        _responded['waves_to_respond'] = _responded['waves_to_respond'].clip(lower=0)
+        _responded['first_mailed_idx'] = _responded['acct_number'].map(_acct_to_first_mail)
+        _responded['mailings_to_respond'] = _responded['first_wave_idx'] - _responded['first_mailed_idx']
+        _responded['mailings_to_respond'] = _responded['mailings_to_respond'].clip(lower=0)
 
-        # Bucket: 0 = responded on first wave mailed, 1 = second wave, etc.
-        _valid = _responded.dropna(subset=['waves_to_respond'])
-        _valid['waves_to_respond'] = _valid['waves_to_respond'].astype(int)
+        _valid = _responded.dropna(subset=['mailings_to_respond']).copy()
+        _valid['mailings_to_respond'] = _valid['mailings_to_respond'].astype(int)
 
-        _max_waves = min(int(_valid['waves_to_respond'].max()), 10) if len(_valid) > 0 else 5
-        _wave_counts = _valid['waves_to_respond'].value_counts().sort_index()
+        if len(_valid) == 0:
+            print("    Could not compute mailings-to-respond.")
+        else:
+            # Cap at 6+ for readability
+            _valid['bucket'] = _valid['mailings_to_respond'].clip(upper=6)
+            _bucket_counts = _valid['bucket'].value_counts().sort_index()
+            _total = _bucket_counts.sum()
 
-        fig, ax = plt.subplots(figsize=(14, 7))
+            _bucket_labels = {
+                0: '1st Mailing',
+                1: '2nd Mailing',
+                2: '3rd Mailing',
+                3: '4th Mailing',
+                4: '5th Mailing',
+                5: '6th Mailing',
+                6: '7th+ Mailing',
+            }
 
-        _x_vals = sorted(_wave_counts.index)
-        _y_vals = [_wave_counts.get(x, 0) for x in _x_vals]
-        _x_labels = [f"Wave {x + 1}" if x < 10 else f"Wave {x + 1}+" for x in _x_vals]
+            _x_vals = sorted(_bucket_counts.index)
+            _y_vals = [_bucket_counts.get(x, 0) for x in _x_vals]
+            _labels = [_bucket_labels.get(x, f"Mailing {x+1}") for x in _x_vals]
 
-        bars = ax.bar(range(len(_x_vals)), _y_vals,
-                      color=GEN_COLORS['success'], edgecolor='white',
-                      linewidth=1.5, width=0.6, zorder=3)
+            # Color gradient: first mailing = darkest, later = lighter
+            _bar_colors = []
+            for x in _x_vals:
+                if x == 0:
+                    _bar_colors.append(GEN_COLORS['success'])
+                elif x <= 2:
+                    _bar_colors.append(GEN_COLORS['info'])
+                elif x <= 4:
+                    _bar_colors.append(GEN_COLORS['warning'])
+                else:
+                    _bar_colors.append(GEN_COLORS['muted'])
 
-        _total_resp = sum(_y_vals)
-        for j, (bar, count) in enumerate(zip(bars, _y_vals)):
-            pct = count / _total_resp * 100 if _total_resp > 0 else 0
-            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() * 1.02,
-                    f"{count:,}\n({pct:.0f}%)",
-                    ha='center', va='bottom', fontsize=13, fontweight='bold',
-                    color=GEN_COLORS['dark_text'])
+            fig, ax = plt.subplots(figsize=(14, 7))
 
-        # Overlay: avg balance by waves-to-respond (if deposit data available)
-        if 'deposit_df' in dir() and len(deposit_df) > 0 and 'HASHED_ACCOUNT' in _valid.columns:
-            _hash_col = 'HASHED_ACCOUNT'
-            if _hash_col in deposit_df.columns:
-                _bal_merge = _valid[[_hash_col, 'waves_to_respond']].merge(
-                    deposit_df[[_hash_col, 'balance']], on=_hash_col, how='inner'
-                )
-                if len(_bal_merge) > 0:
-                    _bal_by_wave = _bal_merge.groupby('waves_to_respond')['balance'].mean()
-                    ax2 = ax.twinx()
-                    _bx = [i for i, x in enumerate(_x_vals) if x in _bal_by_wave.index]
-                    _by = [_bal_by_wave[_x_vals[i]] for i in _bx]
-                    ax2.plot(_bx, _by,
-                             color=GEN_COLORS['accent'], linewidth=2.5, marker='D',
-                             markersize=8, markeredgecolor='white', markeredgewidth=1.5,
-                             label='Avg Balance', zorder=5)
-                    ax2.set_ylabel("Avg Balance", fontsize=14, fontweight='bold',
-                                    color=GEN_COLORS['accent'], labelpad=10)
-                    ax2.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
-                    ax2.spines['top'].set_visible(False)
-                    ax2.spines['left'].set_visible(False)
-                    ax2.grid(False)
-                    ax2.legend(fontsize=12, loc='upper right')
+            bars = ax.bar(range(len(_x_vals)), _y_vals,
+                          color=_bar_colors, edgecolor='white',
+                          linewidth=1.5, width=0.6, zorder=3)
 
-        ax.set_xticks(range(len(_x_vals)))
-        ax.set_xticklabels(_x_labels, fontsize=13, fontweight='bold')
-        ax.set_ylabel("Accounts", fontsize=16, fontweight='bold', labelpad=10)
-        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
+            # Cumulative % annotation
+            _cum = 0
+            for j, (bar, count) in enumerate(zip(bars, _y_vals)):
+                pct = count / _total * 100 if _total > 0 else 0
+                _cum += pct
+                ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() * 1.02,
+                        f"{count:,}\n({pct:.0f}%)",
+                        ha='center', va='bottom', fontsize=13, fontweight='bold',
+                        color=GEN_COLORS['dark_text'])
 
-        gen_clean_axes(ax)
-        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
-        ax.set_axisbelow(True)
+            # Key insight annotation
+            _first_mailing_pct = _y_vals[0] / _total * 100 if _total > 0 and len(_y_vals) > 0 else 0
+            _needed_multiple = _total - (_y_vals[0] if len(_y_vals) > 0 else 0)
+            _multiple_pct = _needed_multiple / _total * 100 if _total > 0 else 0
 
-        ax.set_title("Time to First Response: Waves Until Success",
-                      fontsize=26, fontweight='bold',
-                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
-        ax.text(0.0, 1.02,
-                "How many mailer waves before an account first responds?  |  "
-                "Red line = avg deposit balance",
-                transform=ax.transAxes, fontsize=13,
-                color=GEN_COLORS['muted'], style='italic')
+            ax.set_xticks(range(len(_x_vals)))
+            ax.set_xticklabels(_labels, fontsize=13, fontweight='bold')
+            ax.set_ylabel("Accounts", fontsize=16, fontweight='bold', labelpad=10)
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
 
-        plt.tight_layout()
-        plt.show()
+            gen_clean_axes(ax)
+            ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+
+            ax.set_title("How Many Mailings Until First Response?",
+                          fontsize=26, fontweight='bold',
+                          color=GEN_COLORS['dark_text'], pad=35, loc='left')
+            ax.text(0.0, 1.02,
+                    f"{_first_mailing_pct:.0f}% responded on 1st mailing  |  "
+                    f"{_multiple_pct:.0f}% needed 2+ mailings  |  "
+                    f"{_total:,} responders total",
+                    transform=ax.transAxes, fontsize=13,
+                    color=GEN_COLORS['muted'], style='italic')
+
+            plt.tight_layout()
+            plt.show()
+
+            print(f"\n    INSIGHT: {_first_mailing_pct:.0f}% of eventual responders responded "
+                  f"on their first mailing.")
+            print(f"    INSIGHT: {_multiple_pct:.0f}% needed multiple mailings -- "
+                  f"persistence in mailing pays off.")
+            if _needed_multiple > 0:
+                print(f"    INSIGHT: {_needed_multiple:,} responders would have been missed "
+                      f"with a single-mailing strategy.")

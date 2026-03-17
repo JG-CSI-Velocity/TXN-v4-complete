@@ -1,13 +1,14 @@
 # ===========================================================================
-# WAVE TIER STACKED: Response Composition per Wave (Conference Edition)
+# WAVE TIER STACKED: Response % per Wave (Conference Edition)
 # ===========================================================================
-# Stacked bar chart: for each wave, shows the breakdown of mailed accounts
-# into TH (by level), NU 5+, NU 1-4, and No Response.
+# 100% stacked bar chart: for each wave, shows the PERCENTAGE breakdown
+# of mailed accounts by response tier. No Response is visible but doesn't
+# dwarf the response tiers. Excludes waves with no results yet.
 #
-# Depends on: rewards_df, mail_cols, resp_cols, RESPONSE_TIER_PALETTE, GEN_COLORS
+# Depends on: rewards_df, mail_cols, resp_cols, GEN_COLORS
 
 if 'rewards_df' not in dir() or 'mail_cols' not in dir():
-    print("    No campaign data. Run 00-setup and 09-ars-campaign first.")
+    print("    No campaign data. Run cells 01-02 first.")
 else:
     _wave_pairs = list(zip(mail_cols, resp_cols))
     _rewards_cols = [c.strip() for c in rewards_df.columns]
@@ -58,12 +59,19 @@ else:
             else:
                 _counts['No Response'] += 1
 
-        # Account for mailed but no resp column data
         _total_classified = sum(_counts.values())
         _counts['No Response'] += max(0, _mailed_count - _total_classified)
 
+        # Skip waves with no response data (results pending)
+        _any_response = sum(v for k, v in _counts.items() if k != 'No Response')
+        if _any_response == 0:
+            continue
+
         _row = {'wave': _label, 'mailed': _mailed_count}
-        _row.update(_counts)
+        # Convert to percentages
+        for t in _tier_labels:
+            _row[t] = _counts[t] / _mailed_count * 100 if _mailed_count > 0 else 0
+        _row['response_rate'] = _any_response / _mailed_count * 100
         _wave_tiers.append(_row)
 
     _wt_df = pd.DataFrame(_wave_tiers)
@@ -77,12 +85,12 @@ else:
     if len(_wt_df) == 0:
         print("    No wave tier data.")
     else:
-        fig, ax = plt.subplots(figsize=(14, 7))
+        fig, ax = plt.subplots(figsize=(16, 7))
 
         _x = np.arange(len(_wt_df))
         _bottom = np.zeros(len(_wt_df))
 
-        # Stack from bottom: No Response first (biggest), then up the ladder
+        # Stack as percentages (100% bars)
         for tier in _tier_labels:
             _vals = _wt_df[tier].values.astype(float)
             ax.bar(_x, _vals, bottom=_bottom,
@@ -90,28 +98,34 @@ else:
                    width=0.7, label=tier, zorder=3)
             _bottom += _vals
 
+        # Annotate response rate on top of each bar
+        for i, row in _wt_df.iterrows():
+            ax.text(i, 101, f"{row['response_rate']:.1f}%",
+                    ha='center', va='bottom', fontsize=11, fontweight='bold',
+                    color=GEN_COLORS['success'])
+
         ax.set_xticks(_x)
         ax.set_xticklabels(_wt_df['wave'], fontsize=12, fontweight='bold',
                            rotation=45, ha='right')
-        ax.set_ylabel("Mailed Accounts", fontsize=16, fontweight='bold', labelpad=10)
-        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
+        ax.set_ylabel("% of Mailed", fontsize=16, fontweight='bold', labelpad=10)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_pct))
+        ax.set_ylim(0, 108)
 
         gen_clean_axes(ax)
         ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
         ax.set_axisbelow(True)
 
-        # Legend in reverse order so it matches visual top-to-bottom
         _handles, _labels = ax.get_legend_handles_labels()
         ax.legend(_handles[::-1], _labels[::-1],
-                  fontsize=11, loc='upper right', frameon=True, ncol=2,
-                  facecolor='white', edgecolor=GEN_COLORS['grid'])
+                  fontsize=11, loc='center left', bbox_to_anchor=(1.01, 0.5),
+                  frameon=True, facecolor='white', edgecolor=GEN_COLORS['grid'])
 
-        ax.set_title("Response Tier Composition by Mailing Wave",
+        ax.set_title("Response Tier Mix by Wave (% of Mailed)",
                       fontsize=26, fontweight='bold',
                       color=GEN_COLORS['dark_text'], pad=35, loc='left')
         ax.text(0.0, 1.02,
-                "Full tier breakdown per wave -- how is the response mix shifting?",
-                transform=ax.transAxes, fontsize=14,
+                "100% stacked -- green % above = total response rate  |  Pending waves excluded",
+                transform=ax.transAxes, fontsize=13,
                 color=GEN_COLORS['muted'], style='italic')
 
         plt.tight_layout()
