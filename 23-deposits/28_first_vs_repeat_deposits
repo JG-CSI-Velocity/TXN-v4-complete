@@ -15,8 +15,9 @@ else:
     else:
         _snap_label = SNAPSHOT_CONFIG[_latest_key]['label'] if 'SNAPSHOT_CONFIG' in dir() else ''
 
-        _first = _responded[~_responded['is_repeat_responder']]
-        _repeat = _responded[_responded['is_repeat_responder']]
+        _repeat_flag = _responded['is_repeat_responder'].astype(str).str.strip().str.lower().isin(['true', '1', 'yes'])
+        _first = _responded[~_repeat_flag]
+        _repeat = _responded[_repeat_flag]
 
         _labels = ['First-Time Responder', 'Repeat Responder']
         _subsets = [_first, _repeat]

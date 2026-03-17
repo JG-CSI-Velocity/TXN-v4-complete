@@ -201,7 +201,7 @@ if 'rewards_df' in dir() and len(mail_cols) > 0:
             'first_response_tier': first_response_tier,
             'times_mailed': len(_mailed_waves),
             'times_responded': len(_responded_waves),
-            'is_repeat_responder': len(_responded_waves) > 1,
+            'is_repeat_responder': bool(len(_responded_waves) > 1),
             'direction': direction,
             'response_group': RESPONSE_GROUP_MAP[best_tier],
         }

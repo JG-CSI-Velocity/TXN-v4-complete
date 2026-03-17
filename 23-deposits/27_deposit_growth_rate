@@ -21,8 +21,8 @@ else:
 
     _segments = {
         'Never Responded': _cohort[~_responded_mask],
-        'First-Time Responder': _cohort[_responded_mask & ~_cohort['is_repeat_responder']],
-        'Repeat Responder': _cohort[_responded_mask & _cohort['is_repeat_responder']],
+        'First-Time Responder': _cohort[_responded_mask & (_cohort['is_repeat_responder'].astype(str).str.lower().isin(['false', '0', 'no']))],
+        'Repeat Responder': _cohort[_responded_mask & (_cohort['is_repeat_responder'].astype(str).str.lower().isin(['true', '1', 'yes']))],
     }
     _seg_order = ['Never Responded', 'First-Time Responder', 'Repeat Responder']
     _seg_colors = {
