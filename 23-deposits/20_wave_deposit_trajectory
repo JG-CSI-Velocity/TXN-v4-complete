@@ -1,0 +1,139 @@
+# ===========================================================================
+# WAVE DEPOSIT TRAJECTORY: Balance at Each Snapshot, Per Wave (Conf. Ed.)
+# ===========================================================================
+# For EACH wave, shows the deposit BALANCE at every available snapshot,
+# split by segment and responder vs non-responder.
+#
+# Example for Dec24 mailer:
+#   Nov24 snapshot: 12 months of deposits BEFORE the mailer
+#   Jun25 snapshot: 6 months AFTER the mailer
+#   Dec25 snapshot: 12 months AFTER the mailer
+#
+# One chart per wave. X-axis = snapshots. Lines = segment × outcome.
+#
+# Depends on: wave_cohort_df (23/11), SEGMENT_ORDER, SNAPSHOT_ORDER,
+#             SNAPSHOT_CONFIG, GEN_COLORS
+
+if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
+    print("    No wave cohort data. Run cell 11 first.")
+else:
+    _snap_keys = [sk for sk in SNAPSHOT_ORDER if sk in wave_cohort_df.columns or
+                  any(c.startswith(f"{sk}_") for c in wave_cohort_df.columns)]
+
+    # Check which snapshots have balance data
+    _snap_bal_cols = {sk: f"{sk}_balance" for sk in SNAPSHOT_ORDER
+                      if f"{sk}_balance" in wave_cohort_df.columns}
+
+    if len(_snap_bal_cols) < 2:
+        print(f"    Need at least 2 snapshots with balance data. Found: {list(_snap_bal_cols.keys())}")
+    else:
+        _waves = sorted(wave_cohort_df['wave'].unique(),
+                         key=lambda w: pd.to_datetime(w, format='%b%y'))
+
+        _seg_colors = {
+            'NU':    GEN_COLORS['info'],
+            'TH-10': '#2EC4B6',
+            'TH-15': '#20A39E',
+            'TH-20': '#1B8A7A',
+            'TH-25': GEN_COLORS['primary'],
+        }
+
+        for wave in _waves:
+            _wdf = wave_cohort_df[wave_cohort_df['wave'] == wave]
+            _wave_date = _wdf['wave_date'].iloc[0]
+
+            # Get snapshot labels and check which have data for this wave
+            _valid_snaps = []
+            _snap_labels = []
+            for sk, col in _snap_bal_cols.items():
+                if _wdf[col].notna().sum() > 0:
+                    _valid_snaps.append(sk)
+                    _sd = _snap_dates[sk] if sk in _snap_dates else None
+                    if _sd:
+                        _months_diff = ((_sd.year - _wave_date.year) * 12 +
+                                        (_sd.month - _wave_date.month))
+                        if _months_diff < 0:
+                            _time_label = f"{abs(_months_diff)}mo before"
+                        elif _months_diff == 0:
+                            _time_label = "at mailer"
+                        else:
+                            _time_label = f"{_months_diff}mo after"
+                        _snap_label = f"{SNAPSHOT_CONFIG[sk]['label']}\n({_time_label})"
+                    else:
+                        _snap_label = sk
+                    _snap_labels.append(_snap_label)
+
+            if len(_valid_snaps) < 2:
+                continue
+
+            _segs = [s for s in SEGMENT_ORDER if s in _wdf['segment'].values]
+            if len(_segs) == 0:
+                continue
+
+            fig, ax = plt.subplots(figsize=(14, 7))
+
+            for seg in _segs:
+                _seg_data = _wdf[_wdf['segment'] == seg]
+                _color = _seg_colors.get(seg, GEN_COLORS['muted'])
+
+                for outcome, ls, alpha, marker in [('Responder', '-', 1.0, 'o'),
+                                                     ('Non-Responder', '--', 0.6, 's')]:
+                    _out_data = _seg_data[_seg_data['outcome'] == outcome]
+                    if len(_out_data) == 0:
+                        continue
+
+                    _vals = [_out_data[_snap_bal_cols[sk]].mean() for sk in _valid_snaps]
+                    _n = len(_out_data)
+
+                    if all(pd.isna(v) for v in _vals):
+                        continue
+
+                    _label = f"{seg} {'Resp' if outcome == 'Responder' else 'Non-Resp'} ({_n:,})"
+                    ax.plot(range(len(_valid_snaps)), _vals,
+                            color=_color, linewidth=2.5 if outcome == 'Responder' else 1.8,
+                            linestyle=ls, alpha=alpha, marker=marker,
+                            markersize=8, markeredgecolor='white', markeredgewidth=1.5,
+                            label=_label, zorder=5 if outcome == 'Responder' else 3)
+
+                    # Label last point
+                    _last_val = _vals[-1]
+                    if pd.notna(_last_val):
+                        ax.text(len(_valid_snaps) - 1 + 0.1, _last_val,
+                                gen_fmt_dollar(_last_val, None),
+                                fontsize=9, fontweight='bold', va='center',
+                                color=_color, alpha=alpha)
+
+            # Mark the wave date on x-axis
+            for i, sk in enumerate(_valid_snaps):
+                if sk in _snap_dates:
+                    _sd = _snap_dates[sk]
+                    if abs((_sd.year - _wave_date.year) * 12 + (_sd.month - _wave_date.month)) <= 1:
+                        ax.axvline(x=i, color=GEN_COLORS['accent'], linewidth=2,
+                                   linestyle=':', alpha=0.5)
+                        ax.text(i, ax.get_ylim()[1] * 0.98, 'MAILER',
+                                ha='center', va='top', fontsize=10, fontweight='bold',
+                                color=GEN_COLORS['accent'])
+
+            ax.set_xticks(range(len(_valid_snaps)))
+            ax.set_xticklabels(_snap_labels, fontsize=12, fontweight='bold')
+            ax.set_ylabel("Avg Balance", fontsize=16, fontweight='bold', labelpad=10)
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+
+            gen_clean_axes(ax)
+            ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+            ax.legend(fontsize=9, loc='upper left', frameon=True, ncol=2,
+                      facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+            ax.set_title(f"{wave} Mailer: Deposit Balance Trajectory by Segment",
+                          fontsize=24, fontweight='bold',
+                          color=GEN_COLORS['dark_text'], pad=35, loc='left')
+            ax.text(0.0, 1.02,
+                    f"Solid = Responder, Dashed = Non-Responder  |  "
+                    f"{len(_wdf):,} accounts mailed  |  "
+                    f"All {len(_valid_snaps)} snapshots shown",
+                    transform=ax.transAxes, fontsize=13,
+                    color=GEN_COLORS['muted'], style='italic')
+
+            plt.tight_layout()
+            plt.show()

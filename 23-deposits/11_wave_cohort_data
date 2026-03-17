@@ -227,18 +227,17 @@ else:
                 _chunk['post_mtd_3mo'] = _mtd_matrix.loc[_mailed_idx, _post3_m].mean(axis=1).values
 
         # -------------------------------------------------------------------
-        # Merge deposit data from BEFORE and AFTER snapshots
+        # Merge deposit data from ALL snapshots (not just before/after)
         # -------------------------------------------------------------------
+        # For Dec24 wave: Nov24 = 12mo before, Jun25 = 6mo after, Dec25 = 12mo after
+        # All three are valuable for telling the trajectory story.
         if '_dk' in _chunk.columns:
-            for snap_label, snap_key in [('before', _before_snap), ('after', _after_snap)]:
-                if snap_key and snap_key in _dep_lookups:
+            for snap_key in _snap_keys_sorted:
+                if snap_key in _dep_lookups:
                     _lookup = _dep_lookups[snap_key]
-                    _matched = _chunk['_dk'].map(
-                        lambda dk: dk in _lookup.index
-                    )
 
                     for dep_col in _dep_avail:
-                        _col_name = f"{snap_label}_{dep_col}"
+                        _col_name = f"{snap_key}_{dep_col}"
                         _chunk[_col_name] = _chunk['_dk'].map(
                             lambda dk, c=dep_col: _lookup.loc[dk, c] if dk in _lookup.index else np.nan
                         )
@@ -255,24 +254,38 @@ else:
         if 'pre_mtd' in wave_cohort_df.columns and 'post_mtd_3mo' in wave_cohort_df.columns:
             wave_cohort_df['mtd_delta'] = wave_cohort_df['post_mtd_3mo'] - wave_cohort_df['pre_mtd']
 
-        # Deposit deltas (after - before)
+        # Deposit deltas: before_snap vs after_snap (primary comparison)
         for metric in ['DepAmt99', 'DepCount99', 'depAmt365', 'depCount365', 'balance']:
-            _b = f'before_{metric}'
-            _a = f'after_{metric}'
-            if _b in wave_cohort_df.columns and _a in wave_cohort_df.columns:
-                wave_cohort_df[f'delta_{metric}'] = wave_cohort_df[_a] - wave_cohort_df[_b]
+            _before_cols = [c for c in wave_cohort_df.columns if c == f"{wave_cohort_df['before_snap'].iloc[0]}_{metric}"] if len(wave_cohort_df) > 0 else []
+            # Dynamic: use each row's before_snap and after_snap
+            _b_col_map = {}
+            _a_col_map = {}
+            for sk in _snap_keys_sorted:
+                _col = f"{sk}_{metric}"
+                if _col in wave_cohort_df.columns:
+                    _b_col_map[sk] = _col
+                    _a_col_map[sk] = _col
 
-        # Deposit acceleration: (DepAmt33/33) vs (DepAmt66/66) at each snapshot
-        for snap_label in ['before', 'after']:
-            _d33 = f'{snap_label}_DepAmt33'
-            _d66 = f'{snap_label}_DepAmt66'
+            # Compute delta per row using that row's before/after snap
+            _deltas = []
+            for _, row in wave_cohort_df.iterrows():
+                _bs = row.get('before_snap')
+                _as = row.get('after_snap')
+                _b_val = row.get(f"{_bs}_{metric}") if pd.notna(_bs) else np.nan
+                _a_val = row.get(f"{_as}_{metric}") if pd.notna(_as) else np.nan
+                _deltas.append(_a_val - _b_val if pd.notna(_a_val) and pd.notna(_b_val) else np.nan)
+            wave_cohort_df[f'delta_{metric}'] = _deltas
+
+        # Deposit acceleration at each snapshot: (DepAmt33/33) vs (DepAmt66/66)
+        for sk in _snap_keys_sorted:
+            _d33 = f'{sk}_DepAmt33'
+            _d66 = f'{sk}_DepAmt66'
             if _d33 in wave_cohort_df.columns and _d66 in wave_cohort_df.columns:
                 _rate33 = wave_cohort_df[_d33] / 33
                 _rate66 = wave_cohort_df[_d66] / 66
-                wave_cohort_df[f'{snap_label}_dep_accel'] = np.where(
+                wave_cohort_df[f'{sk}_dep_accel'] = np.where(
                     _rate66 > 0, _rate33 / _rate66, np.nan
                 )
-                # >1 = accelerating, <1 = decelerating
 
         # -------------------------------------------------------------------
         # Never Mailed reference group
