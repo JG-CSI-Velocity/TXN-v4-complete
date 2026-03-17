@@ -137,17 +137,95 @@ If you need to present the entire section in 5 slides:
 | **45** | Spend + Deposits | Monthly spend, activation, aligned dual-axis, growth comparison |
 | **46** | OD/Fee Impact | Fees, fee ratio, repayment, FDIC occasions |
 
-Follow with cell 41 (Action Summary) for the strategic close.
+Follow with cell 76 (Updated Action Summary) for the strategic close.
+
+---
+
+## BLOCK I: Threshold Tier Deep Dive (Cells 57-62)
+
+**Talk track:** "We've been showing Threshold as one group. Now let's break it open -- TH-10 through TH-25 are dramatically different."
+
+| Cell | Title | When to Use |
+|------|-------|-------------|
+| **57** | **TH Tier Deposit Profile** | Always -- establishes the value gradient |
+| **58** | **TH Tier Progression** | When showing accounts climb TH-10 -> TH-25 |
+| **59** | **TH Tier Balance Trajectory** | When you have 2+ snapshots |
+| **60** | **TH Tier DD & Mobile** | To show digital engagement scales with TH |
+| **61** | **TH Tier OD Risk** | To prove higher TH = lower risk |
+| **62** | **TH Tier Heatmap** | Leave-behind reference chart |
+
+**Executive Dashboard: Cell 74** -- All TH metrics on one slide.
+
+---
+
+## BLOCK J: Activation Proof (Cells 63-68)
+
+**Talk track:** "Here's the proof that this program turns inactive accounts into active, engaged, depositing members."
+
+| Cell | Title | When to Use |
+|------|-------|-------------|
+| **63** | **Swipe Category Migration** | To show responders moving up in swipe engagement |
+| **64** | **Dormant-to-Active Waterfall** | The headline number: "X dormant accounts activated" |
+| **65** | **Activation Funnel** | End-to-end: mailed -> responded -> active -> sustained -> depositor |
+| **66** | **Deposit Acceleration** | Are deposits speeding up after response? (33-day velocity) |
+| **67** | **Closed Account Analysis** | Were closed accounts showing deposit weakness before closure? |
+| **68** | **Segment Migration by Response** | Do responders upgrade their institutional segment? |
+
+**Executive Dashboard: Cell 75** -- Activation proof on one slide.
+
+---
+
+## BLOCK K: Predictive Signals & Total Value (Cells 69-73)
+
+**Talk track:** "Now we know the program works. Who should we target, and what's the total value?"
+
+| Cell | Title | When to Use |
+|------|-------|-------------|
+| **69** | **DD as Predictor** | DD members respond at X.Xx the rate -- targeting signal |
+| **70** | **Account Age Response** | Which tenure bands respond best? |
+| **71** | **Holder Age Response** | Which demographics respond best? |
+| **72** | **Total Member Value** | The ROI number: responders = Xx non-responder value |
+| **73** | **Member Value by TH Tier** | Value scales with each TH step |
+
+---
+
+## BLOCK L: Expanded Dashboards & Conclusion (Cells 74-76)
+
+| Cell | Title | When to Use |
+|------|-------|-------------|
+| **74** | **Exec Dashboard: TH Deep Dive** | One-slide TH summary |
+| **75** | **Exec Dashboard: Activation Proof** | One-slide activation summary |
+| **76** | **Updated Action Summary** | Expanded findings + 8 strategic actions (replaces cell 41) |
+
+---
+
+## EXECUTIVE DASHBOARDS (Cells 42-46, 74-75)
+
+| Cell | Dashboard | One-Line Summary |
+|------|-----------|-----------------|
+| **42** | Institutional Context | Total deposits, members, net worth, FL unemployment |
+| **43** | Campaign Performance | Response groups, rate trend, repeat vs one-time, direction |
+| **44** | Deposit Value | Balance by group, DD rate, trajectory, growth % |
+| **45** | Spend + Deposits | Monthly spend, activation, aligned dual-axis, growth comparison |
+| **46** | OD/Fee Impact | Fees, fee ratio, repayment, FDIC occasions |
+| **74** | TH Deep Dive | Balance, DD, deposits, risk -- by individual TH tier |
+| **75** | Activation Proof | Outcomes, DD predictor, balance by group, total value |
 
 ---
 
 ## RECOMMENDED PRESENTATION FLOWS
 
-**Full presentation (20-25 minutes):**
-Cells 42, 11, 12, 18, 19, 20, 24, 27, 29, 31, 34, 35, 44, 46, 41
+**Full presentation (30-35 minutes):**
+Cells 42, 11, 12, 18, 19, 20, 24, 27, 29, 57, 59, 64, 65, 66, 72, 44, 74, 75, 76
+
+**Activation focus (15-20 minutes):**
+Cells 42, 43, 64, 65, 66, 72, 73, 74, 75, 76
 
 **Medium presentation (10-15 minutes):**
-Cells 42, 43, 44, 45, 46, 41
+Cells 42, 43, 44, 45, 74, 75, 76
 
 **Executive briefing (5 minutes):**
-Cells 44, 45, 41
+Cells 44, 75, 76
+
+**TH deep dive (10 minutes):**
+Cells 57, 58, 59, 60, 62, 74
