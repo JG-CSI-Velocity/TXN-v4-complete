@@ -134,8 +134,11 @@ else:
             cmap='RdYlGn', subset=_rate_cols + ['Overall'],
             vmin=0, axis=None
         )
-        .format({col: '{:.1f}%' for col in _rate_cols + ['Overall']}, na_rep='--')
-        .format({'Mailed': '{:,.0f}'})
+        .format(
+            {**{col: '{:.1f}%' for col in _rate_cols + ['Overall']},
+             'Mailed': '{:,.0f}'},
+            na_rep='--'
+        )
         .apply(_bold_agg_row, axis=1)
         .set_properties(**{
             'font-size': '14px', 'text-align': 'center',
