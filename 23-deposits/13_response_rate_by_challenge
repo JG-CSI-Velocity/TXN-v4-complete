@@ -136,7 +136,7 @@ else:
         .hide(axis='index')
         .background_gradient(
             cmap='RdYlGn', subset=_rate_cols + ['Overall'],
-            vmin=0, axis=None
+            axis=0
         )
         .format(
             {**{col: '{:.1f}%' for col in _rate_cols + ['Overall']},
