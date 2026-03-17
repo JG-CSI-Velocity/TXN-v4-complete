@@ -1,0 +1,281 @@
+# ===========================================================================
+# CHALLENGE vs OUTCOME: Same Cohort, Two Results (Conference Edition)
+# ===========================================================================
+# The Mail column tells us what challenge was ASSIGNED (TH-10, TH-15, etc.)
+# The Resp column tells us the OUTCOME (hit it or didn't).
+# This cell compares responders vs non-responders WITHIN the same challenge
+# assignment -- true same-cohort analysis.
+#
+# For each challenge level: members assigned that challenge who HIT it
+# vs members assigned the SAME challenge who DIDN'T. On deposits, spend,
+# fees, items.
+#
+# Depends on: rewards_df, mail_cols, resp_cols, deposit_df (23/01), GEN_COLORS
+
+if 'rewards_df' not in dir() or 'mail_cols' not in dir():
+    print("    No campaign data. Run cells 01-02 first.")
+else:
+    _rewards_cols = [c.strip() for c in rewards_df.columns]
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+
+    # Discover spend columns for pre/post calculation
+    _spend_cols = sorted(
+        [c for c in _rewards_cols if c.endswith(' Spend') and c[0].isupper()
+         and len(c.split(' ')[0]) in (5, 6) and c.split(' ')[0][:3] in _VALID_MON],
+        key=lambda c: pd.to_datetime(c.replace(' Spend', ''), format='%b%y')
+    )
+    _month_labels = [c.replace(' Spend', '') for c in _spend_cols]
+    _month_dates = [pd.to_datetime(m, format='%b%y') for m in _month_labels]
+    _spend_lookup = {m: c for m, c in zip(_month_labels, _spend_cols)}
+
+    # MTD columns
+    _mtd_cols = sorted(
+        [c for c in _rewards_cols if c.endswith(' MTD') and c[0].isupper()
+         and len(c.split(' ')[0]) in (5, 6) and c.split(' ')[0][:3] in _VALID_MON],
+        key=lambda c: pd.to_datetime(c.replace(' MTD', ''), format='%b%y')
+    )
+    _mtd_labels = [c.replace(' MTD', '') for c in _mtd_cols]
+    _mtd_dates = [pd.to_datetime(m, format='%b%y') for m in _mtd_labels]
+    _mtd_lookup = {m: c for m, c in zip(_mtd_labels, _mtd_cols)}
+
+    # Pre-build spend and MTD matrices
+    _spend_matrix = rewards_df[_spend_cols].apply(pd.to_numeric, errors='coerce').fillna(0) if _spend_cols else pd.DataFrame()
+    _mtd_matrix = rewards_df[_mtd_cols].apply(pd.to_numeric, errors='coerce').fillna(0) if _mtd_cols else pd.DataFrame()
+
+    # Account number for deposit join
+    _acct_col = 'Acct Number' if 'Acct Number' in rewards_df.columns else ' Acct Number'
+    _acct_nums = rewards_df[_acct_col].astype(str).str.strip()
+
+    # Join key for deposits
+    _dep_join_oddd = DEPOSIT_JOIN_KEY_ODDD if 'DEPOSIT_JOIN_KEY_ODDD' in dir() else None
+    _dep_join_dep = DEPOSIT_JOIN_KEY_DEPOSIT if 'DEPOSIT_JOIN_KEY_DEPOSIT' in dir() else None
+
+    def _classify_mail_value(val):
+        """Parse the Mail column to get the assigned challenge."""
+        if pd.isna(val):
+            return None
+        v = str(val).strip().upper()
+        if 'TH-25' in v or 'TH 25' in v or 'TH25' in v:
+            return 'TH-25'
+        if 'TH-20' in v or 'TH 20' in v or 'TH20' in v:
+            return 'TH-20'
+        if 'TH-15' in v or 'TH 15' in v or 'TH15' in v:
+            return 'TH-15'
+        if 'TH-10' in v or 'TH 10' in v or 'TH10' in v:
+            return 'TH-10'
+        if 'NU' in v:
+            return 'NU'
+        # If none of the above, return the raw value stripped
+        return v.strip() if v.strip() else None
+
+    def _classify_resp_value(val):
+        if pd.isna(val):
+            return 'No Response'
+        v = str(val).strip().upper()
+        if v.startswith('TH'):
+            return 'Hit'
+        if v in ('NU 5+', 'NU5+', 'NU 5', 'NU 6', 'NU 7', 'NU 8', 'NU 9', 'NU 10'):
+            return 'Hit'
+        if v in ('NU 1-4', 'NU1-4'):
+            return 'Near Miss'
+        return 'No Response'
+
+    # Build per-challenge cohort across all waves
+    _cohort_rows = []
+    _wave_pairs = list(zip(mail_cols, resp_cols))
+
+    for mc, rc in _wave_pairs:
+        _wave_label = mc.replace(' Mail', '')
+        mc_s, rc_s = mc.strip(), rc.strip()
+        if mc_s not in _rewards_cols:
+            continue
+
+        _wave_date = pd.to_datetime(_wave_label, format='%b%y')
+        _mailed_mask = rewards_df[mc_s].notna()
+        _mailed_idx = _mailed_mask[_mailed_mask].index
+
+        if len(_mailed_idx) == 0:
+            continue
+
+        # Parse challenge assignment from Mail column
+        _challenges = rewards_df.loc[_mailed_idx, mc_s].apply(_classify_mail_value)
+
+        # Parse outcome from Resp column
+        _resp_series = rewards_df[rc_s] if rc_s in _rewards_cols else pd.Series(np.nan, index=rewards_df.index)
+        _outcomes = _resp_series.loc[_mailed_idx].apply(_classify_resp_value)
+
+        # Skip waves with all No Response (pending results)
+        if (_outcomes != 'No Response').sum() == 0:
+            continue
+
+        # Pre/post spend (vectorized)
+        _pre_mask = [(-3 <= (d.year - _wave_date.year) * 12 + (d.month - _wave_date.month) <= -1) for d in _month_dates]
+        _post3_mask = [(1 <= (d.year - _wave_date.year) * 12 + (d.month - _wave_date.month) <= 3) for d in _month_dates]
+        _pre_cols = [c for c, m in zip(_spend_cols, _pre_mask) if m]
+        _post3_cols = [c for c, m in zip(_spend_cols, _post3_mask) if m]
+
+        _pre_spend = _spend_matrix.loc[_mailed_idx, _pre_cols].mean(axis=1) if _pre_cols else pd.Series(0, index=_mailed_idx)
+        _post_spend = _spend_matrix.loc[_mailed_idx, _post3_cols].mean(axis=1) if _post3_cols else pd.Series(np.nan, index=_mailed_idx)
+
+        # Pre/post MTD
+        _pre_mtd_mask = [(-3 <= (d.year - _wave_date.year) * 12 + (d.month - _wave_date.month) <= -1) for d in _mtd_dates]
+        _post3_mtd_mask = [(1 <= (d.year - _wave_date.year) * 12 + (d.month - _wave_date.month) <= 3) for d in _mtd_dates]
+        _pre_mtd_c = [c for c, m in zip(_mtd_cols, _pre_mtd_mask) if m]
+        _post3_mtd_c = [c for c, m in zip(_mtd_cols, _post3_mtd_mask) if m]
+
+        _pre_mtd = _mtd_matrix.loc[_mailed_idx, _pre_mtd_c].mean(axis=1) if _pre_mtd_c else pd.Series(0, index=_mailed_idx)
+        _post_mtd = _mtd_matrix.loc[_mailed_idx, _post3_mtd_c].mean(axis=1) if _post3_mtd_c else pd.Series(np.nan, index=_mailed_idx)
+
+        _chunk = pd.DataFrame({
+            'wave': _wave_label,
+            'challenge': _challenges.values,
+            'outcome': _outcomes.values,
+            'acct_number': _acct_nums.loc[_mailed_idx].values,
+            'pre_spend': _pre_spend.values,
+            'post_spend_3mo': _post_spend.values,
+            'pre_mtd': _pre_mtd.values,
+            'post_mtd_3mo': _post_mtd.values,
+        }, index=_mailed_idx)
+
+        # Add ODDD join key for deposit merge
+        if _dep_join_oddd and _dep_join_oddd in rewards_df.columns:
+            _chunk['_dep_key'] = rewards_df.loc[_mailed_idx, _dep_join_oddd].astype(str).str.strip().values
+
+        _cohort_rows.append(_chunk)
+
+    if not _cohort_rows:
+        print("    No challenge cohort data built.")
+        challenge_cohort_df = pd.DataFrame()
+    else:
+        challenge_cohort_df = pd.concat(_cohort_rows, ignore_index=True)
+        challenge_cohort_df = challenge_cohort_df.dropna(subset=['challenge'])
+
+        # Merge deposit data
+        if 'deposit_df' in dir() and len(deposit_df) > 0 and _dep_join_dep and '_dep_key' in challenge_cohort_df.columns:
+            _dep_sub = deposit_df[['balance', 'depAmt365', 'depCount365',
+                                    'CollectedFees365', 'fdicoccasionsrolling12months',
+                                    'avgdaysbetweendeposits']].copy()
+            if _dep_join_dep in deposit_df.columns:
+                _dep_sub['_dep_key'] = deposit_df[_dep_join_dep].astype(str).str.strip()
+                challenge_cohort_df = challenge_cohort_df.merge(_dep_sub, on='_dep_key', how='left')
+
+        challenge_cohort_df['spend_delta'] = challenge_cohort_df['post_spend_3mo'] - challenge_cohort_df['pre_spend']
+        challenge_cohort_df['mtd_delta'] = challenge_cohort_df['post_mtd_3mo'] - challenge_cohort_df['pre_mtd']
+
+        # ---------------------------------------------------------------
+        # CHART: For each challenge, responders vs non-responders
+        # ---------------------------------------------------------------
+        _challenges_found = [c for c in ['TH-10', 'TH-15', 'TH-20', 'TH-25', 'NU']
+                             if c in challenge_cohort_df['challenge'].values]
+
+        if len(_challenges_found) == 0:
+            print("    No recognized challenge levels in Mail column values.")
+            print(f"    Unique Mail values: {challenge_cohort_df['challenge'].unique()[:10]}")
+        else:
+            # Build comparison: hit vs didn't hit, per challenge
+            _comp_rows = []
+            for chal in _challenges_found:
+                _chal_data = challenge_cohort_df[challenge_cohort_df['challenge'] == chal]
+                _hit = _chal_data[_chal_data['outcome'] == 'Hit']
+                _miss = _chal_data[_chal_data['outcome'].isin(['No Response', 'Near Miss'])]
+
+                if len(_hit) == 0 and len(_miss) == 0:
+                    continue
+
+                for label, subset, outcome_label in [('Responded', _hit, 'Hit'),
+                                                      ('Did Not Respond', _miss, 'Miss')]:
+                    _row = {
+                        'challenge': chal,
+                        'outcome': label,
+                        'n_acct_waves': len(subset),
+                    }
+                    for col in ['pre_spend', 'post_spend_3mo', 'spend_delta',
+                                'pre_mtd', 'post_mtd_3mo', 'mtd_delta',
+                                'balance', 'depAmt365', 'depCount365',
+                                'CollectedFees365', 'fdicoccasionsrolling12months']:
+                        if col in subset.columns:
+                            _valid = subset[col].dropna()
+                            _row[f'{col}_mean'] = _valid.mean() if len(_valid) > 0 else np.nan
+                            _row[f'{col}_median'] = _valid.median() if len(_valid) > 0 else np.nan
+                    _comp_rows.append(_row)
+
+            _comp_df = pd.DataFrame(_comp_rows)
+
+            if len(_comp_df) == 0:
+                print("    No comparison data to chart.")
+            else:
+                # Main chart: spend delta by challenge -- responded vs not
+                fig, ax = plt.subplots(figsize=(14, 7))
+
+                _x = np.arange(len(_challenges_found))
+                _w = 0.35
+
+                _resp_deltas = []
+                _miss_deltas = []
+                _resp_n = []
+                _miss_n = []
+
+                for chal in _challenges_found:
+                    _r = _comp_df[(_comp_df['challenge'] == chal) & (_comp_df['outcome'] == 'Responded')]
+                    _m = _comp_df[(_comp_df['challenge'] == chal) & (_comp_df['outcome'] == 'Did Not Respond')]
+                    _resp_deltas.append(_r['spend_delta_mean'].iloc[0] if len(_r) > 0 else 0)
+                    _miss_deltas.append(_m['spend_delta_mean'].iloc[0] if len(_m) > 0 else 0)
+                    _resp_n.append(int(_r['n_acct_waves'].iloc[0]) if len(_r) > 0 else 0)
+                    _miss_n.append(int(_m['n_acct_waves'].iloc[0]) if len(_m) > 0 else 0)
+
+                bars1 = ax.bar(_x - _w / 2, _resp_deltas, _w,
+                               color=GEN_COLORS['success'], edgecolor='white',
+                               linewidth=1.5, label='Responded', zorder=3)
+                bars2 = ax.bar(_x + _w / 2, _miss_deltas, _w,
+                               color=GEN_COLORS['muted'], edgecolor='white',
+                               linewidth=1.5, label='Did Not Respond', zorder=3)
+
+                for j, (r_val, m_val, r_n, m_n) in enumerate(zip(_resp_deltas, _miss_deltas, _resp_n, _miss_n)):
+                    _r_sign = '+' if r_val >= 0 else ''
+                    _m_sign = '+' if m_val >= 0 else ''
+                    ax.text(j - _w / 2, r_val + (abs(max(_resp_deltas + _miss_deltas)) * 0.02 if r_val >= 0 else -abs(max(_resp_deltas + _miss_deltas)) * 0.02),
+                            f"{_r_sign}{gen_fmt_dollar(r_val, None)}\n({r_n:,})",
+                            ha='center', va='bottom' if r_val >= 0 else 'top',
+                            fontsize=11, fontweight='bold', color=GEN_COLORS['dark_text'], linespacing=1.2)
+                    ax.text(j + _w / 2, m_val + (abs(max(_resp_deltas + _miss_deltas)) * 0.02 if m_val >= 0 else -abs(max(_resp_deltas + _miss_deltas)) * 0.02),
+                            f"{_m_sign}{gen_fmt_dollar(m_val, None)}\n({m_n:,})",
+                            ha='center', va='bottom' if m_val >= 0 else 'top',
+                            fontsize=11, fontweight='bold', color=GEN_COLORS['dark_text'], linespacing=1.2)
+
+                ax.axhline(y=0, color=GEN_COLORS['dark_text'], linewidth=0.8, alpha=0.5)
+
+                ax.set_xticks(_x)
+                ax.set_xticklabels([f"{c}\nChallenge" for c in _challenges_found],
+                                   fontsize=14, fontweight='bold')
+                ax.set_ylabel("Avg Spend Change (Post - Pre)", fontsize=16,
+                               fontweight='bold', labelpad=10)
+                ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+
+                gen_clean_axes(ax)
+                ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+                ax.set_axisbelow(True)
+                ax.legend(fontsize=14, loc='upper right', frameon=True,
+                          facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+                ax.set_title("Same Challenge, Two Outcomes: Spend Change",
+                              fontsize=26, fontweight='bold',
+                              color=GEN_COLORS['dark_text'], pad=35, loc='left')
+                ax.text(0.0, 1.02,
+                        "Members assigned the SAME challenge -- did responding lead to more spend?",
+                        transform=ax.transAxes, fontsize=14,
+                        color=GEN_COLORS['muted'], style='italic')
+
+                plt.tight_layout()
+                plt.show()
+
+                print(f"\n  Challenge cohort analysis: {len(challenge_cohort_df):,} account-wave rows")
+                print(f"  Challenges found: {_challenges_found}")
+                for chal in _challenges_found:
+                    _r = _comp_df[(_comp_df['challenge'] == chal) & (_comp_df['outcome'] == 'Responded')]
+                    _m = _comp_df[(_comp_df['challenge'] == chal) & (_comp_df['outcome'] == 'Did Not Respond')]
+                    _r_d = _r['spend_delta_mean'].iloc[0] if len(_r) > 0 else 0
+                    _m_d = _m['spend_delta_mean'].iloc[0] if len(_m) > 0 else 0
+                    _did = _r_d - _m_d
+                    print(f"    {chal}: responded {'+' if _r_d >= 0 else ''}{gen_fmt_dollar(_r_d, None)} "
+                          f"vs didn't {'+' if _m_d >= 0 else ''}{gen_fmt_dollar(_m_d, None)} "
+                          f"=> DID lift {'+' if _did >= 0 else ''}{gen_fmt_dollar(_did, None)}")
