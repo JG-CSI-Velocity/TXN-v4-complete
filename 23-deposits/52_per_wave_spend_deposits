@@ -18,15 +18,15 @@ else:
         print("    No successful responders in wave cohort summary.")
     else:
         # Aggregate across tiers per wave (all successes combined)
-        _wave_agg = _resp.groupby('wave').agg(
-            wave_date=('wave_date', 'first'),
-            n_responders=('n_accounts', 'sum'),
-            post_spend=('post_spend_3mo_mean', 'mean'),
-            spend_delta=('spend_delta', 'mean'),
-            mean_balance=('mean_balance', 'mean'),
-            mean_dep_amt=('mean_dep_amt', 'mean'),
-            mean_fees=('mean_fees', 'mean'),
-        ).sort_values('wave_date').reset_index()
+        # Column names come from cell 50 summary: post_spend_3mo, balance, depAmt365, CollectedFees365
+        _agg_spec = {'wave_date': ('wave_date', 'first'), 'n_responders': ('n_accounts', 'sum')}
+        for _col, _alias in [('post_spend_3mo', 'post_spend'), ('spend_delta', 'spend_delta'),
+                              ('balance', 'mean_balance'), ('depAmt365', 'mean_dep_amt'),
+                              ('CollectedFees365', 'mean_fees')]:
+            if _col in _resp.columns:
+                _agg_spec[_alias] = (_col, 'mean')
+
+        _wave_agg = _resp.groupby('wave').agg(**_agg_spec).sort_values('wave_date').reset_index()
 
         _has_balance = 'mean_balance' in _wave_agg.columns and _wave_agg['mean_balance'].notna().any()
         _has_spend = _wave_agg['post_spend'].notna().any()
