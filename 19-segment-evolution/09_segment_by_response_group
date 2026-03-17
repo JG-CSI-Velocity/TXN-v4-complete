@@ -1,0 +1,96 @@
+# ===========================================================================
+# SEGMENT EVOLUTION BY 5-GROUP: Migration Rates by Response Tier (Conf. Ed.)
+# ===========================================================================
+# Upgrade/degrade rates segmented by the 5 response groups instead of
+# binary Responder/Non-Responder. Shows which tiers drive the most upgrades.
+#
+# Depends on: seg_evo_df (19/01), response_journey_df (23/02), GEN_COLORS
+
+if 'seg_evo_df' not in dir() or len(seg_evo_df) == 0:
+    print("    No segment evolution data. Run section 19 cell 01 first.")
+elif 'response_journey_df' not in dir() or len(response_journey_df) == 0:
+    print("    No response journey. Run section 23 cell 02 first.")
+    print("    Using binary Responder/Non-Responder from section 19.")
+else:
+    _acct_col = 'Acct Number' if 'Acct Number' in seg_evo_df.columns else 'account_number'
+    _journey_lookup = response_journey_df[['acct_number', 'response_group']].copy()
+    _journey_lookup['acct_number'] = _journey_lookup['acct_number'].astype(str).str.strip()
+
+    _seg = seg_evo_df.copy()
+    _seg[_acct_col] = _seg[_acct_col].astype(str).str.strip()
+
+    _seg = _seg.merge(_journey_lookup, left_on=_acct_col, right_on='acct_number', how='left')
+    _seg['response_group'] = _seg['response_group'].fillna('Never Mailed')
+
+    if 'direction' not in _seg.columns:
+        print("    No direction column in segment evolution data.")
+    else:
+        _valid = _seg[_seg['direction'].isin(['upgraded', 'degraded', 'stable'])]
+
+        if len(_valid) == 0:
+            print("    No accounts with valid migration direction.")
+        else:
+            _groups = RESPONSE_GROUP_ORDER
+            _colors = [RESPONSE_GROUP_PALETTE.get(g, GEN_COLORS['muted']) for g in _groups]
+
+            _rates = []
+            for grp in _groups:
+                _sub = _valid[_valid['response_group'] == grp]
+                _n = len(_sub)
+                if _n == 0:
+                    _rates.append({'group': grp, 'upgrade_rate': 0, 'degrade_rate': 0, 'n': 0})
+                    continue
+                _up = (_sub['direction'] == 'upgraded').sum() / _n * 100
+                _down = (_sub['direction'] == 'degraded').sum() / _n * 100
+                _rates.append({'group': grp, 'upgrade_rate': _up, 'degrade_rate': _down, 'n': _n})
+
+            _rdf = pd.DataFrame(_rates)
+
+            fig, ax = plt.subplots(figsize=(14, 7))
+
+            _x = np.arange(len(_groups))
+            _w = 0.35
+
+            bars1 = ax.bar(_x - _w / 2, _rdf['upgrade_rate'], _w,
+                           color=GEN_COLORS['success'], edgecolor='white',
+                           linewidth=1.5, label='Upgrade Rate', zorder=3)
+            bars2 = ax.bar(_x + _w / 2, _rdf['degrade_rate'], _w,
+                           color=GEN_COLORS['accent'], edgecolor='white',
+                           linewidth=1.5, label='Degrade Rate', zorder=3)
+
+            for bar_set in [bars1, bars2]:
+                for bar in bar_set:
+                    val = bar.get_height()
+                    if val > 0:
+                        ax.text(bar.get_x() + bar.get_width() / 2, val + 0.3,
+                                f"{val:.1f}%", ha='center', va='bottom',
+                                fontsize=12, fontweight='bold',
+                                color=GEN_COLORS['dark_text'])
+
+            # Account counts below x-axis
+            for i, row in enumerate(_rdf.itertuples()):
+                ax.text(i, -1.5, f"n={row.n:,}",
+                        ha='center', fontsize=10, color=GEN_COLORS['muted'])
+
+            ax.set_xticks(_x)
+            ax.set_xticklabels(_groups, fontsize=13, fontweight='bold')
+            ax.set_ylabel("Rate (%)", fontsize=16, fontweight='bold', labelpad=10)
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_pct))
+
+            gen_clean_axes(ax)
+            ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+            ax.legend(fontsize=13, loc='upper right', frameon=True,
+                      facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+            _label = DATASET_LABEL if 'DATASET_LABEL' in dir() else ''
+            ax.set_title("Segment Upgrade/Degrade by Response Group",
+                          fontsize=26, fontweight='bold',
+                          color=GEN_COLORS['dark_text'], pad=35, loc='left')
+            ax.text(0.0, 1.02,
+                    f"5-group view: which response tiers drive the most segment upgrades?  ({_label})",
+                    transform=ax.transAxes, fontsize=14,
+                    color=GEN_COLORS['muted'], style='italic')
+
+            plt.tight_layout()
+            plt.show()

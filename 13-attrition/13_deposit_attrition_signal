@@ -1,0 +1,162 @@
+# ===========================================================================
+# DEPOSIT ATTRITION SIGNAL: Deposit Decline as Early Warning (Conf. Edition)
+# ===========================================================================
+# Combines deposit trajectory with spend velocity to create a 2x2 risk matrix:
+#   Declining deposits + Declining spend = Highest attrition risk
+#   Growing deposits + Declining spend = Sleeping giants (not attrition)
+#   Declining deposits + Growing spend = Deposit flight (competitor?)
+#   Growing deposits + Growing spend = Healthy
+#
+# Depends on: attrition_df (13/01), deposit_df (23/01), rewards_df, GEN_COLORS
+
+if 'attrition_df' not in dir() or len(attrition_df) == 0:
+    print("    No attrition data. Run section 13 cell 01 first.")
+elif 'deposit_df' not in dir() or len(deposit_df) == 0:
+    print("    No deposit data. Run section 23 cells 01-02 for deposit signals.")
+    print("    Attrition analysis using card-only signals.")
+else:
+    # Bridge attrition_df (uses account_number) to deposit_df (uses HASHED_ACCOUNT)
+    if 'rewards_df' not in dir() or 'HASHED_ACCOUNT' not in rewards_df.columns:
+        print("    Cannot bridge attrition to deposit data.")
+    else:
+        _bridge = rewards_df[['Acct Number', 'HASHED_ACCOUNT']].copy()
+        _bridge['Acct Number'] = _bridge['Acct Number'].astype(str).str.strip()
+        _bridge['HASHED_ACCOUNT'] = _bridge['HASHED_ACCOUNT'].astype(str).str.strip()
+
+        _dep_cols = ['HASHED_ACCOUNT']
+        if 'balance_delta' in deposit_df.columns:
+            _dep_cols.append('balance_delta')
+        elif 'balance' in deposit_df.columns and 'balance_early' in deposit_df.columns:
+            deposit_df['_bal_delta_temp'] = deposit_df['balance'] - deposit_df['balance_early']
+            _dep_cols.append('_bal_delta_temp')
+
+        if 'DepositTrendCount33' in deposit_df.columns:
+            _dep_cols.append('DepositTrendCount33')
+        if 'balance' in deposit_df.columns:
+            _dep_cols.append('balance')
+        if 'has_direct_deposit' in deposit_df.columns:
+            _dep_cols.append('has_direct_deposit')
+        if 'avgdaysbetweendeposits' in deposit_df.columns:
+            _dep_cols.append('avgdaysbetweendeposits')
+
+        _dep_sub = deposit_df[[c for c in _dep_cols if c in deposit_df.columns]].copy()
+        _dep_bridged = _dep_sub.merge(_bridge, on='HASHED_ACCOUNT', how='inner')
+
+        # Determine deposit direction
+        if 'DepositTrendCount33' in _dep_bridged.columns:
+            _dep_bridged['deposit_direction'] = np.where(
+                _dep_bridged['DepositTrendCount33'] > 0, 'Growing',
+                np.where(_dep_bridged['DepositTrendCount33'] < 0, 'Declining', 'Stable')
+            )
+        elif '_bal_delta_temp' in _dep_bridged.columns:
+            _dep_bridged['deposit_direction'] = np.where(
+                _dep_bridged['_bal_delta_temp'] > 0, 'Growing',
+                np.where(_dep_bridged['_bal_delta_temp'] < 0, 'Declining', 'Stable')
+            )
+        else:
+            print("    No deposit direction field available.")
+            _dep_bridged['deposit_direction'] = 'Unknown'
+
+        # Merge onto attrition_df
+        attrition_df['account_number'] = attrition_df['account_number'].astype(str).str.strip()
+        _merge_cols = ['Acct Number', 'deposit_direction']
+        if 'balance' in _dep_bridged.columns:
+            _merge_cols.append('balance')
+        if 'has_direct_deposit' in _dep_bridged.columns:
+            _merge_cols.append('has_direct_deposit')
+
+        _existing = [c for c in _merge_cols if c != 'Acct Number' and c in attrition_df.columns]
+        if _existing:
+            attrition_df.drop(columns=_existing, inplace=True)
+
+        attrition_df = attrition_df.merge(
+            _dep_bridged[[c for c in _merge_cols if c in _dep_bridged.columns]],
+            left_on='account_number', right_on='Acct Number', how='left'
+        )
+        if 'Acct Number' in attrition_df.columns:
+            attrition_df.drop(columns='Acct Number', inplace=True)
+        attrition_df['deposit_direction'] = attrition_df['deposit_direction'].fillna('Unknown')
+
+        # Determine spend direction from velocity
+        if 'spend_velocity' in attrition_df.columns:
+            attrition_df['spend_direction'] = np.where(
+                attrition_df['spend_velocity'] > 1.1, 'Growing',
+                np.where(attrition_df['spend_velocity'] < 0.8, 'Declining', 'Stable')
+            )
+        else:
+            attrition_df['spend_direction'] = 'Unknown'
+
+        # 2x2 matrix classification
+        def _risk_quadrant(dep_dir, spend_dir):
+            if dep_dir == 'Declining' and spend_dir == 'Declining':
+                return 'High Risk: Both Declining'
+            if dep_dir == 'Growing' and spend_dir == 'Declining':
+                return 'Sleeping Giant'
+            if dep_dir == 'Declining' and spend_dir == 'Growing':
+                return 'Deposit Flight'
+            if dep_dir == 'Growing' and spend_dir == 'Growing':
+                return 'Healthy'
+            return 'Mixed / Unknown'
+
+        attrition_df['deposit_risk_quadrant'] = [
+            _risk_quadrant(d, s) for d, s
+            in zip(attrition_df['deposit_direction'], attrition_df['spend_direction'])
+        ]
+
+        # Chart
+        _quad_order = ['High Risk: Both Declining', 'Deposit Flight',
+                       'Sleeping Giant', 'Healthy', 'Mixed / Unknown']
+        _quad_colors = {
+            'High Risk: Both Declining': GEN_COLORS['accent'],
+            'Deposit Flight':           GEN_COLORS['warning'],
+            'Sleeping Giant':           GEN_COLORS['info'],
+            'Healthy':                  GEN_COLORS['success'],
+            'Mixed / Unknown':          GEN_COLORS['muted'],
+        }
+
+        _quad_counts = attrition_df['deposit_risk_quadrant'].value_counts().reindex(
+            _quad_order).fillna(0).astype(int)
+        _quad_counts = _quad_counts[_quad_counts > 0]
+
+        fig, ax = plt.subplots(figsize=(14, 7))
+
+        _labels = _quad_counts.index.tolist()
+        _counts = _quad_counts.values
+        _colors = [_quad_colors.get(q, GEN_COLORS['muted']) for q in _labels]
+
+        bars = ax.barh(range(len(_labels)), _counts,
+                       color=_colors, edgecolor='white', linewidth=1.5, height=0.5)
+
+        _total = _counts.sum()
+        for j, (bar, label, count) in enumerate(zip(bars, _labels, _counts)):
+            pct = count / _total * 100 if _total > 0 else 0
+            ax.text(bar.get_width() + max(_counts) * 0.02,
+                    bar.get_y() + bar.get_height() / 2,
+                    f"{count:,} ({pct:.1f}%)",
+                    ha='left', va='center', fontsize=14, fontweight='bold',
+                    color=GEN_COLORS['dark_text'])
+
+        ax.set_yticks(range(len(_labels)))
+        ax.set_yticklabels(_labels, fontsize=13, fontweight='bold')
+        ax.set_xlabel("Accounts", fontsize=16, fontweight='bold', labelpad=10)
+        ax.set_xlim(0, max(_counts) * 1.5 if max(_counts) > 0 else 10)
+
+        gen_clean_axes(ax)
+        ax.xaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+
+        ax.set_title("Deposit + Spend Risk Matrix",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                "Deposit direction (zaccounts) x Spend velocity (ODDD) -- identifies true attrition vs sleeping giants",
+                transform=ax.transAxes, fontsize=13,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()
+
+        _high_risk = (attrition_df['deposit_risk_quadrant'] == 'High Risk: Both Declining').sum()
+        _sleeping = (attrition_df['deposit_risk_quadrant'] == 'Sleeping Giant').sum()
+        print(f"\n    INSIGHT: {_high_risk:,} accounts declining in BOTH deposits and spend (true attrition risk)")
+        print(f"    INSIGHT: {_sleeping:,} accounts with growing deposits but declining spend (sleeping giants, not attrition)")

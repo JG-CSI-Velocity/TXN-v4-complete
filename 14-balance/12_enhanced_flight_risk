@@ -1,0 +1,102 @@
+# ===========================================================================
+# ENHANCED FLIGHT RISK: Real Deposit Trends (Conference Edition)
+# ===========================================================================
+# Upgrades flight risk from simple Curr Bal - Avg Bal to use deposit trend
+# scores (DepositTrendCount33, CashFlowTrendCount33) from zaccounts.
+# Falls back to original method if deposit data unavailable.
+#
+# Depends on: balance_df (14/01 + 14/11 enrichment), GEN_COLORS
+
+if 'balance_df' not in dir() or len(balance_df) == 0:
+    print("    No balance data. Run cell 01 first.")
+else:
+    _has_trends = 'DepositTrendCount33' in balance_df.columns
+    _has_cashflow = 'CashFlowTrendCount33' in balance_df.columns
+
+    if not _has_trends:
+        print("    No deposit trend data. Using original Curr Bal - Avg Bal method.")
+        print("    Run section 23 and cell 11 for enhanced flight risk.")
+    else:
+        # Enhanced risk: declining deposit trend + declining cash flow + high balance
+        _high_bal = balance_df[balance_df['Curr Bal'] >= 25_000].copy() if 'Curr Bal' in balance_df.columns else balance_df.copy()
+
+        # Risk score: combine deposit trend + cash flow trend
+        _high_bal['risk_score'] = 0
+
+        # Declining deposits
+        _high_bal.loc[_high_bal['DepositTrendCount33'] < 0, 'risk_score'] += 2
+        _high_bal.loc[_high_bal['DepositTrendCount33'] < -2, 'risk_score'] += 1
+
+        # Declining cash flow
+        if _has_cashflow:
+            _high_bal.loc[_high_bal['CashFlowTrendCount33'] < 0, 'risk_score'] += 1
+
+        # Original delta still negative
+        if 'bal_delta' in _high_bal.columns:
+            _high_bal.loc[_high_bal['bal_delta'] < 0, 'risk_score'] += 1
+
+        # High OD occasions
+        if 'fdicoccasionsrolling12months' in _high_bal.columns:
+            _high_bal.loc[_high_bal['fdicoccasionsrolling12months'] > 6, 'risk_score'] += 1
+
+        # Classify
+        _high_bal['flight_risk_level'] = pd.cut(
+            _high_bal['risk_score'],
+            bins=[-1, 0, 1, 2, 10],
+            labels=['Low', 'Moderate', 'High', 'Critical']
+        )
+
+        _risk_dist = _high_bal['flight_risk_level'].value_counts().reindex(
+            ['Critical', 'High', 'Moderate', 'Low']
+        ).fillna(0).astype(int)
+
+        # Chart
+        fig, ax = plt.subplots(figsize=(14, 7))
+
+        _risk_labels = _risk_dist.index.tolist()
+        _risk_counts = _risk_dist.values
+        _risk_colors = {
+            'Critical': GEN_COLORS['accent'],
+            'High':     '#F4A261',
+            'Moderate': GEN_COLORS['warning'],
+            'Low':      GEN_COLORS['success'],
+        }
+        _colors = [_risk_colors.get(r, GEN_COLORS['muted']) for r in _risk_labels]
+
+        bars = ax.barh(range(len(_risk_labels)), _risk_counts,
+                       color=_colors, edgecolor='white', linewidth=1.5, height=0.5)
+
+        for j, (bar, label, count) in enumerate(zip(bars, _risk_labels, _risk_counts)):
+            _sub = _high_bal[_high_bal['flight_risk_level'] == label]
+            _dep = _sub['Curr Bal'].sum() if 'Curr Bal' in _sub.columns else 0
+            ax.text(bar.get_width() + max(_risk_counts) * 0.02,
+                    bar.get_y() + bar.get_height() / 2,
+                    f"{count:,} accts  |  {gen_fmt_dollar(_dep, None)} at risk",
+                    ha='left', va='center', fontsize=14, fontweight='bold',
+                    color=GEN_COLORS['dark_text'])
+
+        ax.set_yticks(range(len(_risk_labels)))
+        ax.set_yticklabels(_risk_labels, fontsize=16, fontweight='bold')
+        ax.set_xlabel("Accounts", fontsize=16, fontweight='bold', labelpad=10)
+        ax.set_xlim(0, max(_risk_counts) * 1.8 if max(_risk_counts) > 0 else 10)
+
+        gen_clean_axes(ax)
+        ax.xaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+
+        ax.set_title("Enhanced Deposit Flight Risk ($25K+ Accounts)",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                "Combines deposit trend, cash flow trend, balance delta, and OD frequency",
+                transform=ax.transAxes, fontsize=14,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()
+
+        print(f"\n    Enhanced flight risk assessment ({len(_high_bal):,} high-balance accounts):")
+        for level in ['Critical', 'High', 'Moderate', 'Low']:
+            _sub = _high_bal[_high_bal['flight_risk_level'] == level]
+            _dep = _sub['Curr Bal'].sum() if 'Curr Bal' in _sub.columns else 0
+            print(f"      {level:<12s}: {len(_sub):>6,} accts, {gen_fmt_dollar(_dep, None)} in deposits")

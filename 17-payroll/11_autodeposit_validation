@@ -1,0 +1,98 @@
+# ===========================================================================
+# AUTODEPOSIT VALIDATION: Keyword Detection vs Ground Truth (Conf. Edition)
+# ===========================================================================
+# Compares section 17's keyword-detected payroll accounts against the
+# autodeposit boolean from zaccounts. Reports match rate, false positives,
+# and false negatives.
+#
+# Depends on: payroll_df (17/01), deposit_df (23/01), rewards_df, GEN_COLORS
+
+if 'payroll_df' not in dir() or len(payroll_df) == 0:
+    print("    No payroll data. Run section 17 cell 01 first.")
+elif 'deposit_df' not in dir() or len(deposit_df) == 0 or 'has_direct_deposit' not in deposit_df.columns:
+    print("    No deposit data with autodeposit flag. Run section 23 cells 01-02.")
+    print("    Validation not possible -- using keyword detection only.")
+else:
+    # Bridge payroll_df (account-level from combined_df) to deposit_df
+    if 'rewards_df' not in dir() or 'HASHED_ACCOUNT' not in rewards_df.columns:
+        print("    Cannot bridge payroll to deposit data.")
+    else:
+        _bridge = rewards_df[['Acct Number', 'HASHED_ACCOUNT']].copy()
+        _bridge['Acct Number'] = _bridge['Acct Number'].astype(str).str.strip()
+        _bridge['HASHED_ACCOUNT'] = _bridge['HASHED_ACCOUNT'].astype(str).str.strip()
+
+        _dd_lookup = deposit_df[['HASHED_ACCOUNT', 'has_direct_deposit']].copy()
+        _dd_bridged = _dd_lookup.merge(_bridge, on='HASHED_ACCOUNT', how='inner')
+
+        # payroll_df has primary_account_num from keyword detection
+        _payroll_accts = set()
+        if 'primary_account_num' in payroll_df.columns:
+            _payroll_accts = set(payroll_df['primary_account_num'].astype(str).str.strip())
+        elif 'account_number' in payroll_df.columns:
+            _payroll_accts = set(payroll_df['account_number'].astype(str).str.strip())
+
+        # Build comparison
+        _dd_bridged['keyword_detected'] = _dd_bridged['Acct Number'].isin(_payroll_accts)
+
+        _tp = (_dd_bridged['keyword_detected'] & _dd_bridged['has_direct_deposit']).sum()
+        _fp = (_dd_bridged['keyword_detected'] & ~_dd_bridged['has_direct_deposit']).sum()
+        _fn = (~_dd_bridged['keyword_detected'] & _dd_bridged['has_direct_deposit']).sum()
+        _tn = (~_dd_bridged['keyword_detected'] & ~_dd_bridged['has_direct_deposit']).sum()
+        _total = len(_dd_bridged)
+
+        _precision = _tp / (_tp + _fp) * 100 if (_tp + _fp) > 0 else 0
+        _recall = _tp / (_tp + _fn) * 100 if (_tp + _fn) > 0 else 0
+        _accuracy = (_tp + _tn) / _total * 100 if _total > 0 else 0
+
+        # Confusion matrix chart
+        fig, ax = plt.subplots(figsize=(10, 7))
+
+        _matrix = np.array([[_tp, _fp], [_fn, _tn]])
+        _labels_y = ['Keyword:\nDetected', 'Keyword:\nNot Detected']
+        _labels_x = ['Autodeposit:\nYes', 'Autodeposit:\nNo']
+
+        _cmap = LinearSegmentedColormap.from_list('conf',
+            ['#FFFFFF', GEN_COLORS['primary']], N=256)
+
+        im = ax.imshow(_matrix, cmap=_cmap, aspect='auto')
+
+        _cell_labels = [
+            [f"True Positive\n{_tp:,}", f"False Positive\n{_fp:,}"],
+            [f"False Negative\n{_fn:,}", f"True Negative\n{_tn:,}"],
+        ]
+
+        for i in range(2):
+            for j in range(2):
+                _color = 'white' if _matrix[i, j] > _matrix.max() * 0.5 else GEN_COLORS['dark_text']
+                ax.text(j, i, _cell_labels[i][j],
+                        ha='center', va='center', fontsize=16, fontweight='bold',
+                        color=_color)
+
+        ax.set_xticks([0, 1])
+        ax.set_xticklabels(_labels_x, fontsize=14, fontweight='bold')
+        ax.set_yticks([0, 1])
+        ax.set_yticklabels(_labels_y, fontsize=14, fontweight='bold')
+
+        ax.spines[:].set_visible(False)
+
+        ax.set_title("Payroll Detection: Keyword vs Autodeposit Ground Truth",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                f"Precision: {_precision:.1f}%  |  Recall: {_recall:.1f}%  |  "
+                f"Accuracy: {_accuracy:.1f}%",
+                transform=ax.transAxes, fontsize=14,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()
+
+        print(f"\n    Validation: {_total:,} accounts compared")
+        print(f"      True Positives:  {_tp:,} (keyword found, autodeposit = yes)")
+        print(f"      False Positives: {_fp:,} (keyword found, autodeposit = no)")
+        print(f"      False Negatives: {_fn:,} (keyword missed, autodeposit = yes)")
+        print(f"      True Negatives:  {_tn:,}")
+        print(f"      Precision: {_precision:.1f}%  Recall: {_recall:.1f}%")
+        if _fn > _fp:
+            print(f"\n    INSIGHT: Keyword detection misses {_fn:,} direct deposit accounts.")
+            print(f"    Consider using autodeposit flag from zaccounts as primary source.")

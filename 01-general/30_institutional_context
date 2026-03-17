@@ -1,0 +1,95 @@
+# ===========================================================================
+# INSTITUTIONAL CONTEXT: NCUA + FRED Opening Backdrop (Conference Edition)
+# ===========================================================================
+# Sets the macro stage at the very beginning of the presentation.
+# Pulls from NCUA data (if section 23 cell 04 has been run) or prints
+# a placeholder message. Designed to run early but degrade gracefully.
+#
+# Depends on: ncua_df, fred_df (23/04) -- optional, graceful fallback
+
+_has_ncua = 'ncua_df' in dir() and len(ncua_df) > 0
+_has_fred = 'fred_df' in dir() and len(fred_df) > 0
+
+if not _has_ncua and not _has_fred:
+    print("    Institutional context not available.")
+    print("    Run section 23 cell 04 (NCUA + FRED data) for macro backdrop.")
+    print("    Presentation will proceed without institutional context.")
+else:
+    _DARK = GEN_COLORS['dark_text']
+
+    fig = plt.figure(figsize=(20, 5))
+    gs = fig.add_gridspec(1, 3, wspace=0.3)
+
+    # Panel 1: Total Deposits (NCUA)
+    ax1 = fig.add_subplot(gs[0, 0])
+    if _has_ncua and 'total_deposits' in ncua_df.columns:
+        _latest = ncua_df.iloc[-1]
+        _deps_m = _latest['total_deposits'] / 1000
+        _mems = _latest['member_count'] if 'member_count' in ncua_df.columns else 0
+
+        ax1.set_xlim(0, 10)
+        ax1.set_ylim(0, 10)
+        ax1.axis('off')
+        card = FancyBboxPatch((0.3, 0.3), 9.4, 9.4,
+                               boxstyle="round,pad=0.3",
+                               facecolor=GEN_COLORS['primary'],
+                               edgecolor='white', linewidth=3)
+        ax1.add_patch(card)
+        ax1.text(5, 7.2, CU_NAME if 'CU_NAME' in dir() else 'Credit Union',
+                 ha='center', va='center', fontsize=13, fontweight='bold',
+                 color='white', alpha=0.85)
+        ax1.text(5, 4.5, f"${_deps_m:,.0f}M",
+                 ha='center', va='center', fontsize=36, fontweight='bold',
+                 color='white')
+        ax1.text(5, 2.3, f"total deposits | {_mems:,.0f} members",
+                 ha='center', va='center', fontsize=12, color='white', alpha=0.8)
+    else:
+        ax1.axis('off')
+
+    # Panel 2: FL Unemployment (FRED)
+    ax2 = fig.add_subplot(gs[0, 1])
+    if _has_fred:
+        _fl = fred_df[fred_df['series_id'] == 'FLUR'].sort_values('date')
+        if len(_fl) > 0:
+            ax2.plot(_fl['date'], _fl['value'], color=GEN_COLORS['accent'],
+                     linewidth=2, zorder=3)
+            ax2.fill_between(_fl['date'], _fl['value'], alpha=0.1,
+                             color=GEN_COLORS['accent'])
+            ax2.set_title("FL Unemployment", fontsize=16, fontweight='bold',
+                           color=_DARK, loc='left')
+            ax2.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_pct))
+            gen_clean_axes(ax2)
+            ax2.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+            ax2.set_axisbelow(True)
+        else:
+            ax2.axis('off')
+    else:
+        ax2.axis('off')
+
+    # Panel 3: Fed Funds Rate (FRED)
+    ax3 = fig.add_subplot(gs[0, 2])
+    if _has_fred:
+        _ff = fred_df[fred_df['series_id'] == 'FEDFUNDS'].sort_values('date')
+        if len(_ff) > 0:
+            ax3.plot(_ff['date'], _ff['value'], color=GEN_COLORS['primary'],
+                     linewidth=2, zorder=3)
+            ax3.fill_between(_ff['date'], _ff['value'], alpha=0.1,
+                             color=GEN_COLORS['primary'])
+            ax3.set_title("Fed Funds Rate", fontsize=16, fontweight='bold',
+                           color=_DARK, loc='left')
+            ax3.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_pct))
+            gen_clean_axes(ax3)
+            ax3.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+            ax3.set_axisbelow(True)
+        else:
+            ax3.axis('off')
+    else:
+        ax3.axis('off')
+
+    fig.suptitle("Economic & Institutional Context",
+                 fontsize=24, fontweight='bold', color=_DARK, y=1.05)
+    fig.text(0.5, 0.99, "NCUA 5300 + FRED | Backdrop for all analysis that follows",
+             ha='center', fontsize=12, color=GEN_COLORS['muted'], style='italic')
+
+    plt.tight_layout()
+    plt.show()

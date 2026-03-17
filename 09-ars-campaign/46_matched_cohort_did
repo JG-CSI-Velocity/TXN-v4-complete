@@ -1,0 +1,95 @@
+# ===========================================================================
+# MATCHED COHORT DID: Rigorous Before/After with Cohort Filtering (Conf. Ed.)
+# ===========================================================================
+# Applies matched cohort methodology to the DID analysis: only includes
+# accounts that were present across all relevant pre/post periods.
+# Adds cohort size annotation and compares to the unfiltered DID.
+#
+# Depends on: cohort_summary, cohort_acct (09/10), WAVE_CONFIG, GEN_COLORS
+
+if 'cohort_summary' not in dir() or len(cohort_summary) == 0:
+    print("    No cohort summary. Run section 09 cells first.")
+elif 'cohort_acct' not in dir() or len(cohort_acct) == 0:
+    print("    No cohort_acct. Run section 09 cell 10 first.")
+else:
+    # For each wave, identify accounts that have valid pre AND post data
+    # (non-zero pre_spend, meaning they were active before the wave)
+    _matched_rows = []
+
+    for wave_label in cohort_summary['wave']:
+        _wave_accts = cohort_acct[cohort_acct['wave'] == wave_label].copy()
+        if len(_wave_accts) == 0:
+            continue
+
+        # Matched cohort: accounts with pre_spend > 0 (had activity before the wave)
+        _matched = _wave_accts[_wave_accts['pre_spend'] > 0]
+        _unmatched = _wave_accts  # original (all mailed)
+
+        if len(_matched) == 0:
+            continue
+
+        _resp_m = _matched[_matched['status'] == 'Responder']
+        _nonresp_m = _matched[_matched['status'] == 'Non-Responder']
+
+        if len(_resp_m) == 0 or len(_nonresp_m) == 0:
+            continue
+
+        # Matched DID
+        _r_delta = _resp_m['spend_delta'].mean()
+        _nr_delta = _nonresp_m['spend_delta'].mean()
+        _did_matched = _r_delta - _nr_delta
+        _r_pre = _resp_m['pre_spend'].mean()
+        _did_pct = _did_matched / _r_pre * 100 if _r_pre > 0 else 0
+
+        # Original DID (for comparison)
+        _orig_row = cohort_summary[cohort_summary['wave'] == wave_label].iloc[0]
+        _did_orig = _orig_row['did_spend_lift']
+
+        _matched_rows.append({
+            'Wave': wave_label,
+            'Original N': len(_unmatched),
+            'Matched N': len(_matched),
+            'Match Rate': f"{len(_matched) / len(_unmatched) * 100:.0f}%",
+            'Original DID': f"${_did_orig:,.2f}",
+            'Matched DID': f"${_did_matched:,.2f}",
+            'Matched DID %': f"{_did_pct:+.1f}%",
+            'Difference': f"${_did_matched - _did_orig:,.2f}",
+        })
+
+    if len(_matched_rows) == 0:
+        print("    No waves with sufficient matched cohort data.")
+    else:
+        _mdf = pd.DataFrame(_matched_rows)
+
+        styled = (
+            _mdf.style
+            .hide(axis='index')
+            .set_properties(**{
+                'font-size': '13px', 'text-align': 'center',
+                'border': '1px solid #E9ECEF', 'padding': '8px 12px',
+                'font-weight': 'bold',
+            })
+            .set_properties(subset=['Wave'], **{
+                'color': GEN_COLORS['success'],
+            })
+            .set_table_styles([
+                {'selector': 'th', 'props': [
+                    ('background-color', GEN_COLORS['success']),
+                    ('color', 'white'), ('font-size', '14px'),
+                    ('font-weight', 'bold'), ('text-align', 'center'),
+                    ('padding', '8px 12px'),
+                ]},
+                {'selector': 'caption', 'props': [
+                    ('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                    ('padding-bottom', '12px'),
+                ]},
+            ])
+            .set_caption("Matched Cohort DID: Only Accounts with Pre-Period Activity")
+        )
+        display(styled)
+
+        print(f"\n    Matched cohort filters to accounts with pre-wave spend > $0.")
+        print(f"    This removes inactive accounts that dilute the DID calculation.")
+        print(f"    Compare 'Original DID' to 'Matched DID' -- matched is typically")
+        print(f"    higher because it measures lift on accounts that COULD have changed.")

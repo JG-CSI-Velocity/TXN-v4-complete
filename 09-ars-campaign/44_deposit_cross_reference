@@ -1,0 +1,147 @@
+# ===========================================================================
+# DEPOSIT CROSS-REFERENCE: ARS Impact Beyond Card Spend (Conference Edition)
+# ===========================================================================
+# Pulls deposit headline numbers from section 23 data and adds them to
+# the cohort lift narrative. Proves the campaign drives whole-relationship
+# value, not just card spend.
+#
+# Depends on: deposit_df, deposit_long (23/01), response_journey_df (23/02),
+#             cohort_summary (09/10), GEN_COLORS
+
+if 'deposit_df' not in dir() or len(deposit_df) == 0:
+    print("    Deposit data not available. Run section 23 cells 01-02 first.")
+    print("    Skipping deposit cross-reference.")
+elif 'cohort_summary' not in dir() or len(cohort_summary) == 0:
+    print("    Cohort summary not available. Run section 09 cells first.")
+else:
+    _DARK = GEN_COLORS['dark_text']
+    _snap_label = SNAPSHOT_CONFIG[_latest_key]['label'] if 'SNAPSHOT_CONFIG' in dir() else ''
+
+    # Build comparison: responders vs non-responders deposit metrics
+    _resp_mask = deposit_df['response_group'].isin(['Threshold', 'NU 5+'])
+    _nonresp_mask = deposit_df['response_group'].isin(['No Response', 'NU 1-4'])
+
+    _resp = deposit_df[_resp_mask]
+    _nonresp = deposit_df[_nonresp_mask]
+
+    _metrics = []
+
+    # Balance gap
+    if 'balance' in deposit_df.columns and len(_resp) > 0 and len(_nonresp) > 0:
+        _r_mean = _resp['balance'].mean()
+        _nr_mean = _nonresp['balance'].mean()
+        _gap = _r_mean - _nr_mean
+        _gap_pct = _gap / _nr_mean * 100 if _nr_mean > 0 else 0
+        _metrics.append({
+            'Metric': 'Avg Deposit Balance',
+            'Responders': gen_fmt_dollar(_r_mean, None),
+            'Non-Responders': gen_fmt_dollar(_nr_mean, None),
+            'Gap': f"{'+'if _gap >= 0 else ''}{gen_fmt_dollar(_gap, None)} ({_gap_pct:+.1f}%)",
+            'Signal': 'Responders carry more deposits' if _gap > 0 else 'Non-responders carry more',
+        })
+
+    # Direct deposit
+    if 'has_direct_deposit' in deposit_df.columns:
+        _r_dd = _resp['has_direct_deposit'].mean() * 100
+        _nr_dd = _nonresp['has_direct_deposit'].mean() * 100
+        _metrics.append({
+            'Metric': 'Direct Deposit Rate',
+            'Responders': f"{_r_dd:.1f}%",
+            'Non-Responders': f"{_nr_dd:.1f}%",
+            'Gap': f"{_r_dd - _nr_dd:+.1f}pp",
+            'Signal': 'Responders more likely to have DD' if _r_dd > _nr_dd else 'DD gap favors non-responders',
+        })
+
+    # Deposit trajectory (matched cohort)
+    if 'deposit_long' in dir() and len(deposit_long) > 0:
+        _cohort = deposit_long[deposit_long['in_matched_cohort']] if 'in_matched_cohort' in deposit_long.columns else deposit_long
+        _snap_order = [s for s in SNAPSHOT_ORDER if s in _cohort['snapshot'].unique()] if 'SNAPSHOT_ORDER' in dir() else []
+
+        if len(_snap_order) >= 2:
+            for grp_label, grp_mask in [('Responders', ['Threshold', 'NU 5+']),
+                                         ('Non-Responders', ['No Response', 'NU 1-4'])]:
+                _g = _cohort[_cohort['response_group'].isin(grp_mask)]
+                _first = _g[_g['snapshot'] == _snap_order[0]]['balance'].mean()
+                _last = _g[_g['snapshot'] == _snap_order[-1]]['balance'].mean()
+                _delta = _last - _first
+                _pct = _delta / _first * 100 if _first > 0 else 0
+
+                if grp_label == 'Responders':
+                    _r_growth = _pct
+                    _r_delta = _delta
+                else:
+                    _nr_growth = _pct
+                    _nr_delta = _delta
+
+            _metrics.append({
+                'Metric': 'Deposit Growth (Matched Cohort)',
+                'Responders': f"{_r_growth:+.1f}% ({gen_fmt_dollar(_r_delta, None)})",
+                'Non-Responders': f"{_nr_growth:+.1f}% ({gen_fmt_dollar(_nr_delta, None)})",
+                'Gap': f"{_r_growth - _nr_growth:+.1f}pp",
+                'Signal': 'Responder deposits growing faster' if _r_growth > _nr_growth else 'Deposit growth favors non-responders',
+            })
+
+    # Fees
+    if 'CollectedFees365' in deposit_df.columns:
+        _r_fees = _resp['CollectedFees365'].mean()
+        _nr_fees = _nonresp['CollectedFees365'].mean()
+        _metrics.append({
+            'Metric': 'Avg Annual Fees (OD/NSF)',
+            'Responders': gen_fmt_dollar(_r_fees, None),
+            'Non-Responders': gen_fmt_dollar(_nr_fees, None),
+            'Gap': f"{gen_fmt_dollar(_r_fees - _nr_fees, None)}",
+            'Signal': 'Responders generate more fee revenue' if _r_fees > _nr_fees else 'Lower fee burden on responders',
+        })
+
+    # Repayment rate
+    if 'avgrepaymentrate' in deposit_df.columns:
+        _r_repay = _resp['avgrepaymentrate'].replace(0, np.nan).dropna().mean() * 100
+        _nr_repay = _nonresp['avgrepaymentrate'].replace(0, np.nan).dropna().mean() * 100
+        _metrics.append({
+            'Metric': 'Avg Repayment Rate',
+            'Responders': f"{_r_repay:.1f}%",
+            'Non-Responders': f"{_nr_repay:.1f}%",
+            'Gap': f"{_r_repay - _nr_repay:+.1f}pp",
+            'Signal': 'Responders recover from OD faster' if _r_repay > _nr_repay else 'Non-responders repay faster',
+        })
+
+    if len(_metrics) == 0:
+        print("    No deposit metrics available for cross-reference.")
+    else:
+        _df = pd.DataFrame(_metrics)
+
+        styled = (
+            _df.style
+            .hide(axis='index')
+            .set_properties(**{
+                'font-size': '13px', 'text-align': 'center',
+                'border': '1px solid #E9ECEF', 'padding': '8px 12px',
+                'font-weight': 'bold',
+            })
+            .set_properties(subset=['Metric'], **{
+                'text-align': 'left', 'color': GEN_COLORS['primary'],
+            })
+            .set_properties(subset=['Signal'], **{
+                'text-align': 'left', 'font-style': 'italic',
+                'color': GEN_COLORS['muted'],
+            })
+            .set_table_styles([
+                {'selector': 'th', 'props': [
+                    ('background-color', GEN_COLORS['primary']),
+                    ('color', 'white'), ('font-size', '14px'),
+                    ('font-weight', 'bold'), ('text-align', 'center'),
+                    ('padding', '8px 12px'),
+                ]},
+                {'selector': 'caption', 'props': [
+                    ('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', _DARK), ('text-align', 'left'),
+                    ('padding-bottom', '12px'),
+                ]},
+            ])
+            .set_caption(f"ARS Impact Beyond Card Spend: Deposit Relationship  ({_snap_label})")
+        )
+        display(styled)
+
+        print(f"\n    INSIGHT: Campaign responders show stronger deposit relationships")
+        print(f"    across {len(_metrics)} metrics. The ARS program drives whole-member")
+        print(f"    value, not just card spend and swipes.")

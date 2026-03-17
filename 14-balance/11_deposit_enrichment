@@ -1,0 +1,80 @@
+# ===========================================================================
+# DEPOSIT ENRICHMENT: Upgrade balance_df with zaccounts Data (Conf. Edition)
+# ===========================================================================
+# When section 23 deposit data is available, enriches balance_df with
+# real deposit fields: deposit counts/amounts, repayment rate, OD metrics,
+# direct deposit flag, and deposit trend scores. Replaces the shallow
+# Avg Bal / Curr Bal view with actual deposit data.
+#
+# Depends on: balance_df (14/01), deposit_df (23/01)
+
+if 'deposit_df' not in dir() or len(deposit_df) == 0:
+    print("    Deposit data (section 23) not available.")
+    print("    Balance analysis using ODDD Avg Bal / Curr Bal only.")
+    print("    Run section 23 cells 01-02 for enriched deposit data.")
+elif 'balance_df' not in dir() or len(balance_df) == 0:
+    print("    balance_df not available. Run cell 01 first.")
+else:
+    # Build bridge: balance_df uses Acct Number, deposit_df uses HASHED_ACCOUNT
+    # We need rewards_df to bridge
+    if 'rewards_df' not in dir() or 'HASHED_ACCOUNT' not in rewards_df.columns:
+        print("    Cannot bridge balance_df to deposit_df (no HASHED_ACCOUNT in rewards_df).")
+    else:
+        _bridge = rewards_df[['Acct Number', 'HASHED_ACCOUNT']].copy()
+        _bridge['Acct Number'] = _bridge['Acct Number'].astype(str).str.strip()
+        _bridge['HASHED_ACCOUNT'] = _bridge['HASHED_ACCOUNT'].astype(str).str.strip()
+
+        # Fields to bring in from deposit_df
+        _enrich_cols = [
+            'HASHED_ACCOUNT', 'balance', 'AvgCollectedBalance',
+            'depCount365', 'depAmt365', 'depCount33', 'DepAmt33',
+            'avgdaysbetweendeposits', 'avgrepaymentrate',
+            'has_direct_deposit',
+            'nsfodfeestodepositsratio90days', 'fdicoccasionsrolling12months',
+            'CollectedFees365', 'PossibleFees365',
+            'RepaymentTrendCount33', 'DepositTrendCount33',
+            'CashFlowTrendCount33', 'WindfallTrendCount33',
+            'Mobile_Deposits_90', 'sixty_od',
+        ]
+        _avail = [c for c in _enrich_cols if c in deposit_df.columns]
+        _dep_sub = deposit_df[_avail].copy()
+
+        # Bridge to Acct Number
+        _dep_bridged = _dep_sub.merge(_bridge, on='HASHED_ACCOUNT', how='inner')
+
+        # Drop any pre-existing enrichment columns to make re-runnable
+        _new_cols = [c for c in _avail if c != 'HASHED_ACCOUNT' and c not in ['Acct Number']]
+        _existing = [c for c in _new_cols if c in balance_df.columns]
+        if _existing:
+            balance_df.drop(columns=_existing, inplace=True)
+
+        _before = len(balance_df)
+        balance_df = balance_df.merge(
+            _dep_bridged.drop(columns='HASHED_ACCOUNT'),
+            on='Acct Number', how='left'
+        )
+
+        _matched = balance_df['depAmt365'].notna().sum() if 'depAmt365' in balance_df.columns else 0
+        _match_pct = _matched / len(balance_df) * 100 if len(balance_df) > 0 else 0
+
+        # Create enhanced balance band using real deposit balance
+        if 'balance' in balance_df.columns:
+            balance_df['deposit_balance'] = balance_df['balance']
+            balance_df['deposit_band'] = balance_df['deposit_balance'].apply(assign_balance_band)
+            balance_df['deposit_band'] = pd.Categorical(
+                balance_df['deposit_band'], categories=BALANCE_BAND_ORDER, ordered=True
+            )
+
+        # Enhanced delta: deposit trend instead of just Curr - Avg
+        if 'DepositTrendCount33' in balance_df.columns:
+            balance_df['deposit_trend_signal'] = np.where(
+                balance_df['DepositTrendCount33'] > 0, 'Growing',
+                np.where(balance_df['DepositTrendCount33'] < 0, 'Declining', 'Stable')
+            )
+
+        print(f"    Deposit enrichment complete:")
+        print(f"      {_matched:,} of {len(balance_df):,} accounts matched ({_match_pct:.1f}%)")
+        print(f"      Added {len(_new_cols)} deposit fields to balance_df")
+        if 'deposit_trend_signal' in balance_df.columns:
+            _trend_dist = balance_df['deposit_trend_signal'].value_counts()
+            print(f"      Deposit trend: {dict(_trend_dist)}")

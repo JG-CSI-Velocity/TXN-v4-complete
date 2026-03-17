@@ -1,0 +1,86 @@
+# ===========================================================================
+# FIVE-GROUP SPEND COMPARISON: Granular Response Tier Analysis (Conf. Ed.)
+# ===========================================================================
+# Replaces the binary Responder/Non-Responder view with 5 groups:
+# Never Mailed, No Response, NU 1-4, NU 5+, Threshold.
+# Bar chart: avg monthly spend per group.
+#
+# Depends on: response_journey_df (23/02), camp_txn or combined_df, GEN_COLORS
+
+if 'response_journey_df' not in dir() or len(response_journey_df) == 0:
+    print("    No response journey data. Run section 23 cell 02 first.")
+    print("    Using binary Responder/Non-Responder from section 09.")
+elif 'camp_txn' not in dir() and 'combined_df' not in dir():
+    print("    No transaction data available.")
+else:
+    _txn = camp_txn if 'camp_txn' in dir() else combined_df
+
+    # Bridge response_group onto transaction data via account number
+    _journey_lookup = response_journey_df[['acct_number', 'response_group']].copy()
+    _journey_lookup['acct_number'] = _journey_lookup['acct_number'].astype(str).str.strip()
+
+    _txn_col = 'primary_account_num'
+    if _txn_col in _txn.columns:
+        _txn_grouped = _txn.copy()
+        _txn_grouped[_txn_col] = _txn_grouped[_txn_col].astype(str).str.strip()
+
+        _acct_spend = _txn_grouped.groupby(_txn_col).agg(
+            total_spend=('amount', 'sum'),
+            txn_count=('transaction_date', 'count'),
+        ).reset_index()
+
+        _acct_spend = _acct_spend.merge(
+            _journey_lookup, left_on=_txn_col, right_on='acct_number', how='left'
+        )
+        _acct_spend['response_group'] = _acct_spend['response_group'].fillna('Never Mailed')
+
+        # Normalize to monthly
+        _n_months = DATASET_MONTHS if 'DATASET_MONTHS' in dir() else 12
+        _acct_spend['monthly_spend'] = _acct_spend['total_spend'] / _n_months
+        _acct_spend['monthly_txns'] = _acct_spend['txn_count'] / _n_months
+
+        _groups = RESPONSE_GROUP_ORDER
+        _colors = [RESPONSE_GROUP_PALETTE.get(g, GEN_COLORS['muted']) for g in _groups]
+
+        fig, ax = plt.subplots(figsize=(14, 7))
+
+        _means = []
+        _medians = []
+        _counts = []
+        for grp in _groups:
+            _sub = _acct_spend[_acct_spend['response_group'] == grp]
+            _means.append(_sub['monthly_spend'].mean() if len(_sub) > 0 else 0)
+            _medians.append(_sub['monthly_spend'].median() if len(_sub) > 0 else 0)
+            _counts.append(len(_sub))
+
+        bars = ax.bar(range(len(_groups)), _means,
+                      color=_colors, edgecolor='white', linewidth=1.5, width=0.6)
+
+        for j, (bar, mean_v, med_v, count) in enumerate(zip(bars, _means, _medians, _counts)):
+            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() * 1.02,
+                    f"Mean: {gen_fmt_dollar(mean_v, None)}\n"
+                    f"Median: {gen_fmt_dollar(med_v, None)}\n"
+                    f"({count:,})",
+                    ha='center', va='bottom', fontsize=12, fontweight='bold',
+                    color=GEN_COLORS['dark_text'], linespacing=1.3)
+
+        ax.set_xticks(range(len(_groups)))
+        ax.set_xticklabels(_groups, fontsize=14, fontweight='bold')
+        ax.set_ylabel("Avg Monthly Spend", fontsize=16, fontweight='bold', labelpad=10)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+
+        gen_clean_axes(ax)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+
+        _label = DATASET_LABEL if 'DATASET_LABEL' in dir() else ''
+        ax.set_title("Card Spend by 5-Group Response Classification",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                f"Granular view: Never Mailed through Threshold  ({_label})",
+                transform=ax.transAxes, fontsize=14,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()

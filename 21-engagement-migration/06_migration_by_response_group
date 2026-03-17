@@ -1,0 +1,116 @@
+# ===========================================================================
+# MIGRATION BY 5-GROUP: Engagement Tier Flow by Response Group (Conf. Ed.)
+# ===========================================================================
+# Shows net engagement tier migration (up vs down) segmented by 5 response
+# groups. Proves which response tiers drive engagement tier upgrades.
+#
+# Depends on: migration data (21/01), response_journey_df (23/02), GEN_COLORS
+
+if 'response_journey_df' not in dir() or len(response_journey_df) == 0:
+    print("    No response journey. Run section 23 cell 02 first.")
+else:
+    # Try to find migration data
+    _has_mig = False
+    _mig_df = None
+
+    for _name in ['migration_df', 'mig_df', 'engagement_df']:
+        if _name in dir():
+            _mig_df = eval(_name)
+            if len(_mig_df) > 0:
+                _has_mig = True
+                break
+
+    if not _has_mig:
+        print("    No migration data. Run section 21 cell 01 first.")
+    else:
+        _acct_col = None
+        for _c in ['primary_account_num', 'account_number', 'Acct Number']:
+            if _c in _mig_df.columns:
+                _acct_col = _c
+                break
+
+        if _acct_col is None:
+            print("    No account column found in migration data.")
+        else:
+            _journey_lookup = response_journey_df[['acct_number', 'response_group']].copy()
+            _journey_lookup['acct_number'] = _journey_lookup['acct_number'].astype(str).str.strip()
+
+            _mig = _mig_df.copy()
+            _mig[_acct_col] = _mig[_acct_col].astype(str).str.strip()
+
+            _mig = _mig.merge(
+                _journey_lookup, left_on=_acct_col, right_on='acct_number', how='left'
+            )
+            _mig['response_group'] = _mig['response_group'].fillna('Never Mailed')
+
+            # Look for net_flow or direction column
+            _flow_col = None
+            for _c in ['net_flow', 'direction', 'migration_direction']:
+                if _c in _mig.columns:
+                    _flow_col = _c
+                    break
+
+            if _flow_col is None:
+                # Try to compute from tier columns
+                _tier_cols = [c for c in _mig.columns if 'tier' in c.lower() or 'engagement' in c.lower()]
+                print(f"    No flow/direction column. Available: {_tier_cols[:5]}")
+                print("    Skipping migration by response group chart.")
+            else:
+                _groups = RESPONSE_GROUP_ORDER
+                _colors = [RESPONSE_GROUP_PALETTE.get(g, GEN_COLORS['muted']) for g in _groups]
+
+                _flow_stats = []
+                for grp in _groups:
+                    _sub = _mig[_mig['response_group'] == grp]
+                    _n = len(_sub)
+                    if _n == 0:
+                        _flow_stats.append({'group': grp, 'net_up': 0, 'n': 0})
+                        continue
+
+                    if _mig[_flow_col].dtype in ['int64', 'float64']:
+                        _net = _sub[_flow_col].mean()
+                    else:
+                        _up = (_sub[_flow_col].isin(['up', 'upgraded', 'positive'])).sum()
+                        _down = (_sub[_flow_col].isin(['down', 'degraded', 'negative'])).sum()
+                        _net = (_up - _down) / _n * 100
+
+                    _flow_stats.append({'group': grp, 'net_up': _net, 'n': _n})
+
+                _fdf = pd.DataFrame(_flow_stats)
+
+                fig, ax = plt.subplots(figsize=(14, 7))
+
+                bars = ax.bar(range(len(_groups)), _fdf['net_up'],
+                              color=_colors, edgecolor='white', linewidth=1.5,
+                              width=0.6, zorder=3)
+
+                for j, (bar, row) in enumerate(zip(bars, _fdf.itertuples())):
+                    _sign = '+' if row.net_up >= 0 else ''
+                    _va = 'bottom' if row.net_up >= 0 else 'top'
+                    _offset = 0.3 if row.net_up >= 0 else -0.3
+                    ax.text(bar.get_x() + bar.get_width() / 2, row.net_up + _offset,
+                            f"{_sign}{row.net_up:.1f}\n({row.n:,})",
+                            ha='center', va=_va, fontsize=12, fontweight='bold',
+                            color=GEN_COLORS['dark_text'])
+
+                ax.axhline(y=0, color=GEN_COLORS['dark_text'], linewidth=0.8, alpha=0.5)
+                ax.set_xticks(range(len(_groups)))
+                ax.set_xticklabels(_groups, fontsize=14, fontweight='bold')
+                ax.set_ylabel("Net Engagement Migration", fontsize=16,
+                               fontweight='bold', labelpad=10)
+
+                gen_clean_axes(ax)
+                ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+                ax.set_axisbelow(True)
+
+                _label = DATASET_LABEL if 'DATASET_LABEL' in dir() else ''
+                ax.set_title("Engagement Migration by Response Group",
+                              fontsize=26, fontweight='bold',
+                              color=GEN_COLORS['dark_text'], pad=35, loc='left')
+                ax.text(0.0, 1.02,
+                        f"Positive = net upgrade, negative = net downgrade  ({_label})",
+                        transform=ax.transAxes, fontsize=14,
+                        color=GEN_COLORS['muted'], style='italic')
+
+                plt.tight_layout()
+                plt.show()

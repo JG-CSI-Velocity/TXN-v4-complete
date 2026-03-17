@@ -1,0 +1,102 @@
+# ===========================================================================
+# DEPOSIT SCORECARD KPIs: Add Deposit Metrics to Executive Scorecard
+# ===========================================================================
+# Injects deposit-ARS findings into scorecard_df so the executive dashboard
+# reflects whole-member value, not just card spend.
+#
+# Depends on: scorecard_df (22/01), deposit_df (23/01), deposit_long (23/01),
+#             response_journey_df (23/02), GEN_COLORS
+
+if 'scorecard_df' not in dir():
+    print("    scorecard_df not available. Run cell 01 first.")
+elif 'deposit_df' not in dir() or len(deposit_df) == 0:
+    print("    Deposit data not available. Run section 23 cells 01-02.")
+    print("    Executive scorecard will not include deposit KPIs.")
+else:
+    _new_rows = []
+
+    # KPI: Responder Deposit Gap
+    if 'response_group' in deposit_df.columns and 'balance' in deposit_df.columns:
+        _resp = deposit_df[deposit_df['response_group'].isin(['Threshold', 'NU 5+'])]
+        _nonresp = deposit_df[deposit_df['response_group'].isin(['No Response', 'NU 1-4'])]
+        if len(_resp) > 0 and len(_nonresp) > 0:
+            _gap = _resp['balance'].mean() - _nonresp['balance'].mean()
+            _gap_pct = _gap / _nonresp['balance'].mean() * 100 if _nonresp['balance'].mean() > 0 else 0
+            _rag = 'Green' if _gap > 0 else 'Red'
+            _new_rows.append({
+                'category': 'Deposits',
+                'metric_name': 'Responder Deposit Premium',
+                'value': _gap,
+                'display': f"{'+'if _gap >= 0 else ''}{gen_fmt_dollar(_gap, None)} ({_gap_pct:+.1f}%)",
+                'trend': 'up' if _gap > 0 else 'down',
+                'rag': _rag,
+            })
+
+    # KPI: Direct Deposit Rate (responders)
+    if 'has_direct_deposit' in deposit_df.columns and 'response_group' in deposit_df.columns:
+        _resp_dd = deposit_df[
+            deposit_df['response_group'].isin(['Threshold', 'NU 5+'])
+        ]['has_direct_deposit'].mean() * 100
+        _rag_dd = 'Green' if _resp_dd > 40 else ('Amber' if _resp_dd > 20 else 'Red')
+        _new_rows.append({
+            'category': 'Deposits',
+            'metric_name': 'Responder DD Rate',
+            'value': _resp_dd,
+            'display': f"{_resp_dd:.1f}%",
+            'trend': 'flat',
+            'rag': _rag_dd,
+        })
+
+    # KPI: Matched Cohort Deposit Growth
+    if 'deposit_long' in dir() and len(deposit_long) > 0 and 'in_matched_cohort' in deposit_long.columns:
+        _cohort = deposit_long[deposit_long['in_matched_cohort']]
+        _snap_order = [s for s in SNAPSHOT_ORDER if s in _cohort['snapshot'].unique()] if 'SNAPSHOT_ORDER' in dir() else []
+
+        if len(_snap_order) >= 2:
+            _resp_cohort = _cohort[_cohort['response_group'].isin(['Threshold', 'NU 5+'])]
+            _first = _resp_cohort[_resp_cohort['snapshot'] == _snap_order[0]]['balance'].mean()
+            _last = _resp_cohort[_resp_cohort['snapshot'] == _snap_order[-1]]['balance'].mean()
+            _growth = (_last - _first) / _first * 100 if _first > 0 else 0
+            _rag_g = 'Green' if _growth > 5 else ('Amber' if _growth > 0 else 'Red')
+
+            _new_rows.append({
+                'category': 'Deposits',
+                'metric_name': 'Responder Deposit Growth',
+                'value': _growth,
+                'display': f"{_growth:+.1f}%",
+                'trend': 'up' if _growth > 0 else 'down',
+                'rag': _rag_g,
+            })
+
+    # KPI: Spend-Deposit Correlation
+    if 'spend_deposit_aligned' in dir() and len(spend_deposit_aligned) > 0:
+        _snap_order_sd = [s for s in SNAPSHOT_ORDER if s in spend_deposit_aligned['snapshot'].values]
+        if len(_snap_order_sd) >= 2:
+            _resp_sd = spend_deposit_aligned[
+                spend_deposit_aligned['response_group'].isin(['Threshold', 'NU 5+'])
+            ]
+            _f = _resp_sd[_resp_sd['snapshot'] == _snap_order_sd[0]]
+            _l = _resp_sd[_resp_sd['snapshot'] == _snap_order_sd[-1]]
+            if len(_f) > 0 and len(_l) > 0:
+                _bal_g = (_l['mean_balance'].iloc[0] - _f['mean_balance'].iloc[0]) / _f['mean_balance'].iloc[0] * 100 if _f['mean_balance'].iloc[0] > 0 else 0
+                _spend_g = (_l['mean_spend_12m'].iloc[0] - _f['mean_spend_12m'].iloc[0]) / _f['mean_spend_12m'].iloc[0] * 100 if _f['mean_spend_12m'].iloc[0] > 0 else 0
+                _both_up = _bal_g > 0 and _spend_g > 0
+                _rag_corr = 'Green' if _both_up else 'Amber'
+
+                _new_rows.append({
+                    'category': 'Deposits',
+                    'metric_name': 'Spend + Deposit Sync',
+                    'value': 1 if _both_up else 0,
+                    'display': f"Dep {_bal_g:+.1f}% / Spend {_spend_g:+.1f}%",
+                    'trend': 'up' if _both_up else 'flat',
+                    'rag': _rag_corr,
+                })
+
+    if len(_new_rows) > 0:
+        _new_df = pd.DataFrame(_new_rows)
+        scorecard_df = pd.concat([scorecard_df, _new_df], ignore_index=True)
+        print(f"    Added {len(_new_rows)} deposit KPIs to executive scorecard:")
+        for row in _new_rows:
+            print(f"      {row['metric_name']}: {row['display']} [{row['rag']}]")
+    else:
+        print("    No deposit KPIs to add. Check deposit data availability.")
