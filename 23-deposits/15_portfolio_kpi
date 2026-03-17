@@ -49,7 +49,8 @@ else:
         key=lambda c: pd.to_datetime(c.replace('_balance', ''), format='%b%y')
     )
     _dep365_cols = sorted(
-        [c for c in _cohort.columns if c.endswith('_depAmt365')],
+        [c for c in _cohort.columns
+         if c.endswith('_depAmt365') and not c.startswith('delta')],
         key=lambda c: pd.to_datetime(c.replace('_depAmt365', ''), format='%b%y')
     )
 

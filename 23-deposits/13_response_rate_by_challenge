@@ -120,6 +120,10 @@ else:
     _display_cols = ['Mailer', 'Mailed'] + _rate_cols + ['Overall']
     _display_df = _rates_df[_display_cols].copy()
 
+    # Pre-round to 1 decimal so display never shows extra precision
+    for _rc in _rate_cols + ['Overall']:
+        _display_df[_rc] = _display_df[_rc].round(1)
+
     _last_idx = len(_display_df) - 1
 
     def _bold_agg_row(row):
