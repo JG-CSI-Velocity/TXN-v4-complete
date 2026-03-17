@@ -207,6 +207,9 @@ else:
         # -------------------------------------------------------------------
         # 3. Filter to open accounts only (exclude closed/charged-off)
         # -------------------------------------------------------------------
+        # Preserve raw snapshots for closed-account analysis (cell 67)
+        snapshots_raw_all = {k: v.copy() for k, v in _snapshots_raw.items()}
+
         _snapshots = {}
         for snap_key, raw_df in _snapshots_raw.items():
             if 'acctstatus' in raw_df.columns:

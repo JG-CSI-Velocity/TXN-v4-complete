@@ -1,0 +1,163 @@
+# ===========================================================================
+# DORMANT ACCOUNT ACTIVATION: Waterfall Chart (Conference Edition)
+# ===========================================================================
+# Starts with total accounts where SwipeCat12 = 'Inactive' (or lowest swipe
+# category). Shows how many activated (SwipeCat3 != Inactive), broken out
+# by response group.
+#
+# Depends on: rewards_df (00-setup/08), response_journey_df (23/02),
+#             SWIPE_ORDER (01/01), RESPONSE_GROUP_* (23/02), GEN_COLORS
+
+_missing = []
+if 'rewards_df' not in dir() or len(rewards_df) == 0:
+    _missing.append('rewards_df')
+if 'response_journey_df' not in dir() or len(response_journey_df) == 0:
+    _missing.append('response_journey_df')
+
+if _missing:
+    print(f"    Dormant activation waterfall skipped -- missing: {', '.join(_missing)}")
+else:
+    _has_sc3 = 'SwipeCat3' in rewards_df.columns
+    _has_sc12 = 'SwipeCat12' in rewards_df.columns
+
+    if not _has_sc3 or not _has_sc12:
+        print("    Need both SwipeCat3 and SwipeCat12 for dormant activation. Skipping.")
+    else:
+        # Determine the "inactive" label: use SWIPE_ORDER last entry or auto-detect
+        if 'SWIPE_ORDER' in dir() and len(SWIPE_ORDER) > 0:
+            _inactive_label = SWIPE_ORDER[-1]  # last = lowest activity
+        else:
+            # Fall back: find the most common label that suggests inactivity
+            _cats12 = rewards_df['SwipeCat12'].astype(str).str.strip()
+            _candidates = [c for c in _cats12.unique()
+                           if 'inact' in c.lower() or 'dormant' in c.lower()
+                           or 'none' in c.lower()]
+            _inactive_label = _candidates[0] if _candidates else _cats12.value_counts().idxmax()
+
+        # Identify the join column
+        _acct_col_rw = 'Acct Number' if 'Acct Number' in rewards_df.columns else None
+        if _acct_col_rw is None:
+            for _c in rewards_df.columns:
+                if _c.strip().lower() in ('acct number', 'acctnumber', 'acct_number'):
+                    _acct_col_rw = _c
+                    break
+
+        if _acct_col_rw is None:
+            print("    No Acct Number column in rewards_df. Skipping.")
+        else:
+            _work = rewards_df[[_acct_col_rw, 'SwipeCat3', 'SwipeCat12']].copy()
+            _work['acct_number'] = _work[_acct_col_rw].astype(str).str.strip()
+            _work['sc12'] = _work['SwipeCat12'].astype(str).str.strip()
+            _work['sc3'] = _work['SwipeCat3'].astype(str).str.strip()
+
+            # Filter to dormant (12-month = inactive)
+            _dormant = _work[_work['sc12'] == _inactive_label].copy()
+
+            if len(_dormant) == 0:
+                print(f"    No accounts with SwipeCat12 = '{_inactive_label}'. Skipping.")
+            else:
+                # Flag activation: SwipeCat3 is NOT the inactive label
+                _dormant['activated'] = _dormant['sc3'] != _inactive_label
+
+                # Merge response group
+                _rj_sub = response_journey_df[['acct_number', 'response_group']].copy()
+                _rj_sub['acct_number'] = _rj_sub['acct_number'].astype(str).str.strip()
+                _dormant = _dormant.merge(_rj_sub, on='acct_number', how='left')
+                _dormant['response_group'] = _dormant['response_group'].fillna('Never Mailed')
+
+                _total_dormant = len(_dormant)
+                _total_activated = _dormant['activated'].sum()
+                _still_dormant = _total_dormant - _total_activated
+
+                # Break activation by response group
+                _activated_by_group = (
+                    _dormant[_dormant['activated']]
+                    .groupby('response_group')
+                    .size()
+                    .reindex(RESPONSE_GROUP_ORDER)
+                    .fillna(0)
+                    .astype(int)
+                )
+                # Keep only groups with activations
+                _activated_by_group = _activated_by_group[_activated_by_group > 0]
+
+                # Build waterfall data
+                _bar_labels = ['Total Dormant (12mo)']
+                _bar_values = [_total_dormant]
+                _bar_bottoms = [0]
+                _bar_colors = [GEN_COLORS['muted']]
+
+                _running = _total_dormant
+                for grp in _activated_by_group.index:
+                    _count = _activated_by_group[grp]
+                    _running -= _count
+                    _bar_labels.append(f"Activated:\n{grp}")
+                    _bar_values.append(_count)
+                    _bar_bottoms.append(_running)
+                    _bar_colors.append(
+                        RESPONSE_GROUP_PALETTE.get(grp, GEN_COLORS['info'])
+                    )
+
+                _bar_labels.append('Still Dormant')
+                _bar_values.append(_still_dormant)
+                _bar_bottoms.append(0)
+                _bar_colors.append(GEN_COLORS['grid'])
+
+                fig, ax = plt.subplots(figsize=(14, 7))
+
+                _x = np.arange(len(_bar_labels))
+                bars = ax.bar(_x, _bar_values, bottom=_bar_bottoms,
+                              color=_bar_colors, edgecolor='white',
+                              linewidth=1.5, width=0.6, zorder=3)
+
+                # Connector lines between bars
+                for j in range(len(_bar_labels) - 1):
+                    _top_j = _bar_bottoms[j] + _bar_values[j]
+                    if j == 0:
+                        _connect_y = _bar_bottoms[j + 1] + _bar_values[j + 1]
+                    else:
+                        _connect_y = _bar_bottoms[j]
+                    ax.plot([j + 0.3, j + 0.7], [_connect_y, _connect_y],
+                            color=GEN_COLORS['dark_text'], linewidth=0.8,
+                            alpha=0.4, ls='--')
+
+                # Labels on bars
+                for j, (bar, val, bottom) in enumerate(
+                    zip(bars, _bar_values, _bar_bottoms)
+                ):
+                    _pct = val / _total_dormant * 100
+                    ax.text(bar.get_x() + bar.get_width() / 2,
+                            bottom + val + _total_dormant * 0.015,
+                            f"{val:,}\n({_pct:.1f}%)",
+                            ha='center', va='bottom', fontsize=12,
+                            fontweight='bold', color=GEN_COLORS['dark_text'],
+                            linespacing=1.3)
+
+                ax.set_xticks(_x)
+                ax.set_xticklabels(_bar_labels, fontsize=12, fontweight='bold')
+                ax.set_ylabel("Accounts", fontsize=16, fontweight='bold', labelpad=10)
+                ax.yaxis.set_major_formatter(
+                    mticker.FuncFormatter(gen_fmt_count)
+                )
+
+                gen_clean_axes(ax)
+                ax.yaxis.grid(True, color=GEN_COLORS['grid'],
+                              linewidth=0.5, alpha=0.7)
+                ax.set_axisbelow(True)
+
+                ax.set_title("Dormant Account Activation",
+                              fontsize=26, fontweight='bold',
+                              color=GEN_COLORS['dark_text'], pad=35, loc='left')
+                ax.text(0.0, 1.01,
+                        f"How many inactive accounts did the ARS program wake up?  |  "
+                        f"Dormant = SwipeCat12 '{_inactive_label}'",
+                        transform=ax.transAxes, fontsize=13,
+                        color=GEN_COLORS['muted'], style='italic')
+
+                plt.tight_layout()
+                plt.show()
+
+                print(f"\n  Dormant accounts (SwipeCat12='{_inactive_label}'): "
+                      f"{_total_dormant:,}")
+                print(f"  Activated (SwipeCat3 != '{_inactive_label}'): "
+                      f"{_total_activated:,} ({_total_activated/_total_dormant*100:.1f}%)")

@@ -1,0 +1,91 @@
+# ===========================================================================
+# EXECUTIVE DASHBOARD: Threshold Tier Deep Dive (Conference Edition)
+# ===========================================================================
+# Single figure, 4-quadrant: TH deposit profile, TH progression,
+# TH DD/mobile, TH risk. One slide for the TH story.
+#
+# Depends on: deposit_df (23/01), response_journey_df (23/02), GEN_COLORS
+
+if 'deposit_df' not in dir() or len(deposit_df) == 0 or 'best_tier' not in deposit_df.columns:
+    print("    No deposit data with best_tier. Run cells 01-02 first.")
+else:
+    _th_tiers = ['TH-10', 'TH-15', 'TH-20', 'TH-25']
+    _th_data = deposit_df[deposit_df['best_tier'].isin(_th_tiers)]
+
+    if len(_th_data) == 0:
+        print("    No TH accounts in deposit data.")
+    else:
+        fig = plt.figure(figsize=(20, 12))
+        gs = fig.add_gridspec(2, 2, hspace=0.4, wspace=0.3)
+        _DARK = GEN_COLORS['dark_text']
+        _th_colors = [RESPONSE_TIER_PALETTE.get(t, GEN_COLORS['muted']) for t in _th_tiers]
+
+        # Q1: Balance by TH tier
+        ax1 = fig.add_subplot(gs[0, 0])
+        _bals = [_th_data[_th_data['best_tier'] == t]['balance'].mean() for t in _th_tiers]
+        ax1.bar(range(4), _bals, color=_th_colors, edgecolor='white', linewidth=1, width=0.6)
+        for i, v in enumerate(_bals):
+            ax1.text(i, v * 1.02, gen_fmt_dollar(v, None),
+                     ha='center', va='bottom', fontsize=12, fontweight='bold', color=_DARK)
+        ax1.set_xticks(range(4))
+        ax1.set_xticklabels(_th_tiers, fontsize=12, fontweight='bold')
+        ax1.set_title("Avg Balance", fontsize=20, fontweight='bold', color=_DARK, loc='left')
+        gen_clean_axes(ax1)
+        ax1.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+        ax1.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax1.set_axisbelow(True)
+
+        # Q2: DD Rate
+        ax2 = fig.add_subplot(gs[0, 1])
+        if 'has_direct_deposit' in _th_data.columns:
+            _dd = [_th_data[_th_data['best_tier'] == t]['has_direct_deposit'].astype(str).str.lower().isin(['true','1','yes']).mean() * 100 for t in _th_tiers]
+            ax2.bar(range(4), _dd, color=_th_colors, edgecolor='white', linewidth=1, width=0.6)
+            for i, v in enumerate(_dd):
+                ax2.text(i, v + 0.5, f"{v:.1f}%", ha='center', va='bottom',
+                         fontsize=12, fontweight='bold', color=_DARK)
+        ax2.set_xticks(range(4))
+        ax2.set_xticklabels(_th_tiers, fontsize=12, fontweight='bold')
+        ax2.set_title("Direct Deposit Rate", fontsize=20, fontweight='bold', color=_DARK, loc='left')
+        gen_clean_axes(ax2)
+        ax2.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_pct))
+        ax2.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax2.set_axisbelow(True)
+
+        # Q3: Deposit Amount (365d)
+        ax3 = fig.add_subplot(gs[1, 0])
+        if 'depAmt365' in _th_data.columns:
+            _deps = [_th_data[_th_data['best_tier'] == t]['depAmt365'].mean() for t in _th_tiers]
+            ax3.bar(range(4), _deps, color=_th_colors, edgecolor='white', linewidth=1, width=0.6)
+            for i, v in enumerate(_deps):
+                ax3.text(i, v * 1.02, gen_fmt_dollar(v, None),
+                         ha='center', va='bottom', fontsize=12, fontweight='bold', color=_DARK)
+        ax3.set_xticks(range(4))
+        ax3.set_xticklabels(_th_tiers, fontsize=12, fontweight='bold')
+        ax3.set_title("Avg Annual Deposits", fontsize=20, fontweight='bold', color=_DARK, loc='left')
+        gen_clean_axes(ax3)
+        ax3.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+        ax3.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax3.set_axisbelow(True)
+
+        # Q4: FDIC Occasions (risk)
+        ax4 = fig.add_subplot(gs[1, 1])
+        if 'fdicoccasionsrolling12months' in _th_data.columns:
+            _fdic = [_th_data[_th_data['best_tier'] == t]['fdicoccasionsrolling12months'].mean() for t in _th_tiers]
+            ax4.bar(range(4), _fdic, color=_th_colors, edgecolor='white', linewidth=1, width=0.6)
+            for i, v in enumerate(_fdic):
+                ax4.text(i, v + 0.05, f"{v:.1f}", ha='center', va='bottom',
+                         fontsize=12, fontweight='bold', color=_DARK)
+        ax4.set_xticks(range(4))
+        ax4.set_xticklabels(_th_tiers, fontsize=12, fontweight='bold')
+        ax4.set_title("Avg FDIC Occasions (Lower = Better)", fontsize=20,
+                       fontweight='bold', color=_DARK, loc='left')
+        gen_clean_axes(ax4)
+        ax4.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax4.set_axisbelow(True)
+
+        _n_th = len(_th_data)
+        fig.suptitle(f"Threshold Tier Deep Dive ({_n_th:,} accounts)",
+                     fontsize=28, fontweight='bold', color=_DARK, y=1.02)
+
+        plt.tight_layout()
+        plt.show()

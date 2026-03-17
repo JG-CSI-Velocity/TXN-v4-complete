@@ -1,0 +1,73 @@
+# ===========================================================================
+# MEMBER VALUE BY TH TIER: Does Value Scale with Threshold? (Conf. Edition)
+# ===========================================================================
+# Horizontal bar: composite member value for TH-10/15/20/25 with NU 5+
+# and No Response as reference lines.
+#
+# Depends on: deposit_df (23/01), GEN_COLORS, RESPONSE_TIER_PALETTE
+
+if 'deposit_df' not in dir() or len(deposit_df) == 0 or 'best_tier' not in deposit_df.columns:
+    print("    No deposit data with best_tier. Run cells 01-02 first.")
+else:
+    _dep = deposit_df.copy()
+    _dep['_value'] = 0
+
+    if 'depAmt365' in _dep.columns:
+        _dep['_value'] += _dep['depAmt365'].fillna(0)
+    if 'total_spend' in _dep.columns:
+        _dep['_value'] += _dep['total_spend'].fillna(0)
+    elif 'avg_monthly_spend' in _dep.columns:
+        _dep['_value'] += _dep['avg_monthly_spend'].fillna(0) * 12
+    if 'CollectedFees365' in _dep.columns:
+        _dep['_value'] += _dep['CollectedFees365'].fillna(0)
+
+    _tiers = ['No Response', 'NU 1-4', 'NU 5+', 'TH-10', 'TH-15', 'TH-20', 'TH-25']
+    _tiers = [t for t in _tiers if t in _dep['best_tier'].values]
+
+    if len(_tiers) < 2:
+        print("    Not enough tiers for comparison.")
+    else:
+        _colors = [RESPONSE_TIER_PALETTE.get(t, GEN_COLORS['muted']) for t in _tiers]
+        _means = []
+        _medians = []
+        _counts = []
+
+        for tier in _tiers:
+            _sub = _dep[_dep['best_tier'] == tier]
+            _means.append(_sub['_value'].mean() if len(_sub) > 0 else 0)
+            _medians.append(_sub['_value'].median() if len(_sub) > 0 else 0)
+            _counts.append(len(_sub))
+
+        fig, ax = plt.subplots(figsize=(14, 7))
+
+        bars = ax.barh(range(len(_tiers)), _means,
+                       color=_colors, edgecolor='white', linewidth=1.5, height=0.5)
+
+        _max_v = max(_means) if _means else 1
+        for j, (bar, mean_v, med_v, count) in enumerate(zip(bars, _means, _medians, _counts)):
+            ax.text(bar.get_width() + _max_v * 0.02, bar.get_y() + bar.get_height() / 2,
+                    f"Mean: {gen_fmt_dollar(mean_v, None)}  |  "
+                    f"Median: {gen_fmt_dollar(med_v, None)}  |  ({count:,})",
+                    ha='left', va='center', fontsize=11, fontweight='bold',
+                    color=GEN_COLORS['dark_text'])
+
+        ax.set_yticks(range(len(_tiers)))
+        ax.set_yticklabels(_tiers, fontsize=14, fontweight='bold')
+        ax.set_xlabel("Annual Member Value", fontsize=16, fontweight='bold', labelpad=10)
+        ax.xaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+        ax.set_xlim(0, _max_v * 1.7)
+
+        gen_clean_axes(ax)
+        ax.xaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+
+        ax.set_title("Member Value Scales with Threshold Tier",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                "Each step up the ladder = measurable increase in total member value",
+                transform=ax.transAxes, fontsize=14,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()

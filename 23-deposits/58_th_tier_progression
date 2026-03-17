@@ -1,0 +1,102 @@
+# ===========================================================================
+# TH TIER PROGRESSION: First vs Latest TH Tier (Conference Edition)
+# ===========================================================================
+# Stacked horizontal bar showing for accounts that reached any TH tier:
+# what was their FIRST TH tier vs their LATEST TH tier.
+#
+# Depends on: response_journey_df (23/02), RESPONSE_TIER_PALETTE, GEN_COLORS
+
+if 'response_journey_df' not in dir() or len(response_journey_df) == 0:
+    print("    No response journey data. Run cell 02 first.")
+elif 'journey_str' not in response_journey_df.columns:
+    print("    No journey_str column in response_journey_df.")
+else:
+    _th_tiers = ['TH-10', 'TH-15', 'TH-20', 'TH-25']
+
+    # Filter to accounts whose best_tier_rank >= 4 (i.e., reached at least TH-10)
+    _th_journeys = response_journey_df[
+        response_journey_df['best_tier_rank'] >= 4
+    ].copy()
+
+    if len(_th_journeys) == 0:
+        print("    No accounts reached a TH tier.")
+    else:
+        # Parse journey_str to find first and last TH-* occurrence
+        _first_th = []
+        _latest_th = []
+        for _, row in _th_journeys.iterrows():
+            steps = [s.strip() for s in row['journey_str'].split('->')]
+            _first = None
+            _last = None
+            for step in steps:
+                if step.startswith('TH-'):
+                    if _first is None:
+                        _first = step
+                    _last = step
+            _first_th.append(_first if _first else 'TH-10')
+            _latest_th.append(_last if _last else 'TH-10')
+
+        _th_journeys = _th_journeys.copy()
+        _th_journeys['first_th'] = _first_th
+        _th_journeys['latest_th'] = _latest_th
+
+        # Count distributions
+        _first_counts = _th_journeys['first_th'].value_counts().reindex(_th_tiers, fill_value=0)
+        _latest_counts = _th_journeys['latest_th'].value_counts().reindex(_th_tiers, fill_value=0)
+
+        fig, ax = plt.subplots(figsize=(14, 7))
+
+        _y = np.arange(len(_th_tiers))
+        _bar_h = 0.35
+
+        bars_first = ax.barh(_y + _bar_h / 2, _first_counts.values,
+                             height=_bar_h, label='Started at this tier',
+                             color=[RESPONSE_TIER_PALETTE.get(t, GEN_COLORS['muted'])
+                                    for t in _th_tiers],
+                             edgecolor='white', linewidth=1.5, alpha=0.7)
+
+        bars_latest = ax.barh(_y - _bar_h / 2, _latest_counts.values,
+                              height=_bar_h, label='Currently at this tier',
+                              color=[RESPONSE_TIER_PALETTE.get(t, GEN_COLORS['muted'])
+                                     for t in _th_tiers],
+                              edgecolor='white', linewidth=1.5, alpha=1.0)
+
+        # Annotate bars
+        for bar in bars_first:
+            w = bar.get_width()
+            if w > 0:
+                ax.text(w + max(_first_counts.max(), _latest_counts.max()) * 0.02,
+                        bar.get_y() + bar.get_height() / 2,
+                        f"{int(w):,}",
+                        ha='left', va='center', fontsize=12, fontweight='bold',
+                        color=GEN_COLORS['dark_text'])
+        for bar in bars_latest:
+            w = bar.get_width()
+            if w > 0:
+                ax.text(w + max(_first_counts.max(), _latest_counts.max()) * 0.02,
+                        bar.get_y() + bar.get_height() / 2,
+                        f"{int(w):,}",
+                        ha='left', va='center', fontsize=12, fontweight='bold',
+                        color=GEN_COLORS['dark_text'])
+
+        ax.set_yticks(_y)
+        ax.set_yticklabels(_th_tiers, fontsize=14, fontweight='bold')
+        ax.set_xlabel("Number of Accounts", fontsize=16, fontweight='bold', labelpad=10)
+
+        gen_clean_axes(ax)
+        ax.xaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+
+        ax.legend(fontsize=13, loc='lower right', frameon=True,
+                  facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+        ax.set_title("Threshold Tier Progression",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                "Do accounts climb TH-10 -> TH-15 -> TH-20 -> TH-25 over waves?",
+                transform=ax.transAxes, fontsize=14,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()

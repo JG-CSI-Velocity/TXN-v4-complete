@@ -1,0 +1,122 @@
+# ===========================================================================
+# DEPOSIT ACCELERATION: 33-Day Deposit Velocity by Response Group (Conf. Ed.)
+# ===========================================================================
+# Line chart: for each response group, plots DepAmt33 (33-day deposit amount
+# = recent deposit velocity) across the 3 snapshots. Matched cohort only.
+# Solid = mean, dashed = median.
+#
+# Depends on: deposit_long (23/01), RESPONSE_GROUP_* (23/02),
+#             SNAPSHOT_ORDER (23/01), GEN_COLORS
+
+_missing = []
+if 'deposit_long' not in dir() or len(deposit_long) == 0:
+    _missing.append('deposit_long')
+
+if _missing:
+    print(f"    Deposit acceleration skipped -- missing: {', '.join(_missing)}")
+else:
+    if 'DepAmt33' not in deposit_long.columns:
+        print("    DepAmt33 not in deposit_long columns. Skipping deposit acceleration.")
+    elif 'response_group' not in deposit_long.columns:
+        print("    response_group not in deposit_long. Run cell 02 first.")
+    elif 'in_matched_cohort' not in deposit_long.columns:
+        print("    in_matched_cohort not available. Run cell 01 first.")
+    else:
+        _matched = deposit_long[deposit_long['in_matched_cohort']].copy()
+
+        if len(_matched) == 0:
+            print("    No matched cohort accounts. Skipping.")
+        else:
+            # Get snapshot order from data
+            _snaps = [s for s in SNAPSHOT_ORDER if s in _matched['snapshot'].unique()]
+
+            if len(_snaps) < 2:
+                print("    Need at least 2 snapshots for trajectory. Skipping.")
+            else:
+                _groups = RESPONSE_GROUP_ORDER
+                _snap_labels = []
+                for s in _snaps:
+                    if 'SNAPSHOT_CONFIG' in dir() and s in SNAPSHOT_CONFIG:
+                        _snap_labels.append(SNAPSHOT_CONFIG[s]['label'])
+                    else:
+                        _snap_labels.append(s)
+
+                fig, ax = plt.subplots(figsize=(14, 7))
+
+                _x = np.arange(len(_snaps))
+
+                for grp in _groups:
+                    _grp_data = _matched[_matched['response_group'] == grp]
+                    if len(_grp_data) == 0:
+                        continue
+
+                    _color = RESPONSE_GROUP_PALETTE.get(grp, GEN_COLORS['muted'])
+
+                    _means = []
+                    _medians = []
+                    for snap in _snaps:
+                        _snap_data = _grp_data[_grp_data['snapshot'] == snap]
+                        _vals = _snap_data['DepAmt33'].dropna()
+                        _means.append(_vals.mean() if len(_vals) > 0 else np.nan)
+                        _medians.append(_vals.median() if len(_vals) > 0 else np.nan)
+
+                    # Solid line = mean
+                    ax.plot(_x, _means, color=_color, linewidth=2.5,
+                            marker='o', markersize=8, label=f"{grp} (mean)",
+                            zorder=3)
+
+                    # Dashed line = median
+                    ax.plot(_x, _medians, color=_color, linewidth=1.5,
+                            marker='s', markersize=6, linestyle='--',
+                            alpha=0.7, label=f"{grp} (median)", zorder=2)
+
+                    # Annotate final mean value
+                    if not np.isnan(_means[-1]):
+                        ax.text(_x[-1] + 0.08, _means[-1],
+                                gen_fmt_dollar(_means[-1], None),
+                                va='center', fontsize=10, fontweight='bold',
+                                color=_color)
+
+                ax.set_xticks(_x)
+                ax.set_xticklabels(_snap_labels, fontsize=14, fontweight='bold')
+                ax.set_ylabel("DepAmt33 (33-Day Deposit Amount)",
+                              fontsize=14, fontweight='bold', labelpad=10)
+                ax.yaxis.set_major_formatter(
+                    mticker.FuncFormatter(gen_fmt_dollar)
+                )
+
+                gen_clean_axes(ax)
+                ax.yaxis.grid(True, color=GEN_COLORS['grid'],
+                              linewidth=0.5, alpha=0.7)
+                ax.set_axisbelow(True)
+
+                # Place legend outside or in best location
+                ax.legend(fontsize=10, loc='upper left', frameon=True,
+                          facecolor='white', edgecolor=GEN_COLORS['grid'],
+                          ncol=2)
+
+                ax.set_title("Deposit Acceleration by Response Group",
+                              fontsize=26, fontweight='bold',
+                              color=GEN_COLORS['dark_text'], pad=35, loc='left')
+                ax.text(0.0, 1.01,
+                        "Is recent deposit velocity (33d) increasing over time?  "
+                        "Matched cohort.",
+                        transform=ax.transAxes, fontsize=13,
+                        color=GEN_COLORS['muted'], style='italic')
+
+                plt.tight_layout()
+                plt.show()
+
+                # Summary: acceleration check
+                print(f"\n  Deposit acceleration (DepAmt33 matched cohort):")
+                for grp in _groups:
+                    _grp_data = _matched[_matched['response_group'] == grp]
+                    if len(_grp_data) == 0:
+                        continue
+                    _first = _grp_data[_grp_data['snapshot'] == _snaps[0]]['DepAmt33'].mean()
+                    _last = _grp_data[_grp_data['snapshot'] == _snaps[-1]]['DepAmt33'].mean()
+                    if pd.notna(_first) and pd.notna(_last) and _first > 0:
+                        _chg = (_last - _first) / _first * 100
+                        _arrow = 'accelerating' if _chg > 5 else 'decelerating' if _chg < -5 else 'flat'
+                        print(f"    {grp:<20s}: ${_first:,.0f} -> ${_last:,.0f} "
+                              f"({_chg:+.1f}% -- {_arrow})")

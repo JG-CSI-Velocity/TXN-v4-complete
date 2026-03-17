@@ -1,0 +1,168 @@
+# ===========================================================================
+# SWIPE CATEGORY MIGRATION: Cleveland Dot Plot by Response Group (Conf. Ed.)
+# ===========================================================================
+# For each of the 5 response groups, shows a dot for the group's average
+# SwipeCat12 rank and a dot for SwipeCat3 rank, connected by a line.
+# Right shift = recent engagement improving (3mo category > 12mo category).
+#
+# Depends on: rewards_df (00-setup/08), response_journey_df (23/02),
+#             SWIPE_ORDER (01/01), RESPONSE_GROUP_* (23/02), GEN_COLORS
+
+_missing = []
+if 'rewards_df' not in dir() or len(rewards_df) == 0:
+    _missing.append('rewards_df')
+if 'response_journey_df' not in dir() or len(response_journey_df) == 0:
+    _missing.append('response_journey_df')
+
+if _missing:
+    print(f"    Swipe category migration skipped -- missing: {', '.join(_missing)}")
+else:
+    _has_sc3 = 'SwipeCat3' in rewards_df.columns
+    _has_sc12 = 'SwipeCat12' in rewards_df.columns
+
+    if not _has_sc3 and not _has_sc12:
+        print("    No SwipeCat3/SwipeCat12 columns in rewards_df. Skipping.")
+    else:
+        # Build swipe rank mapping from SWIPE_ORDER if available,
+        # otherwise auto-discover unique values and rank alphabetically.
+        _all_cats = set()
+        if _has_sc3:
+            _all_cats.update(rewards_df['SwipeCat3'].dropna().astype(str).str.strip().unique())
+        if _has_sc12:
+            _all_cats.update(rewards_df['SwipeCat12'].dropna().astype(str).str.strip().unique())
+        _all_cats.discard('')
+        _all_cats.discard('nan')
+
+        if 'SWIPE_ORDER' in dir() and len(SWIPE_ORDER) > 0:
+            # Use predefined order (highest activity first)
+            _rank_order = [s for s in SWIPE_ORDER if s in _all_cats]
+            # Add any categories not in SWIPE_ORDER at the end
+            _extra = sorted(_all_cats - set(_rank_order))
+            _rank_order = _rank_order + _extra
+        else:
+            _rank_order = sorted(_all_cats)
+
+        # Rank: higher index = more active (reverse so "Very High" gets highest rank)
+        _rank_order_reversed = list(reversed(_rank_order))
+        _swipe_rank = {cat: i + 1 for i, cat in enumerate(_rank_order_reversed)}
+
+        # Identify the join column between rewards_df and response_journey_df
+        _acct_col_rw = 'Acct Number' if 'Acct Number' in rewards_df.columns else None
+        if _acct_col_rw is None:
+            for _c in rewards_df.columns:
+                if _c.strip().lower() in ('acct number', 'acctnumber', 'acct_number'):
+                    _acct_col_rw = _c
+                    break
+
+        if _acct_col_rw is None:
+            print("    No Acct Number column in rewards_df for join. Skipping.")
+        else:
+            # Build working dataframe with swipe ranks + response group
+            _work = rewards_df[[_acct_col_rw]].copy()
+            _work['acct_number'] = _work[_acct_col_rw].astype(str).str.strip()
+
+            if _has_sc3:
+                _work['sc3_label'] = rewards_df['SwipeCat3'].astype(str).str.strip()
+                _work['sc3_rank'] = _work['sc3_label'].map(_swipe_rank)
+            if _has_sc12:
+                _work['sc12_label'] = rewards_df['SwipeCat12'].astype(str).str.strip()
+                _work['sc12_rank'] = _work['sc12_label'].map(_swipe_rank)
+
+            # Merge response group
+            _rj_sub = response_journey_df[['acct_number', 'response_group']].copy()
+            _rj_sub['acct_number'] = _rj_sub['acct_number'].astype(str).str.strip()
+            _work = _work.merge(_rj_sub, on='acct_number', how='inner')
+
+            if len(_work) == 0:
+                print("    No accounts matched between rewards_df and response_journey_df.")
+            elif not (_has_sc3 and _has_sc12):
+                print("    Need both SwipeCat3 and SwipeCat12 for migration chart. Skipping.")
+            else:
+                # Compute group-level average ranks
+                _groups = RESPONSE_GROUP_ORDER
+                _group_stats = []
+                for grp in _groups:
+                    _sub = _work[_work['response_group'] == grp]
+                    if len(_sub) == 0:
+                        continue
+                    _group_stats.append({
+                        'group': grp,
+                        'avg_sc12': _sub['sc12_rank'].dropna().mean(),
+                        'avg_sc3': _sub['sc3_rank'].dropna().mean(),
+                        'n': len(_sub),
+                    })
+
+                _gdf = pd.DataFrame(_group_stats)
+
+                if len(_gdf) == 0:
+                    print("    No groups with swipe data. Skipping.")
+                else:
+                    fig, ax = plt.subplots(figsize=(14, 7))
+
+                    _y_pos = np.arange(len(_gdf))
+
+                    for j, row in _gdf.iterrows():
+                        _color = RESPONSE_GROUP_PALETTE.get(
+                            row['group'], GEN_COLORS['muted']
+                        )
+                        _x12 = row['avg_sc12']
+                        _x3 = row['avg_sc3']
+
+                        # Connecting line
+                        ax.plot([_x12, _x3], [j, j],
+                                color=_color, linewidth=2.5, alpha=0.6, zorder=2)
+
+                        # 12-month dot (open circle)
+                        ax.scatter(_x12, j, s=180, color='white',
+                                   edgecolors=_color, linewidths=2.5, zorder=3)
+
+                        # 3-month dot (filled circle)
+                        ax.scatter(_x3, j, s=180, color=_color,
+                                   edgecolors=_color, linewidths=1, zorder=4)
+
+                        # Arrow indicator if migration direction is clear
+                        _shift = _x3 - _x12
+                        _sign = '+' if _shift > 0 else ''
+                        ax.text(max(_x12, _x3) + 0.15, j,
+                                f"{_sign}{_shift:.2f}  (n={int(row['n']):,})",
+                                va='center', fontsize=11, fontweight='bold',
+                                color=GEN_COLORS['success'] if _shift > 0
+                                else GEN_COLORS['accent'] if _shift < 0
+                                else GEN_COLORS['muted'])
+
+                    ax.set_yticks(_y_pos)
+                    ax.set_yticklabels(_gdf['group'], fontsize=14, fontweight='bold')
+
+                    # X-axis: swipe category labels
+                    _tick_vals = sorted(_swipe_rank.values())
+                    _tick_labels = {v: k for k, v in _swipe_rank.items()}
+                    ax.set_xticks(_tick_vals)
+                    ax.set_xticklabels(
+                        [_tick_labels.get(v, '') for v in _tick_vals],
+                        fontsize=11, rotation=30, ha='right'
+                    )
+
+                    # Legend for dot types
+                    ax.scatter([], [], s=120, color='white',
+                               edgecolors=GEN_COLORS['dark_text'],
+                               linewidths=2, label='12-month avg')
+                    ax.scatter([], [], s=120, color=GEN_COLORS['dark_text'],
+                               label='3-month avg')
+                    ax.legend(fontsize=13, loc='lower right', frameon=True,
+                              facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+                    gen_clean_axes(ax)
+                    ax.xaxis.grid(True, color=GEN_COLORS['grid'],
+                                  linewidth=0.5, alpha=0.7)
+                    ax.set_axisbelow(True)
+
+                    ax.set_title("Swipe Category Migration by Response Group",
+                                  fontsize=26, fontweight='bold',
+                                  color=GEN_COLORS['dark_text'], pad=35, loc='left')
+                    ax.text(0.0, 1.01,
+                            "Right shift = recent engagement improving (3mo vs 12mo)",
+                            transform=ax.transAxes, fontsize=13,
+                            color=GEN_COLORS['muted'], style='italic')
+
+                    plt.tight_layout()
+                    plt.show()

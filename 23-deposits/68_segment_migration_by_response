@@ -1,0 +1,155 @@
+# ===========================================================================
+# SEGMENT MIGRATION BY RESPONSE GROUP: Upgrade/Degrade Rates (Conf. Edition)
+# ===========================================================================
+# Grouped bar: for each of the 5 response groups, shows % upgraded and
+# % degraded from bimonthly segmentation. Uses seg_evo_df from section 19.
+#
+# Depends on: seg_evo_df (19/01), response_journey_df (23/02),
+#             RESPONSE_GROUP_* (23/02), GEN_COLORS
+
+_missing = []
+if 'seg_evo_df' not in dir() or len(seg_evo_df) == 0:
+    _missing.append('seg_evo_df')
+if 'response_journey_df' not in dir() or len(response_journey_df) == 0:
+    _missing.append('response_journey_df')
+
+if _missing:
+    print(f"    Segment migration by response skipped -- missing: {', '.join(_missing)}")
+else:
+    # seg_evo_df has 'direction' column (upgraded/degraded/stable/unknown)
+    # and 'Acct Number' as the ID column.
+    _seg_id_col = None
+    for _c in ['Acct Number', 'acct_number', 'HASHED_ACCOUNT']:
+        if _c in seg_evo_df.columns:
+            _seg_id_col = _c
+            break
+
+    if _seg_id_col is None:
+        print("    No account ID column in seg_evo_df. Skipping.")
+    elif 'direction' not in seg_evo_df.columns:
+        print("    No 'direction' column in seg_evo_df. Skipping.")
+    else:
+        # Merge response group onto seg_evo_df
+        _seg_work = seg_evo_df[[_seg_id_col, 'direction']].copy()
+        _seg_work['_merge_key'] = _seg_work[_seg_id_col].astype(str).str.strip()
+
+        _rj_sub = response_journey_df[['acct_number', 'response_group']].copy()
+        _rj_sub['_merge_key'] = _rj_sub['acct_number'].astype(str).str.strip()
+
+        _seg_work = _seg_work.merge(
+            _rj_sub[['_merge_key', 'response_group']],
+            on='_merge_key', how='inner'
+        )
+
+        if len(_seg_work) == 0:
+            print("    No accounts matched between seg_evo_df and response_journey_df.")
+        else:
+            # Compute upgrade/degrade % per response group
+            _groups = RESPONSE_GROUP_ORDER
+            _upgrade_pcts = []
+            _degrade_pcts = []
+            _counts = []
+
+            for grp in _groups:
+                _sub = _seg_work[_seg_work['response_group'] == grp]
+                _n = len(_sub)
+                if _n == 0:
+                    _upgrade_pcts.append(0)
+                    _degrade_pcts.append(0)
+                    _counts.append(0)
+                    continue
+
+                _n_up = (_sub['direction'] == 'upgraded').sum()
+                _n_dn = (_sub['direction'] == 'degraded').sum()
+                _upgrade_pcts.append(_n_up / _n * 100)
+                _degrade_pcts.append(_n_dn / _n * 100)
+                _counts.append(_n)
+
+            # Filter to groups with data
+            _has_data = [i for i, n in enumerate(_counts) if n > 0]
+            if len(_has_data) == 0:
+                print("    No groups with segment migration data. Skipping.")
+            else:
+                _plot_groups = [_groups[i] for i in _has_data]
+                _plot_up = [_upgrade_pcts[i] for i in _has_data]
+                _plot_dn = [_degrade_pcts[i] for i in _has_data]
+                _plot_n = [_counts[i] for i in _has_data]
+
+                fig, ax = plt.subplots(figsize=(14, 7))
+
+                _x = np.arange(len(_plot_groups))
+                _w = 0.35
+
+                bars_up = ax.bar(
+                    _x - _w / 2, _plot_up, _w,
+                    color=GEN_COLORS['success'], edgecolor='white',
+                    linewidth=1.5, label='Upgraded', zorder=3
+                )
+                bars_dn = ax.bar(
+                    _x + _w / 2, _plot_dn, _w,
+                    color=GEN_COLORS['accent'], edgecolor='white',
+                    linewidth=1.5, label='Degraded', zorder=3
+                )
+
+                # Annotate bars
+                _max_pct = max(max(_plot_up), max(_plot_dn)) if _plot_up else 1
+                for j, (up, dn, n) in enumerate(zip(_plot_up, _plot_dn, _plot_n)):
+                    ax.text(j - _w / 2, up + _max_pct * 0.02,
+                            f"{up:.1f}%", ha='center', va='bottom',
+                            fontsize=12, fontweight='bold',
+                            color=GEN_COLORS['success'])
+                    ax.text(j + _w / 2, dn + _max_pct * 0.02,
+                            f"{dn:.1f}%", ha='center', va='bottom',
+                            fontsize=12, fontweight='bold',
+                            color=GEN_COLORS['accent'])
+                    ax.text(j, -_max_pct * 0.06,
+                            f"n={n:,}", ha='center', va='top',
+                            fontsize=10, color=GEN_COLORS['muted'])
+
+                ax.set_xticks(_x)
+                ax.set_xticklabels(_plot_groups, fontsize=14, fontweight='bold')
+                ax.set_ylabel("% of Group", fontsize=16, fontweight='bold',
+                              labelpad=10)
+                ax.yaxis.set_major_formatter(
+                    mticker.FuncFormatter(gen_fmt_pct)
+                )
+
+                gen_clean_axes(ax)
+                ax.yaxis.grid(True, color=GEN_COLORS['grid'],
+                              linewidth=0.5, alpha=0.7)
+                ax.set_axisbelow(True)
+
+                # Net migration annotation
+                _net_vals = [u - d for u, d in zip(_plot_up, _plot_dn)]
+                for j, net in enumerate(_net_vals):
+                    _sign = '+' if net >= 0 else ''
+                    _clr = GEN_COLORS['success'] if net >= 0 else GEN_COLORS['accent']
+                    ax.text(j, max(_plot_up[j], _plot_dn[j]) + _max_pct * 0.08,
+                            f"Net: {_sign}{net:.1f}pp",
+                            ha='center', va='bottom', fontsize=11,
+                            fontweight='bold', color=_clr)
+
+                ax.legend(fontsize=14, loc='upper right', frameon=True,
+                          facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+                ax.set_title("Segment Migration by Response Group",
+                              fontsize=26, fontweight='bold',
+                              color=GEN_COLORS['dark_text'], pad=35, loc='left')
+                ax.text(0.0, 1.01,
+                        "Do ARS responders upgrade their institutional segment?",
+                        transform=ax.transAxes, fontsize=13,
+                        color=GEN_COLORS['muted'], style='italic')
+
+                plt.tight_layout()
+                plt.show()
+
+                # Summary
+                print(f"\n  Segment migration by response group "
+                      f"({len(_seg_work):,} matched accounts):")
+                for grp, up, dn, n in zip(
+                    _plot_groups, _plot_up, _plot_dn, _plot_n
+                ):
+                    _net = up - dn
+                    _sign = '+' if _net >= 0 else ''
+                    print(f"    {grp:<20s}: {up:.1f}% upgraded, {dn:.1f}% degraded "
+                          f"(net {_sign}{_net:.1f}pp, n={n:,})")

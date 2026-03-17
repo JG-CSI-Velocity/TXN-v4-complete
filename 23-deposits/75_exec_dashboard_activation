@@ -1,0 +1,108 @@
+# ===========================================================================
+# EXECUTIVE DASHBOARD: Activation Proof (Conference Edition)
+# ===========================================================================
+# Single figure, 4-quadrant: response group value, DD predictor,
+# account age response, member value composite.
+#
+# Depends on: deposit_df (23/01), response_journey_df (23/02), GEN_COLORS
+
+if 'deposit_df' not in dir() or len(deposit_df) == 0 or 'response_group' not in deposit_df.columns:
+    print("    No deposit data with response groups. Run cells 01-02 first.")
+else:
+    fig = plt.figure(figsize=(20, 12))
+    gs = fig.add_gridspec(2, 2, hspace=0.4, wspace=0.3)
+    _DARK = GEN_COLORS['dark_text']
+    _groups = RESPONSE_GROUP_ORDER
+    _colors = [RESPONSE_GROUP_PALETTE.get(g, GEN_COLORS['muted']) for g in _groups]
+
+    # Q1: Response rate by group (what % of mailed responded)
+    ax1 = fig.add_subplot(gs[0, 0])
+    _mailed = deposit_df[deposit_df['response_group'] != 'Never Mailed']
+    if len(_mailed) > 0:
+        _success_n = _mailed['response_group'].isin(['Threshold', 'NU 5+']).sum()
+        _nu14_n = (_mailed['response_group'] == 'NU 1-4').sum()
+        _no_resp_n = (_mailed['response_group'] == 'No Response').sum()
+        _total_m = len(_mailed)
+
+        _labels = ['Success\n(NU 5+ & TH)', 'Near Use\n(NU 1-4)', 'No\nResponse']
+        _vals = [_success_n / _total_m * 100, _nu14_n / _total_m * 100, _no_resp_n / _total_m * 100]
+        _bar_colors = [GEN_COLORS['success'], GEN_COLORS['warning'], GEN_COLORS['muted']]
+
+        _bars = ax1.bar(range(3), _vals, color=_bar_colors, edgecolor='white', linewidth=1, width=0.6)
+        for bar, val in zip(_bars, _vals):
+            ax1.text(bar.get_x() + bar.get_width() / 2, val + 0.5,
+                     f"{val:.1f}%", ha='center', va='bottom', fontsize=14,
+                     fontweight='bold', color=_DARK)
+        ax1.set_xticks(range(3))
+        ax1.set_xticklabels(_labels, fontsize=11, fontweight='bold')
+    ax1.set_title("Mailed Account Outcomes", fontsize=20, fontweight='bold', color=_DARK, loc='left')
+    gen_clean_axes(ax1)
+    ax1.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_pct))
+    ax1.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax1.set_axisbelow(True)
+
+    # Q2: DD predictor
+    ax2 = fig.add_subplot(gs[0, 1])
+    if 'has_direct_deposit' in deposit_df.columns:
+        _dd = deposit_df[deposit_df['has_direct_deposit'].astype(str).str.lower().isin(['true','1','yes'])]
+        _no_dd = deposit_df[~deposit_df['has_direct_deposit'].astype(str).str.lower().isin(['true','1','yes'])]
+        _dd_rate = _dd['response_group'].isin(['Threshold', 'NU 5+']).mean() * 100 if len(_dd) > 0 else 0
+        _nodd_rate = _no_dd['response_group'].isin(['Threshold', 'NU 5+']).mean() * 100 if len(_no_dd) > 0 else 0
+
+        _bars2 = ax2.bar(range(2), [_dd_rate, _nodd_rate],
+                         color=[GEN_COLORS['success'], GEN_COLORS['muted']],
+                         edgecolor='white', linewidth=1, width=0.5)
+        for bar, val in zip(_bars2, [_dd_rate, _nodd_rate]):
+            ax2.text(bar.get_x() + bar.get_width() / 2, val + 0.3,
+                     f"{val:.1f}%", ha='center', va='bottom', fontsize=14,
+                     fontweight='bold', color=_DARK)
+        ax2.set_xticks(range(2))
+        ax2.set_xticklabels(['Has DD', 'No DD'], fontsize=14, fontweight='bold')
+    ax2.set_title("DD as Predictor", fontsize=20, fontweight='bold', color=_DARK, loc='left')
+    gen_clean_axes(ax2)
+    ax2.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_pct))
+    ax2.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax2.set_axisbelow(True)
+
+    # Q3: Balance by group
+    ax3 = fig.add_subplot(gs[1, 0])
+    _bals = [deposit_df[deposit_df['response_group'] == g]['balance'].mean() for g in _groups]
+    ax3.bar(range(len(_groups)), _bals, color=_colors, edgecolor='white', linewidth=1, width=0.6)
+    for i, v in enumerate(_bals):
+        ax3.text(i, v * 1.02, gen_fmt_dollar(v, None), ha='center', va='bottom',
+                 fontsize=11, fontweight='bold', color=_DARK)
+    ax3.set_xticks(range(len(_groups)))
+    ax3.set_xticklabels([g.replace(' ', '\n') for g in _groups], fontsize=10, fontweight='bold')
+    ax3.set_title("Avg Balance by Group", fontsize=20, fontweight='bold', color=_DARK, loc='left')
+    gen_clean_axes(ax3)
+    ax3.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+    ax3.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax3.set_axisbelow(True)
+
+    # Q4: Total member value
+    ax4 = fig.add_subplot(gs[1, 1])
+    _dep = deposit_df.copy()
+    _dep['_val'] = _dep.get('depAmt365', pd.Series(0, index=_dep.index)).fillna(0)
+    if 'CollectedFees365' in _dep.columns:
+        _dep['_val'] += _dep['CollectedFees365'].fillna(0)
+    if 'total_spend' in _dep.columns:
+        _dep['_val'] += _dep['total_spend'].fillna(0)
+
+    _vals4 = [_dep[_dep['response_group'] == g]['_val'].mean() for g in _groups]
+    ax4.bar(range(len(_groups)), _vals4, color=_colors, edgecolor='white', linewidth=1, width=0.6)
+    for i, v in enumerate(_vals4):
+        ax4.text(i, v * 1.02, gen_fmt_dollar(v, None), ha='center', va='bottom',
+                 fontsize=11, fontweight='bold', color=_DARK)
+    ax4.set_xticks(range(len(_groups)))
+    ax4.set_xticklabels([g.replace(' ', '\n') for g in _groups], fontsize=10, fontweight='bold')
+    ax4.set_title("Total Member Value", fontsize=20, fontweight='bold', color=_DARK, loc='left')
+    gen_clean_axes(ax4)
+    ax4.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+    ax4.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax4.set_axisbelow(True)
+
+    fig.suptitle("ARS Activation: The Value Proof",
+                 fontsize=28, fontweight='bold', color=_DARK, y=1.02)
+
+    plt.tight_layout()
+    plt.show()

@@ -1,0 +1,78 @@
+# ===========================================================================
+# TOTAL MEMBER VALUE: Composite Score by Response Group (Conference Edition)
+# ===========================================================================
+# Horizontal bar: composite member value score combining deposits, spend,
+# and fee revenue by response group. The ultimate ROI metric.
+#
+# Composite = depAmt365 + total_spend (if available) + CollectedFees365
+# Represents total annual economic activity per account.
+#
+# Depends on: deposit_df (23/01), GEN_COLORS, RESPONSE_GROUP_*
+
+if 'deposit_df' not in dir() or len(deposit_df) == 0 or 'response_group' not in deposit_df.columns:
+    print("    No deposit data with response groups. Run cells 01-02 first.")
+else:
+    # Build composite value
+    _dep = deposit_df.copy()
+    _dep['_value'] = 0
+
+    if 'depAmt365' in _dep.columns:
+        _dep['_value'] += _dep['depAmt365'].fillna(0)
+    if 'total_spend' in _dep.columns:
+        _dep['_value'] += _dep['total_spend'].fillna(0)
+    elif 'avg_monthly_spend' in _dep.columns:
+        _dep['_value'] += _dep['avg_monthly_spend'].fillna(0) * 12
+    if 'CollectedFees365' in _dep.columns:
+        _dep['_value'] += _dep['CollectedFees365'].fillna(0)
+
+    _groups = RESPONSE_GROUP_ORDER
+    _colors = [RESPONSE_GROUP_PALETTE.get(g, GEN_COLORS['muted']) for g in _groups]
+
+    _means = []
+    _medians = []
+    _counts = []
+    for grp in _groups:
+        _sub = _dep[_dep['response_group'] == grp]
+        _means.append(_sub['_value'].mean() if len(_sub) > 0 else 0)
+        _medians.append(_sub['_value'].median() if len(_sub) > 0 else 0)
+        _counts.append(len(_sub))
+
+    fig, ax = plt.subplots(figsize=(14, 7))
+
+    bars = ax.barh(range(len(_groups)), _means,
+                   color=_colors, edgecolor='white', linewidth=1.5, height=0.5)
+
+    _max_v = max(_means) if _means else 1
+    for j, (bar, mean_v, med_v, count) in enumerate(zip(bars, _means, _medians, _counts)):
+        ax.text(bar.get_width() + _max_v * 0.02, bar.get_y() + bar.get_height() / 2,
+                f"Mean: {gen_fmt_dollar(mean_v, None)}  |  "
+                f"Median: {gen_fmt_dollar(med_v, None)}  |  ({count:,})",
+                ha='left', va='center', fontsize=12, fontweight='bold',
+                color=GEN_COLORS['dark_text'])
+
+    ax.set_yticks(range(len(_groups)))
+    ax.set_yticklabels(_groups, fontsize=14, fontweight='bold')
+    ax.set_xlabel("Annual Member Value (Deposits + Spend + Fees)", fontsize=14,
+                   fontweight='bold', labelpad=10)
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+    ax.set_xlim(0, _max_v * 1.7)
+
+    gen_clean_axes(ax)
+    ax.xaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax.set_axisbelow(True)
+
+    _resp_val = np.mean([m for m, g in zip(_means, _groups) if g in ('Threshold', 'NU 5+')])
+    _nonresp_val = np.mean([m for m, g in zip(_means, _groups) if g in ('No Response', 'NU 1-4')])
+    _mult = _resp_val / _nonresp_val if _nonresp_val > 0 else 0
+
+    ax.set_title("Total Annual Member Value by Response Group",
+                  fontsize=26, fontweight='bold',
+                  color=GEN_COLORS['dark_text'], pad=35, loc='left')
+    ax.text(0.0, 1.02,
+            f"Deposits + Card Spend + Fee Revenue  |  "
+            f"Responders = {_mult:.1f}x non-responder value",
+            transform=ax.transAxes, fontsize=14,
+            color=GEN_COLORS['muted'], style='italic')
+
+    plt.tight_layout()
+    plt.show()
