@@ -96,28 +96,73 @@ else:
     plt.show()
 
     # ---------------------------------------------------------------
-    # Print: per-mailer summary table
+    # Styled table: per-mailer segment distribution
     # ---------------------------------------------------------------
-    print(f"\n  Per-mailer segment distribution:")
-    _header = f"  {'Mailer':<8s} {'Total':>8s}"
-    for seg in SEGMENT_ORDER:
-        _header += f"  {seg:>8s}"
-    print(_header)
-    print(f"  {'-' * len(_header)}")
+    from IPython.display import display
 
+    _table_rows = []
     for _, row in _mailer_df.iterrows():
-        _line = f"  {row['mailer']:<8s} {int(row['total_mailed']):>8,}"
+        _trow = {'Mailer': row['mailer'], 'Mailed': int(row['total_mailed'])}
         for seg in SEGMENT_ORDER:
             _n = int(row[seg])
             _pct = row[f'{seg}_pct']
-            _line += f"  {_n:>5,} ({_pct:>4.1f}%)"
-        print(_line.replace('(', '').replace(')', '').replace('%', '%'))
+            _trow[seg] = f"{_n:,}  ({_pct:.1f}%)"
+        _table_rows.append(_trow)
 
-    # Aggregate
-    _total_all = _mailer_df['total_mailed'].sum()
-    print(f"\n  Aggregate across all {len(_mailers)} mailers: {_total_all:,} account-mailer rows")
+    # Aggregate row
+    _total_all = int(_mailer_df['total_mailed'].sum())
+    _agg_row = {'Mailer': 'ALL MAILERS', 'Mailed': _total_all}
     for seg in SEGMENT_ORDER:
-        _seg_total = _mailer_df[seg].sum()
+        _seg_total = int(_mailer_df[seg].sum())
         _seg_pct = _seg_total / _total_all * 100 if _total_all > 0 else 0
+        _agg_row[seg] = f"{_seg_total:,}  ({_seg_pct:.1f}%)"
+    _table_rows.append(_agg_row)
+
+    _table_df = pd.DataFrame(_table_rows)
+    _display_cols = ['Mailer', 'Mailed'] + list(SEGMENT_ORDER)
+    _table_display = _table_df[_display_cols]
+
+    _last_idx = len(_table_display) - 1
+
+    def _bold_agg(row):
+        if row.name == _last_idx:
+            return ['font-weight: bold; border-top: 2px solid #1B2A4A'] * len(row)
+        return [''] * len(row)
+
+    _styled_dist = (
+        _table_display.style
+        .hide(axis='index')
+        .format({'Mailed': '{:,}'})
+        .apply(_bold_agg, axis=1)
+        .set_properties(**{
+            'font-size': '13px', 'text-align': 'center',
+            'border': '1px solid #E9ECEF', 'padding': '8px 12px',
+        })
+        .set_properties(subset=['Mailer'], **{
+            'font-weight': 'bold', 'text-align': 'left',
+            'color': GEN_COLORS['primary'],
+        })
+        .set_table_styles([
+            {'selector': 'th', 'props': [
+                ('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '14px'),
+                ('font-weight', 'bold'), ('text-align', 'center'),
+                ('padding', '10px 12px'),
+            ]},
+            {'selector': 'caption', 'props': [
+                ('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']),
+                ('text-align', 'left'), ('padding-bottom', '12px'),
+            ]},
+        ])
+        .set_caption("Segment Distribution by Mailer")
+    )
+    display(_styled_dist)
+
+    # Unique account callout
+    _unique_total = _cohort['acct_number'].nunique()
+    print(f"\n  {_unique_total:,} unique accounts across {len(_mailers)} mailers "
+          f"({_total_all:,} total mailings)")
+    for seg in SEGMENT_ORDER:
         _unique = _cohort[_cohort['segment'] == seg]['acct_number'].nunique()
-        print(f"    {seg:<8s}: {_seg_total:>8,} mailings ({_seg_pct:.1f}%), {_unique:,} unique accounts")
+        print(f"    {seg:<8s}: {_unique:,} unique accounts")

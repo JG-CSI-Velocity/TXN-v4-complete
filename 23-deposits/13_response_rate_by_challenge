@@ -1,71 +1,186 @@
 # ===========================================================================
-# RESPONSE RATE BY CHALLENGE: Hit Rate Per Segment Level (Conference Ed.)
+# RESPONSE RATE BY SEGMENT x MAILER (Conference Edition)
 # ===========================================================================
-# Vertical bar chart showing % of accounts that Hit for each segment level.
-# Annotated with response rate and account count.
+# Grouped bar chart + styled table showing response rates broken down
+# by segment for each mailer. Reveals whether response patterns are
+# consistent or evolving across mailings.
 #
 # Depends on: wave_cohort_df (23/11), SEGMENT_ORDER (23/11), GEN_COLORS
 
 if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
-    print("    No segment cohort data. Run cell 11 first.")
+    print("    No cohort data. Run cell 11 first.")
 else:
-    _rates = []
-    for ch in SEGMENT_ORDER:
-        _sub = wave_cohort_df[wave_cohort_df['segment'] == ch]
-        _n = len(_sub)
-        _hits = (_sub['outcome'] == 'Responder').sum()
-        _rate = _hits / _n * 100 if _n > 0 else 0
-        _rates.append({'segment': ch, 'n': _n, 'hits': _hits, 'rate': _rate})
+    from IPython.display import display
 
-    _rates_df = pd.DataFrame(_rates)
-    _rates_df = _rates_df[_rates_df['n'] > 0]
+    _cohort = wave_cohort_df.rename(columns={'wave': 'mailer'})
 
-    if len(_rates_df) == 0:
-        print("    No segment data with accounts.")
-    else:
-        fig, ax = plt.subplots(figsize=(14, 7))
+    _seg_colors = {
+        'NU': GEN_COLORS['info'],
+        'TH-10': '#2EC4B6',
+        'TH-15': '#20A39E',
+        'TH-20': '#1B8A7A',
+        'TH-25': GEN_COLORS['primary'],
+    }
 
-        _x = np.arange(len(_rates_df))
-        bars = ax.bar(_x, _rates_df['rate'],
-                      color=GEN_COLORS['primary'], edgecolor='white',
-                      linewidth=1.5, width=0.5, zorder=3)
+    _mailers = sorted(_cohort['mailer'].unique(),
+                       key=lambda m: pd.to_datetime(m, format='%b%y'))
 
-        for bar, (_, row) in zip(bars, _rates_df.iterrows()):
-            ax.text(bar.get_x() + bar.get_width() / 2,
-                    bar.get_height() + 0.8,
-                    f"{row['rate']:.1f}%",
-                    ha='center', va='bottom', fontsize=15, fontweight='bold',
-                    color=GEN_COLORS['dark_text'])
-            ax.text(bar.get_x() + bar.get_width() / 2,
-                    bar.get_height() * 0.5,
-                    f"n={row['n']:,}",
-                    ha='center', va='center', fontsize=11,
-                    color='white', fontweight='bold')
+    # -----------------------------------------------------------------
+    # Build response rate matrix: mailer x segment
+    # -----------------------------------------------------------------
+    _rate_rows = []
+    for mailer in _mailers:
+        _mdf = _cohort[_cohort['mailer'] == mailer]
+        _total_n = len(_mdf)
+        _total_hits = (_mdf['outcome'] == 'Responder').sum()
+        _row = {'Mailer': mailer, 'Mailed': _total_n}
+        for seg in SEGMENT_ORDER:
+            _seg_df = _mdf[_mdf['segment'] == seg]
+            _n = len(_seg_df)
+            _hits = (_seg_df['outcome'] == 'Responder').sum()
+            _row[seg] = _hits / _n * 100 if _n > 0 else np.nan
+        _row['Overall'] = _total_hits / _total_n * 100 if _total_n > 0 else 0
+        _rate_rows.append(_row)
 
-        ax.set_xticks(_x)
-        ax.set_xticklabels(_rates_df['segment'], fontsize=14, fontweight='bold')
-        ax.set_ylabel("Response Rate (%)", fontsize=16, fontweight='bold', labelpad=10)
-        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_pct))
+    # Aggregate row
+    _agg = {'Mailer': 'ALL MAILERS', 'Mailed': len(_cohort)}
+    _total_hits_all = (_cohort['outcome'] == 'Responder').sum()
+    for seg in SEGMENT_ORDER:
+        _seg_all = _cohort[_cohort['segment'] == seg]
+        _n = len(_seg_all)
+        _hits = (_seg_all['outcome'] == 'Responder').sum()
+        _agg[seg] = _hits / _n * 100 if _n > 0 else np.nan
+    _agg['Overall'] = _total_hits_all / len(_cohort) * 100 if len(_cohort) > 0 else 0
+    _rate_rows.append(_agg)
 
-        gen_clean_axes(ax)
-        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
-        ax.set_axisbelow(True)
+    _rates_df = pd.DataFrame(_rate_rows)
 
-        _ylim = ax.get_ylim()
-        ax.set_ylim(0, _ylim[1] * 1.15)
+    # -----------------------------------------------------------------
+    # Chart: Grouped bar -- response rate by segment per mailer
+    # -----------------------------------------------------------------
+    _chart_df = _rates_df[_rates_df['Mailer'] != 'ALL MAILERS']
+    fig, ax = plt.subplots(figsize=(16, 8))
 
-        ax.set_title("Response Rate by Segment Level",
-                      fontsize=26, fontweight='bold',
-                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
-        ax.text(0.0, 1.02,
-                "Which segments are hardest to hit?",
-                transform=ax.transAxes, fontsize=14,
-                color=GEN_COLORS['muted'], style='italic')
+    _n_mailers = len(_mailers)
+    _n_segs = len(SEGMENT_ORDER)
+    _bar_width = 0.7 / _n_segs
+    _x = np.arange(_n_mailers)
 
-        plt.tight_layout()
-        plt.show()
+    for i, seg in enumerate(SEGMENT_ORDER):
+        _vals = _chart_df[seg].values
+        _offset = (i - _n_segs / 2 + 0.5) * _bar_width
+        bars = ax.bar(_x + _offset, _vals,
+                      width=_bar_width * 0.9,
+                      color=_seg_colors.get(seg, GEN_COLORS['muted']),
+                      edgecolor='white', linewidth=0.5,
+                      label=seg, zorder=3)
 
-        print(f"\n  Response rates by segment:")
-        for _, row in _rates_df.iterrows():
-            print(f"    {row['segment']:<8s}: {row['rate']:>5.1f}% "
-                  f"({row['hits']:,} hits / {row['n']:,} mailed)")
+        for bar, val in zip(bars, _vals):
+            if not np.isnan(val):
+                ax.text(bar.get_x() + bar.get_width() / 2,
+                        bar.get_height() + 0.5,
+                        f"{val:.0f}%",
+                        ha='center', va='bottom', fontsize=9, fontweight='bold',
+                        color=GEN_COLORS['dark_text'])
+
+    ax.set_xticks(_x)
+    ax.set_xticklabels(_mailers, fontsize=12, fontweight='bold',
+                        rotation=45, ha='right')
+    ax.set_ylabel("Response Rate (%)", fontsize=16, fontweight='bold',
+                   labelpad=10)
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_pct))
+
+    gen_clean_axes(ax)
+    ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax.set_axisbelow(True)
+
+    _ylim = ax.get_ylim()
+    ax.set_ylim(0, _ylim[1] * 1.15)
+
+    _handles, _labels = ax.get_legend_handles_labels()
+    ax.legend(_handles[::-1], _labels[::-1],
+              fontsize=11, loc='center left', bbox_to_anchor=(1.01, 0.5),
+              frameon=True, facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+    ax.set_title("Response Rate by Segment Across Mailers",
+                  fontsize=26, fontweight='bold',
+                  color=GEN_COLORS['dark_text'], pad=35, loc='left')
+    ax.text(0.0, 1.02,
+            "Lower thresholds are easier to hit -- is the pattern consistent mailer to mailer?",
+            transform=ax.transAxes, fontsize=13,
+            color=GEN_COLORS['muted'], style='italic')
+
+    plt.tight_layout()
+    plt.show()
+
+    # -----------------------------------------------------------------
+    # Styled table: mailer x segment response rates (gradient)
+    # -----------------------------------------------------------------
+    _rate_cols = [c for c in SEGMENT_ORDER if c in _rates_df.columns]
+    _display_cols = ['Mailer', 'Mailed'] + _rate_cols + ['Overall']
+    _display_df = _rates_df[_display_cols].copy()
+
+    _last_idx = len(_display_df) - 1
+
+    def _bold_agg_row(row):
+        if row.name == _last_idx:
+            return ['font-weight: bold; border-top: 2px solid #1B2A4A'] * len(row)
+        return [''] * len(row)
+
+    _styled = (
+        _display_df.style
+        .hide(axis='index')
+        .background_gradient(
+            cmap='RdYlGn', subset=_rate_cols + ['Overall'],
+            vmin=0, axis=None
+        )
+        .format({col: '{:.1f}%' for col in _rate_cols + ['Overall']}, na_rep='--')
+        .format({'Mailed': '{:,.0f}'})
+        .apply(_bold_agg_row, axis=1)
+        .set_properties(**{
+            'font-size': '14px', 'text-align': 'center',
+            'border': '1px solid #E9ECEF', 'padding': '10px 12px',
+        })
+        .set_properties(subset=['Mailer'], **{
+            'font-weight': 'bold', 'text-align': 'left',
+            'color': GEN_COLORS['primary'],
+        })
+        .set_table_styles([
+            {'selector': 'th', 'props': [
+                ('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '14px'),
+                ('font-weight', 'bold'), ('text-align', 'center'),
+                ('padding', '10px 12px'),
+            ]},
+            {'selector': 'caption', 'props': [
+                ('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']),
+                ('text-align', 'left'), ('padding-bottom', '12px'),
+            ]},
+        ])
+        .set_caption("Response Rate by Segment Across Mailers")
+    )
+    display(_styled)
+
+    # -----------------------------------------------------------------
+    # Narrative summary
+    # -----------------------------------------------------------------
+    _agg_data = _rates_df[_rates_df['Mailer'] == 'ALL MAILERS'].iloc[0]
+    _best_seg = max(SEGMENT_ORDER,
+                     key=lambda s: _agg_data[s] if pd.notna(_agg_data[s]) else 0)
+    _worst_seg = min(SEGMENT_ORDER,
+                      key=lambda s: _agg_data[s] if pd.notna(_agg_data[s]) else 999)
+
+    _overall_rates = _chart_df['Overall'].values
+    _trend = ('improving' if _overall_rates[-1] > _overall_rates[0] + 1
+              else 'declining' if _overall_rates[-1] < _overall_rates[0] - 1
+              else 'stable')
+
+    print(f"\n  Response rate summary:")
+    print(f"    Overall across all mailers: {_agg_data['Overall']:.1f}%")
+    print(f"    Highest-responding segment: {_best_seg} ({_agg_data[_best_seg]:.1f}%)")
+    print(f"    Lowest-responding segment:  {_worst_seg} ({_agg_data[_worst_seg]:.1f}%)")
+    print(f"    Mailer-over-mailer trend:   {_trend} "
+          f"({_overall_rates[0]:.1f}% -> {_overall_rates[-1]:.1f}%)")
+    print(f"    Total mailed: {int(_agg_data['Mailed']):,} "
+          f"across {len(_mailers)} mailers")
