@@ -355,10 +355,27 @@ else:
         # -------------------------------------------------------------------
         # 7. Join to rewards_df on HASHED_ACCOUNT for ARS campaign data
         # -------------------------------------------------------------------
+        # Flexible column name lookup for HASHED_ACCOUNT in rewards_df
+        _oddd_hash_col = None
+        if 'rewards_df' in dir():
+            for _candidate in rewards_df.columns:
+                _clean = _candidate.strip().upper().replace(' ', '_')
+                if _clean == 'HASHED_ACCOUNT':
+                    _oddd_hash_col = _candidate
+                    break
+            if _oddd_hash_col is None:
+                for _candidate in rewards_df.columns:
+                    if 'hash' in _candidate.lower():
+                        _oddd_hash_col = _candidate
+                        break
+
         _joined = False
-        if 'rewards_df' in dir() and 'HASHED_ACCOUNT' in rewards_df.columns:
-            _rewards_hash = rewards_df['HASHED_ACCOUNT'].astype(str).str.strip()
+        if 'rewards_df' in dir() and _oddd_hash_col is not None:
+            _rewards_hash = rewards_df[_oddd_hash_col].astype(str).str.strip()
             _deposit_hash = deposit_df['HASHED_ACCOUNT']
+
+            if _oddd_hash_col != 'HASHED_ACCOUNT':
+                print(f"    Note: using ODDD column '{_oddd_hash_col}' as HASHED_ACCOUNT")
 
             _match_count = _deposit_hash.isin(_rewards_hash).sum()
             _match_pct = _match_count / len(deposit_df) * 100 if len(deposit_df) > 0 else 0
@@ -392,7 +409,9 @@ else:
 
         if 'camp_acct' in dir() and len(camp_acct) > 0 and _joined:
             # Section 09 ran -- use its camp_acct (has detailed fields)
-            _acct_hash_lookup = rewards_df[['Acct Number', 'HASHED_ACCOUNT']].copy()
+            _acct_hash_lookup = rewards_df[['Acct Number', _oddd_hash_col]].copy()
+            if _oddd_hash_col != 'HASHED_ACCOUNT':
+                _acct_hash_lookup = _acct_hash_lookup.rename(columns={_oddd_hash_col: 'HASHED_ACCOUNT'})
             _acct_hash_lookup['Acct Number'] = (
                 _acct_hash_lookup['Acct Number'].astype(str).str.strip()
             )
@@ -429,7 +448,7 @@ else:
             _camp_merged = True
             print(f"\n  Campaign status merged from section 09 camp_acct.")
 
-        elif _joined and 'rewards_df' in dir() and 'HASHED_ACCOUNT' in rewards_df.columns:
+        elif _joined and 'rewards_df' in dir() and _oddd_hash_col is not None:
             # Section 09 did NOT run -- build camp_status directly from ODDD
             _rw_cols = [c.strip() for c in rewards_df.columns]
             _mail_cols_local = sorted([c for c in _rw_cols if c.endswith(' Mail')])
@@ -454,7 +473,7 @@ else:
                 _responded = rewards_df.apply(_any_success, axis=1)
 
                 _camp_lite = pd.DataFrame()
-                _camp_lite['HASHED_ACCOUNT'] = rewards_df['HASHED_ACCOUNT'].astype(str).str.strip()
+                _camp_lite['HASHED_ACCOUNT'] = rewards_df[_oddd_hash_col].astype(str).str.strip()
                 _camp_lite['camp_status'] = 'Never Mailed'
                 _camp_lite.loc[_was_mailed, 'camp_status'] = 'Non-Responder'
                 _camp_lite.loc[_responded, 'camp_status'] = 'Responder'

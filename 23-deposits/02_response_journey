@@ -108,8 +108,29 @@ if 'rewards_df' in dir() and len(mail_cols) > 0:
     _acct_col = 'Acct Number' if 'Acct Number' in rewards_df.columns else ' Acct Number'
     _acct_nums = rewards_df[_acct_col].astype(str).str.strip()
 
-    _hash_col_present = 'HASHED_ACCOUNT' in rewards_df.columns
-    _hashes = rewards_df['HASHED_ACCOUNT'].astype(str).str.strip() if _hash_col_present else None
+    # Find HASHED_ACCOUNT column flexibly (handles spaces, casing variants)
+    _hash_col_name = None
+    for _candidate in rewards_df.columns:
+        _clean = _candidate.strip().upper().replace(' ', '_')
+        if _clean == 'HASHED_ACCOUNT':
+            _hash_col_name = _candidate
+            break
+    if _hash_col_name is None:
+        # Also check for partial matches
+        for _candidate in rewards_df.columns:
+            if 'hash' in _candidate.lower():
+                _hash_col_name = _candidate
+                print(f"    Found hash column: '{_hash_col_name}'")
+                break
+
+    _hash_col_present = _hash_col_name is not None
+    _hashes = rewards_df[_hash_col_name].astype(str).str.strip() if _hash_col_present else None
+
+    if not _hash_col_present:
+        print("    WARNING: No HASHED_ACCOUNT column found in rewards_df.")
+        print(f"    Available columns with 'acct' or 'hash': "
+              f"{[c for c in rewards_df.columns if 'hash' in c.lower() or 'acct' in c.lower()]}")
+        print("    Response journey will build without hash -- deposit merge will not work.")
 
     # Sort mail/resp columns chronologically
     _wave_pairs = list(zip(mail_cols, resp_cols))

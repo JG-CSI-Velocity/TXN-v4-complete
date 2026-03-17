@@ -49,8 +49,19 @@ else:
         # ---------------------------------------------------------------
         # 1. Build per-account monthly spend/swipe matrix
         # ---------------------------------------------------------------
-        _hash_col = 'HASHED_ACCOUNT'
-        _has_hash = _hash_col in rewards_df.columns
+        # Flexible HASHED_ACCOUNT lookup
+        _hash_col = None
+        for _candidate in rewards_df.columns:
+            _clean = _candidate.strip().upper().replace(' ', '_')
+            if _clean == 'HASHED_ACCOUNT':
+                _hash_col = _candidate
+                break
+        if _hash_col is None:
+            for _candidate in rewards_df.columns:
+                if 'hash' in _candidate.lower():
+                    _hash_col = _candidate
+                    break
+        _has_hash = _hash_col is not None
 
         _month_labels = [c.replace(' Spend', '') for c in _spend_cols]
         _month_dates = [pd.to_datetime(m, format='%b%y') for m in _month_labels]
@@ -63,6 +74,15 @@ else:
                     _acct_groups[row['HASHED_ACCOUNT']] = row['response_group']
 
         _hashes = rewards_df[_hash_col].astype(str).str.strip() if _has_hash else None
+
+        if _has_hash:
+            print(f"  Using hash column: '{_hash_col}' ({_hashes.nunique():,} unique)")
+            print(f"  Response journey accounts with hash: "
+                  f"{response_journey_df['HASHED_ACCOUNT'].nunique() if 'HASHED_ACCOUNT' in response_journey_df.columns else 0:,}")
+        else:
+            print("  WARNING: No HASHED_ACCOUNT column found in rewards_df.")
+            print(f"  Columns with 'hash' or 'acct': {[c for c in rewards_df.columns if 'hash' in c.lower() or 'acct' in c.lower()]}")
+            print("  Spend data will aggregate as 'All' without response group breakdown.")
 
         # If no groups mapped, use 'All' as a single group
         _use_groups = RESPONSE_GROUP_ORDER if 'RESPONSE_GROUP_ORDER' in dir() else ['All']
