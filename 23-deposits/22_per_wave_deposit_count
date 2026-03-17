@@ -1,0 +1,66 @@
+# ===========================================================================
+# PER-WAVE DEPOSIT COUNT CHANGE (99d): Responders vs Non-Responders
+# ===========================================================================
+# How OFTEN are they depositing? 99-day deposit count change per wave.
+# Separate from amount -- more deposits vs bigger deposits.
+#
+# Depends on: wave_cohort_df (23/11), GEN_COLORS
+
+if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
+    print("    No wave cohort data. Run cell 11 first.")
+elif 'delta_DepCount99' not in wave_cohort_df.columns:
+    print("    No 99-day deposit count deltas available.")
+else:
+    _valid = wave_cohort_df[
+        wave_cohort_df['before_snap'].notna() & wave_cohort_df['after_snap'].notna()
+        & wave_cohort_df['delta_DepCount99'].notna()
+    ]
+
+    if len(_valid) == 0:
+        print("    No waves with 99-day deposit count delta data.")
+    else:
+        _waves = sorted(_valid['wave'].unique(),
+                         key=lambda w: pd.to_datetime(w, format='%b%y'))
+
+        fig, ax = plt.subplots(figsize=(16, 7))
+        _x = np.arange(len(_waves))
+        _w = 0.35
+
+        _r_vals = [_valid[(_valid['wave'] == w) & (_valid['outcome'] == 'Responder')]['delta_DepCount99'].mean() for w in _waves]
+        _nr_vals = [_valid[(_valid['wave'] == w) & (_valid['outcome'] == 'Non-Responder')]['delta_DepCount99'].mean() for w in _waves]
+
+        ax.bar(_x - _w / 2, _r_vals, _w, color=GEN_COLORS['success'],
+               edgecolor='white', linewidth=1.5, label='Responders', zorder=3)
+        ax.bar(_x + _w / 2, _nr_vals, _w, color=GEN_COLORS['muted'],
+               edgecolor='white', linewidth=1.5, label='Non-Responders', zorder=3)
+
+        _max_abs = max(abs(v) for v in _r_vals + _nr_vals if pd.notna(v)) if _r_vals else 1
+        for j in range(len(_waves)):
+            for val, offset in [(_r_vals[j], -_w/2), (_nr_vals[j], _w/2)]:
+                if pd.notna(val):
+                    ax.text(j + offset, val + (_max_abs * 0.03 if val >= 0 else -_max_abs * 0.03),
+                            f"{'+'if val>=0 else ''}{val:.1f}",
+                            ha='center', va='bottom' if val >= 0 else 'top',
+                            fontsize=11, fontweight='bold', color=GEN_COLORS['dark_text'])
+
+        ax.axhline(y=0, color=GEN_COLORS['dark_text'], linewidth=0.8, alpha=0.5)
+        ax.set_xticks(_x)
+        ax.set_xticklabels(_waves, fontsize=12, fontweight='bold', rotation=45, ha='right')
+        ax.set_ylabel("99-Day Deposit Count Change", fontsize=16, fontweight='bold', labelpad=10)
+
+        gen_clean_axes(ax)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+        ax.legend(fontsize=14, loc='upper right', frameon=True,
+                  facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+        ax.set_title("Per-Wave Deposit Frequency Change (99-Day Window)",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                "More deposits or fewer? Count change between snapshots, per wave",
+                transform=ax.transAxes, fontsize=14,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()

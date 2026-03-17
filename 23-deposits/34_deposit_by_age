@@ -4,16 +4,16 @@
 # Grouped bar: two age groups (highest and lowest response rate), showing
 # deposit amount for Hit vs No Response within each.
 #
-# Depends on: challenge_cohort_df (cell 11), GEN_COLORS, gen_clean_axes
+# Depends on: wave_cohort_df (cell 11), GEN_COLORS, gen_clean_axes
 
-if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
-    print("    No challenge cohort data. Run cell 11 first.")
-elif 'holder_age' not in challenge_cohort_df.columns:
-    print("    holder_age column missing from challenge_cohort_df.")
-elif 'depAmt365' not in challenge_cohort_df.columns and 'balance' not in challenge_cohort_df.columns:
+if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
+    print("    No segment cohort data. Run cell 11 first.")
+elif 'holder_age' not in wave_cohort_df.columns:
+    print("    holder_age column missing from wave_cohort_df.")
+elif 'depAmt365' not in wave_cohort_df.columns and 'balance' not in wave_cohort_df.columns:
     print("    No deposit metric columns (depAmt365/balance) available.")
 else:
-    _df = challenge_cohort_df[challenge_cohort_df['holder_age'].notna()].copy()
+    _df = wave_cohort_df[wave_cohort_df['holder_age'].notna()].copy()
 
     if len(_df) == 0:
         print("    No accounts with holder_age data.")
@@ -25,7 +25,7 @@ else:
         # Find best and worst response rate bands
         _rates = _df.groupby('age_band', observed=True).agg(
             total=('outcome', 'count'),
-            hits=('outcome', lambda x: (x == 'Hit').sum()),
+            hits=('outcome', lambda x: (x == 'Responder').sum()),
         ).reset_index()
         _rates['response_rate'] = _rates['hits'] / _rates['total'] * 100
         _rates = _rates[_rates['total'] >= 10]
@@ -41,7 +41,7 @@ else:
 
             _selected_bands = [_best_band, _worst_band]
             _sub = _df[_df['age_band'].isin(_selected_bands) &
-                       _df['outcome'].isin(['Hit', 'No Response'])]
+                       _df['outcome'].isin(['Responder', 'Non-Responder'])]
 
             _grouped = _sub.groupby(['age_band', 'outcome'], observed=True).agg(
                 dep_mean=(_dep_col, 'mean'),
@@ -58,7 +58,7 @@ else:
             _hit_color = GEN_COLORS.get('success', '#2a9d8f')
             _noresp_color = GEN_COLORS.get('muted', '#adb5bd')
 
-            for i, outcome in enumerate(['Hit', 'No Response']):
+            for i, outcome in enumerate(['Responder', 'Non-Responder']):
                 _vals = []
                 _ns = []
                 for band in _selected_bands:
@@ -67,7 +67,7 @@ else:
                     _vals.append(_match['dep_mean'].values[0] if len(_match) > 0 else 0)
                     _ns.append(_match['n'].values[0] if len(_match) > 0 else 0)
 
-                _color = _hit_color if outcome == 'Hit' else _noresp_color
+                _color = _hit_color if outcome == 'Responder' else _noresp_color
                 _offset = -_w / 2 if i == 0 else _w / 2
 
                 bars = ax.bar(_x + _offset, _vals, width=_w,

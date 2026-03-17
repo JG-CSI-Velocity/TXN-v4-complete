@@ -3,30 +3,30 @@
 # ===========================================================================
 # Horizontal funnel bars from Total NU Mailed down to Active Depositor.
 #
-# Depends on: challenge_cohort_df (cell 11), deposit_df (cell 01),
+# Depends on: wave_cohort_df (cell 11), deposit_df (cell 01),
 #             GEN_COLORS, gen_clean_axes
 
-if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
-    print("    No challenge cohort data. Run cell 11 first.")
-elif 'challenge' not in challenge_cohort_df.columns:
-    print("    challenge column missing from challenge_cohort_df.")
+if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
+    print("    No segment cohort data. Run cell 11 first.")
+elif 'segment' not in wave_cohort_df.columns:
+    print("    segment column missing from wave_cohort_df.")
 else:
-    _nu = challenge_cohort_df[challenge_cohort_df['challenge'] == 'NU'].copy()
+    _nu = wave_cohort_df[wave_cohort_df['segment'] == 'NU'].copy()
 
     if len(_nu) == 0:
-        print("    No NU accounts found in challenge_cohort_df.")
+        print("    No NU accounts found in wave_cohort_df.")
     else:
         # Deduplicate to unique accounts (use best outcome across waves)
-        _outcome_rank = {'Hit': 3, 'Near Miss': 2, 'No Response': 1}
+        _outcome_rank = {'Responder': 3, 'Near Miss': 2, 'Non-Responder': 1}
         _nu['_rank'] = _nu['outcome'].map(_outcome_rank).fillna(0)
         _nu_best = _nu.sort_values('_rank', ascending=False).drop_duplicates(
             subset='acct_number', keep='first'
         )
 
         _total_mailed = len(_nu_best)
-        _nu14 = _nu_best[_nu_best['outcome'].isin(['Hit', 'Near Miss'])]
+        _nu14 = _nu_best[_nu_best['outcome'].isin(['Responder', 'Near Miss'])]
         _n_nu14 = len(_nu14)
-        _nu5_plus = _nu_best[_nu_best['outcome'] == 'Hit']
+        _nu5_plus = _nu_best[_nu_best['outcome'] == 'Responder']
         _n_nu5 = len(_nu5_plus)
 
         # Sustained spender: post_spend_3mo > 0

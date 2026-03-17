@@ -2,25 +2,25 @@
 # CHALLENGE DISTRIBUTION: Assignment Across All Waves (Conference Edition)
 # ===========================================================================
 # Horizontal bar chart showing how many account-wave rows were assigned to
-# each challenge level. Annotated with count and percentage.
+# each segment level. Annotated with count and percentage.
 #
-# Depends on: challenge_cohort_df (23/11), CHALLENGE_ORDER (23/11), GEN_COLORS
+# Depends on: wave_cohort_df (23/11), SEGMENT_ORDER (23/11), GEN_COLORS
 
-if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
-    print("    No challenge cohort data. Run cell 11 first.")
+if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
+    print("    No segment cohort data. Run cell 11 first.")
 else:
     _dist = (
-        challenge_cohort_df
-        .groupby('challenge')
+        wave_cohort_df
+        .groupby('segment')
         .size()
-        .reindex(CHALLENGE_ORDER)
+        .reindex(SEGMENT_ORDER)
         .fillna(0)
         .astype(int)
     )
     _total = _dist.sum()
 
     if _total == 0:
-        print("    No challenge assignments found in cohort data.")
+        print("    No segment assignments found in cohort data.")
     else:
         fig, ax = plt.subplots(figsize=(14, 7))
 
@@ -53,11 +53,11 @@ else:
         _xlim = ax.get_xlim()
         ax.set_xlim(_xlim[0], _xlim[1] * 1.2)
 
-        ax.set_title("ARS Challenge Assignment Distribution",
+        ax.set_title("ARS Segment Assignment Distribution",
                       fontsize=26, fontweight='bold',
                       color=GEN_COLORS['dark_text'], pad=35, loc='left')
         ax.text(0.0, 1.02,
-                "Which challenges are members receiving?",
+                "Which segments are members receiving?",
                 transform=ax.transAxes, fontsize=14,
                 color=GEN_COLORS['muted'], style='italic')
 

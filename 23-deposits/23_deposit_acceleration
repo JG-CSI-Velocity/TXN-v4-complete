@@ -1,84 +1,70 @@
 # ===========================================================================
-# DEPOSIT ACCELERATION: 33-Day Velocity Across Snapshots (Conference Ed.)
+# DEPOSIT ACCELERATION: 33d vs 66d Rate Comparison (Conference Edition)
 # ===========================================================================
-# Line chart: DepAmt33 across snapshots for matched cohort, split by
-# responded vs non-responded vs never mailed. Solid=mean, dashed=median.
+# If DepAmt33/33 > DepAmt66/66, deposits are ACCELERATING (recent deposits
+# are faster than the prior period). Compare acceleration at the after-
+# snapshot for responders vs non-responders.
 #
-# Depends on: deposit_long (cell 01), SNAPSHOT_ORDER (cell 01),
-#             SNAPSHOT_CONFIG (cell 01), GEN_COLORS, gen_clean_axes, gen_fmt_dollar
+# Acceleration ratio: >1 = speeding up, <1 = slowing down, =1 = steady
+#
+# Depends on: wave_cohort_df (23/11), GEN_COLORS
 
-if 'deposit_long' not in dir() or len(deposit_long) == 0:
-    print("    No deposit_long data. Run cell 01 first.")
-elif 'DepAmt33' not in deposit_long.columns:
-    print("    No DepAmt33 column in deposit_long.")
-elif 'in_matched_cohort' not in deposit_long.columns:
-    print("    No matched cohort flag. Run cell 01 first.")
-elif 'camp_status' not in deposit_long.columns:
-    print("    No camp_status column. Run cell 01 first.")
+if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
+    print("    No wave cohort data. Run cell 11 first.")
+elif 'after_dep_accel' not in wave_cohort_df.columns:
+    print("    No deposit acceleration data (needs DepAmt33 and DepAmt66 in snapshots).")
 else:
-    _mc = deposit_long[deposit_long['in_matched_cohort']].copy()
+    _valid = wave_cohort_df[wave_cohort_df['after_dep_accel'].notna()].copy()
 
-    if len(_mc) == 0:
-        print("    No matched cohort rows.")
+    if len(_valid) == 0:
+        print("    No accounts with deposit acceleration data.")
     else:
-        # Define groups
-        _responded = _mc[_mc['camp_status'] == 'Responder']
-        _non_resp = _mc[_mc['camp_status'] == 'Non-Responder']
-        _never = _mc[_mc['camp_status'] == 'Never Mailed']
+        _waves = sorted(_valid['wave'].unique(),
+                         key=lambda w: pd.to_datetime(w, format='%b%y'))
 
-        _snap_labels = [SNAPSHOT_CONFIG[s]['label'] for s in SNAPSHOT_ORDER
-                        if s in _mc['snapshot'].unique()]
-        _snap_keys = [s for s in SNAPSHOT_ORDER if s in _mc['snapshot'].unique()]
+        fig, ax = plt.subplots(figsize=(16, 7))
+        _x = np.arange(len(_waves))
+        _w = 0.35
 
-        if len(_snap_keys) < 2:
-            print("    Need at least 2 snapshots for trajectory chart.")
-        else:
-            fig, ax = plt.subplots(figsize=(14, 7))
-            _x = np.arange(len(_snap_keys))
+        _r_accel = [_valid[(_valid['wave'] == w) & (_valid['outcome'] == 'Responder')]['after_dep_accel'].median() for w in _waves]
+        _nr_accel = [_valid[(_valid['wave'] == w) & (_valid['outcome'] == 'Non-Responder')]['after_dep_accel'].median() for w in _waves]
 
-            # Compute means and medians per snapshot for each group
-            for grp, grp_label, color in [
-                (_responded, 'Responded', GEN_COLORS['success']),
-                (_non_resp, 'Non-Responder', GEN_COLORS['muted']),
-                (_never, 'Never Mailed', GEN_COLORS['warning']),
-            ]:
-                if len(grp) == 0:
-                    continue
-                _means = [grp[grp['snapshot'] == s]['DepAmt33'].mean() for s in _snap_keys]
-                _medians = [grp[grp['snapshot'] == s]['DepAmt33'].median() for s in _snap_keys]
+        ax.bar(_x - _w / 2, _r_accel, _w, color=GEN_COLORS['success'],
+               edgecolor='white', linewidth=1.5, label='Responders', zorder=3)
+        ax.bar(_x + _w / 2, _nr_accel, _w, color=GEN_COLORS['muted'],
+               edgecolor='white', linewidth=1.5, label='Non-Responders', zorder=3)
 
-                ax.plot(_x, _means, color=color, linewidth=3, marker='o',
-                        markersize=9, markeredgecolor='white', markeredgewidth=2,
-                        label=f'{grp_label} (mean)', zorder=5)
-                ax.plot(_x, _medians, color=color, linewidth=2, linestyle='--',
-                        marker='s', markersize=7, markeredgecolor='white',
-                        markeredgewidth=1.5, alpha=0.7,
-                        label=f'{grp_label} (median)', zorder=4)
+        for j in range(len(_waves)):
+            for val, offset in [(_r_accel[j], -_w/2), (_nr_accel[j], _w/2)]:
+                if pd.notna(val):
+                    _label = f"{val:.2f}x"
+                    _color = GEN_COLORS['success'] if val > 1 else GEN_COLORS['accent'] if val < 1 else GEN_COLORS['muted']
+                    ax.text(j + offset, val + 0.02,
+                            _label, ha='center', va='bottom',
+                            fontsize=11, fontweight='bold', color=_color)
 
-                # Annotate mean values
-                for xi, val in zip(_x, _means):
-                    ax.text(xi, val * 1.03, f"${val:,.0f}",
-                            ha='center', va='bottom', fontsize=11,
-                            fontweight='bold', color=color)
+        ax.axhline(y=1.0, color=GEN_COLORS['dark_text'], linewidth=2,
+                   linestyle='--', alpha=0.6, label='Steady (1.0x)')
 
-            ax.set_xticks(_x)
-            ax.set_xticklabels(_snap_labels, fontsize=14, fontweight='bold')
-            ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
-            ax.set_ylabel("33-Day Deposit Amount", fontsize=16, fontweight='bold', labelpad=10)
+        ax.set_xticks(_x)
+        ax.set_xticklabels(_waves, fontsize=12, fontweight='bold', rotation=45, ha='right')
+        ax.set_ylabel("Acceleration Ratio (33d rate / 66d rate)", fontsize=16,
+                       fontweight='bold', labelpad=10)
 
-            gen_clean_axes(ax)
-            ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
-            ax.set_axisbelow(True)
-            ax.legend(fontsize=11, loc='upper left', frameon=True,
-                      facecolor='white', edgecolor=GEN_COLORS['grid'], ncol=2)
+        gen_clean_axes(ax)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+        ax.legend(fontsize=13, loc='upper right', frameon=True,
+                  facecolor='white', edgecolor=GEN_COLORS['grid'])
 
-            ax.set_title("Deposit Velocity: Accelerating or Decelerating?",
-                          fontsize=26, fontweight='bold',
-                          color=GEN_COLORS['dark_text'], pad=35, loc='left')
-            ax.text(0.0, 1.02,
-                    "33-day deposit amount across snapshots -- matched cohort",
-                    transform=ax.transAxes, fontsize=14,
-                    color=GEN_COLORS['muted'], style='italic')
+        ax.set_title("Deposit Acceleration: Are Deposits Speeding Up?",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                "Ratio of 33-day to 66-day deposit rate at after-snapshot  |  "
+                ">1.0 = accelerating, <1.0 = decelerating",
+                transform=ax.transAxes, fontsize=13,
+                color=GEN_COLORS['muted'], style='italic')
 
-            plt.tight_layout()
-            plt.show()
+        plt.tight_layout()
+        plt.show()

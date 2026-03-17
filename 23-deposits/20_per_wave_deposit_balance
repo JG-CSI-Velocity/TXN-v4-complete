@@ -1,0 +1,83 @@
+# ===========================================================================
+# PER-WAVE DEPOSIT BALANCE CHANGE: Responders vs Non-Responders (Conf. Ed.)
+# ===========================================================================
+# For each wave with before/after snapshots, shows the deposit BALANCE
+# change for responders vs non-responders. Each wave is a separate data
+# point -- NOT aggregated across waves.
+#
+# Depends on: wave_cohort_df (23/11), GEN_COLORS
+
+if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
+    print("    No wave cohort data. Run cell 11 first.")
+elif 'delta_balance' not in wave_cohort_df.columns:
+    print("    No deposit deltas. Waves may lack before+after snapshot pairing.")
+else:
+    _valid = wave_cohort_df[
+        wave_cohort_df['before_snap'].notna() & wave_cohort_df['after_snap'].notna()
+        & wave_cohort_df['delta_balance'].notna()
+    ].copy()
+
+    if len(_valid) == 0:
+        print("    No waves with before+after deposit data.")
+    else:
+        _waves = sorted(_valid['wave'].unique(),
+                         key=lambda w: pd.to_datetime(w, format='%b%y'))
+
+        fig, ax = plt.subplots(figsize=(16, 7))
+        _x = np.arange(len(_waves))
+        _w = 0.35
+
+        _resp_deltas = []
+        _nonresp_deltas = []
+        _resp_n = []
+        _nonresp_n = []
+
+        for wave in _waves:
+            _wdf = _valid[_valid['wave'] == wave]
+            _r = _wdf[_wdf['outcome'] == 'Responder']['delta_balance']
+            _nr = _wdf[_wdf['outcome'] == 'Non-Responder']['delta_balance']
+            _resp_deltas.append(_r.mean() if len(_r) > 0 else 0)
+            _nonresp_deltas.append(_nr.mean() if len(_nr) > 0 else 0)
+            _resp_n.append(len(_r))
+            _nonresp_n.append(len(_nr))
+
+        bars1 = ax.bar(_x - _w / 2, _resp_deltas, _w,
+                       color=GEN_COLORS['success'], edgecolor='white',
+                       linewidth=1.5, label='Responders', zorder=3)
+        bars2 = ax.bar(_x + _w / 2, _nonresp_deltas, _w,
+                       color=GEN_COLORS['muted'], edgecolor='white',
+                       linewidth=1.5, label='Non-Responders', zorder=3)
+
+        _max_abs = max(abs(v) for v in _resp_deltas + _nonresp_deltas) if _resp_deltas else 1
+        for j in range(len(_waves)):
+            for val, offset, n in [(_resp_deltas[j], -_w/2, _resp_n[j]),
+                                    (_nonresp_deltas[j], _w/2, _nonresp_n[j])]:
+                _sign = '+' if val >= 0 else ''
+                ax.text(j + offset, val + (_max_abs * 0.03 if val >= 0 else -_max_abs * 0.03),
+                        f"{_sign}{gen_fmt_dollar(val, None)}\n({n:,})",
+                        ha='center', va='bottom' if val >= 0 else 'top',
+                        fontsize=10, fontweight='bold', color=GEN_COLORS['dark_text'],
+                        linespacing=1.2)
+
+        ax.axhline(y=0, color=GEN_COLORS['dark_text'], linewidth=0.8, alpha=0.5)
+        ax.set_xticks(_x)
+        ax.set_xticklabels(_waves, fontsize=12, fontweight='bold', rotation=45, ha='right')
+        ax.set_ylabel("Avg Balance Change", fontsize=16, fontweight='bold', labelpad=10)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+
+        gen_clean_axes(ax)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+        ax.legend(fontsize=14, loc='upper right', frameon=True,
+                  facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+        ax.set_title("Per-Wave Deposit Balance Change",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                "After-snapshot balance minus before-snapshot balance, each mailing wave",
+                transform=ax.transAxes, fontsize=14,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()

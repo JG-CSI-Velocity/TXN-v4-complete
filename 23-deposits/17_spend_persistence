@@ -2,21 +2,21 @@
 # SPEND PERSISTENCE: Indexed Lift After Response (Conference Edition)
 # ===========================================================================
 # Line chart for Hit accounts only. Indexes spend at pre=100 and plots
-# +1mo, +3mo, +6mo per challenge level. Dashed baseline at 100.
+# +1mo, +3mo, +6mo per segment level. Dashed baseline at 100.
 #
-# Depends on: challenge_cohort_df (23/11), CHALLENGE_ORDER (23/11), GEN_COLORS
+# Depends on: wave_cohort_df (23/11), SEGMENT_ORDER (23/11), GEN_COLORS
 
-if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
-    print("    No challenge cohort data. Run cell 11 first.")
-elif 'pre_spend' not in challenge_cohort_df.columns:
+if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
+    print("    No segment cohort data. Run cell 11 first.")
+elif 'pre_spend' not in wave_cohort_df.columns:
     print("    pre_spend not available. Check cell 11 spend column discovery.")
 else:
-    _hits = challenge_cohort_df[challenge_cohort_df['outcome'] == 'Hit'].copy()
+    _hits = wave_cohort_df[wave_cohort_df['outcome'] == 'Responder'].copy()
 
     if len(_hits) == 0:
         print("    No Hit accounts found.")
     else:
-        # Build indexed spend per challenge
+        # Build indexed spend per segment
         _time_points = ['Pre', '+1mo', '+3mo', '+6mo']
         _spend_cols_map = {
             'Pre': 'pre_spend',
@@ -32,7 +32,7 @@ else:
         if len(_avail_points) < 2:
             print("    Need at least pre + one post period for persistence chart.")
         else:
-            _challenge_colors = {
+            _segment_colors = {
                 'NU':    GEN_COLORS['warning'],
                 'TH-10': GEN_COLORS['info'],
                 'TH-15': '#2EC4B6',
@@ -44,8 +44,8 @@ else:
 
             _x = np.arange(len(_avail_points))
 
-            for ch in CHALLENGE_ORDER:
-                _sub = _hits[_hits['challenge'] == ch]
+            for ch in SEGMENT_ORDER:
+                _sub = _hits[_hits['segment'] == ch]
                 if len(_sub) == 0:
                     continue
                 _pre_mean = _sub['pre_spend'].mean()
@@ -58,7 +58,7 @@ else:
                     _val = _sub[col].mean()
                     _indexed.append(_val / _pre_mean * 100)
 
-                _color = _challenge_colors.get(ch, GEN_COLORS['muted'])
+                _color = _segment_colors.get(ch, GEN_COLORS['muted'])
                 ax.plot(_x, _indexed,
                         color=_color, linewidth=2.5, marker='o',
                         markersize=9, markeredgecolor='white', markeredgewidth=2,

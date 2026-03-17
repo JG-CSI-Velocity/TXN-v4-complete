@@ -4,17 +4,17 @@
 # Line chart tracking cumulative NU 1-4 pool and conversions to NU 5+
 # across chronological waves.
 #
-# Depends on: challenge_cohort_df (cell 11), GEN_COLORS, gen_clean_axes
+# Depends on: wave_cohort_df (cell 11), GEN_COLORS, gen_clean_axes
 
-if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
-    print("    No challenge cohort data. Run cell 11 first.")
-elif 'challenge' not in challenge_cohort_df.columns:
-    print("    challenge column missing from challenge_cohort_df.")
+if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
+    print("    No segment cohort data. Run cell 11 first.")
+elif 'segment' not in wave_cohort_df.columns:
+    print("    segment column missing from wave_cohort_df.")
 else:
-    _nu = challenge_cohort_df[challenge_cohort_df['challenge'] == 'NU'].copy()
+    _nu = wave_cohort_df[wave_cohort_df['segment'] == 'NU'].copy()
 
     if len(_nu) == 0:
-        print("    No NU accounts found in challenge_cohort_df.")
+        print("    No NU accounts found in wave_cohort_df.")
     elif 'wave' not in _nu.columns:
         print("    wave column missing.")
     else:
@@ -43,7 +43,7 @@ else:
 
                 # Accounts that got NU 5+ (Hit) this wave
                 _new_hits = set(
-                    _w_data[_w_data['outcome'] == 'Hit']['acct_number']
+                    _w_data[_w_data['outcome'] == 'Responder']['acct_number']
                 )
 
                 # Conversions = previously NU 1-4, now Hit

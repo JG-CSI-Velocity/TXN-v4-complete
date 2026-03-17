@@ -1,0 +1,328 @@
+# ===========================================================================
+# WAVE COHORT DATA: Per-Wave Responder vs Non-Responder Engine (Conf. Ed.)
+# ===========================================================================
+# For EACH mailing wave, builds a per-account profile with:
+#   - Segment assignment (from Mail column: NU, TH-10/15/20/25)
+#   - Outcome: Responded (hit goal) vs Non-Responder vs Near Miss (NU 1-4)
+#   - Deposit state at BEFORE snapshot and AFTER snapshot
+#   - Deposit deltas (after - before) for 99d and 365d count/amount
+#   - Deposit acceleration (33d rate vs 66d rate)
+#   - Spend and MTD items pre/post
+#
+# Outputs: wave_cohort_df, wave_deposit_summary, never_mailed_profile
+#
+# Depends on: rewards_df, mail_cols, resp_cols, deposit_long (cell 01),
+#             SNAPSHOT_CONFIG, SNAPSHOT_ORDER
+
+import warnings
+warnings.filterwarnings('ignore')
+
+wave_cohort_df = pd.DataFrame()
+wave_deposit_summary = pd.DataFrame()
+never_mailed_profile = {}
+SEGMENT_ORDER = ['NU', 'TH-10', 'TH-15', 'TH-20', 'TH-25']
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available. Run 00-setup cells first.")
+else:
+    _rewards_cols = [c.strip() for c in rewards_df.columns]
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+
+    # Auto-discover columns
+    if 'mail_cols' not in dir():
+        mail_cols = sorted(
+            [c for c in _rewards_cols if c.endswith(' Mail')],
+            key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
+    if 'resp_cols' not in dir():
+        resp_cols = sorted(
+            [c for c in _rewards_cols if c.endswith(' Resp')],
+            key=lambda c: pd.to_datetime(c.replace(' Resp', ''), format='%b%y'))
+
+    # Monthly columns
+    _spend_cols = sorted(
+        [c for c in _rewards_cols if c.endswith(' Spend') and c[0].isupper()
+         and len(c.split(' ')[0]) in (5, 6) and c.split(' ')[0][:3] in _VALID_MON],
+        key=lambda c: pd.to_datetime(c.replace(' Spend', ''), format='%b%y'))
+    _mtd_cols = sorted(
+        [c for c in _rewards_cols if c.endswith(' MTD') and c[0].isupper()
+         and len(c.split(' ')[0]) in (5, 6) and c.split(' ')[0][:3] in _VALID_MON],
+        key=lambda c: pd.to_datetime(c.replace(' MTD', ''), format='%b%y'))
+
+    _month_labels = [c.replace(' Spend', '') for c in _spend_cols]
+    _month_dates = [pd.to_datetime(m, format='%b%y') for m in _month_labels]
+    _mtd_labels = [c.replace(' MTD', '') for c in _mtd_cols]
+    _mtd_dates = [pd.to_datetime(m, format='%b%y') for m in _mtd_labels]
+
+    # Pre-build numeric matrices
+    _spend_matrix = rewards_df[_spend_cols].apply(pd.to_numeric, errors='coerce').fillna(0) if _spend_cols else pd.DataFrame()
+    _mtd_matrix = rewards_df[_mtd_cols].apply(pd.to_numeric, errors='coerce').fillna(0) if _mtd_cols else pd.DataFrame()
+
+    print(f"  Columns: {len(_spend_cols)} Spend, {len(_mtd_cols)} MTD, "
+          f"{len(mail_cols)} Mail, {len(resp_cols)} Resp")
+
+    # Join keys and account identifiers
+    _dep_join_oddd = DEPOSIT_JOIN_KEY_ODDD if 'DEPOSIT_JOIN_KEY_ODDD' in dir() else None
+    _dep_join_dep = DEPOSIT_JOIN_KEY_DEPOSIT if 'DEPOSIT_JOIN_KEY_DEPOSIT' in dir() else None
+    _acct_col = 'Acct Number' if 'Acct Number' in rewards_df.columns else ' Acct Number'
+    _acct_nums = rewards_df[_acct_col].astype(str).str.strip()
+
+    # -------------------------------------------------------------------
+    # Snapshot pairing: which snapshot comes before/after each wave?
+    # -------------------------------------------------------------------
+    _snap_dates = {}
+    if 'SNAPSHOT_CONFIG' in dir():
+        for sk in SNAPSHOT_ORDER:
+            cfg = SNAPSHOT_CONFIG[sk]
+            try:
+                _snap_dates[sk] = pd.to_datetime(cfg['label'], format='%b %Y')
+            except (ValueError, KeyError):
+                if 'sort_key' in cfg:
+                    _snap_dates[sk] = pd.Timestamp(year=cfg['sort_key'] // 100,
+                                                     month=cfg['sort_key'] % 100, day=1)
+
+    _snap_keys_sorted = sorted(_snap_dates.keys(), key=lambda k: _snap_dates[k])
+    _snap_dates_sorted = [_snap_dates[k] for k in _snap_keys_sorted]
+
+    def _find_before_after_snapshots(wave_date):
+        """Find nearest snapshot before and after a wave date."""
+        before_snap = None
+        after_snap = None
+        for sk, sd in zip(_snap_keys_sorted, _snap_dates_sorted):
+            if sd <= wave_date:
+                before_snap = sk
+            if sd > wave_date and after_snap is None:
+                after_snap = sk
+        return before_snap, after_snap
+
+    print(f"  Snapshots: {_snap_keys_sorted}")
+    print(f"  Snapshot dates: {[str(_snap_dates[k].date()) for k in _snap_keys_sorted]}")
+
+    # -------------------------------------------------------------------
+    # Build deposit lookup by snapshot (for fast merge)
+    # -------------------------------------------------------------------
+    _has_deposits = 'deposit_long' in dir() and len(deposit_long) > 0
+    _dep_lookups = {}  # snap_key -> DataFrame keyed on _dep_join_dep
+
+    if _has_deposits and _dep_join_dep:
+        _dep_metric_cols = [
+            'balance', 'AvgCollectedBalance',
+            'DepCount33', 'DepAmt33', 'DepCount66', 'DepAmt66',
+            'DepCount99', 'DepAmt99', 'depCount365', 'depAmt365',
+            'CollectedFees365', 'fdicoccasionsrolling12months',
+            'avgrepaymentrate', 'avgdaysbetweendeposits',
+            'has_direct_deposit', 'Mobile_Deposits_90', 'ODLimit',
+        ]
+        _dep_avail = [c for c in _dep_metric_cols if c in deposit_long.columns]
+
+        for sk in _snap_keys_sorted:
+            _snap_data = deposit_long[deposit_long['snapshot'] == sk].copy()
+            if _dep_join_dep in _snap_data.columns:
+                _snap_data['_dk'] = _snap_data[_dep_join_dep].astype(str).str.strip()
+                _dep_lookups[sk] = _snap_data.set_index('_dk')[_dep_avail]
+                print(f"    {sk}: {len(_dep_lookups[sk]):,} accounts in deposit lookup")
+
+    # -------------------------------------------------------------------
+    # Parse segment and outcome
+    # -------------------------------------------------------------------
+    def _parse_segment(val):
+        if pd.isna(val):
+            return None
+        v = str(val).strip().upper()
+        for th in ['TH-25', 'TH 25', 'TH25']:
+            if th in v: return 'TH-25'
+        for th in ['TH-20', 'TH 20', 'TH20']:
+            if th in v: return 'TH-20'
+        for th in ['TH-15', 'TH 15', 'TH15']:
+            if th in v: return 'TH-15'
+        for th in ['TH-10', 'TH 10', 'TH10']:
+            if th in v: return 'TH-10'
+        if 'NU' in v:
+            return 'NU'
+        return v if v else None
+
+    def _parse_outcome(val):
+        if pd.isna(val):
+            return 'Non-Responder'
+        v = str(val).strip().upper()
+        if v.startswith('TH') or v in ('NU 5+', 'NU5+', 'NU 5', 'NU 6', 'NU 7', 'NU 8', 'NU 9', 'NU 10'):
+            return 'Responder'
+        if v in ('NU 1-4', 'NU1-4'):
+            return 'Near Miss'
+        return 'Non-Responder'
+
+    def _window_cols(col_list, col_dates, wave_date, start, end):
+        return [c for c, d in zip(col_list, col_dates)
+                if start <= (d.year - wave_date.year) * 12 + (d.month - wave_date.month) <= end]
+
+    # -------------------------------------------------------------------
+    # Build per-wave cohort (vectorized per wave)
+    # -------------------------------------------------------------------
+    _chunks = []
+
+    for mc, rc in zip(mail_cols, resp_cols):
+        _wave_label = mc.replace(' Mail', '')
+        mc_s, rc_s = mc.strip(), rc.strip()
+        if mc_s not in _rewards_cols:
+            continue
+
+        _wave_date = pd.to_datetime(_wave_label, format='%b%y')
+        _mailed_mask = rewards_df[mc_s].notna()
+        _mailed_idx = _mailed_mask[_mailed_mask].index
+        if len(_mailed_idx) == 0:
+            continue
+
+        # Parse segment and outcome
+        _segments = rewards_df.loc[_mailed_idx, mc_s].apply(_parse_segment)
+        _resp_series = rewards_df[rc_s] if rc_s in _rewards_cols else pd.Series(np.nan, index=rewards_df.index)
+        _outcomes = _resp_series.loc[_mailed_idx].apply(_parse_outcome)
+
+        # Skip pending waves
+        if (_outcomes != 'Non-Responder').sum() == 0:
+            continue
+
+        # Snapshot pairing for this wave
+        _before_snap, _after_snap = _find_before_after_snapshots(_wave_date)
+
+        # Build chunk
+        _chunk = pd.DataFrame({
+            'wave': _wave_label,
+            'wave_date': _wave_date,
+            'segment': _segments.values,
+            'outcome': _outcomes.values,
+            'acct_number': _acct_nums.loc[_mailed_idx].values,
+            'before_snap': _before_snap,
+            'after_snap': _after_snap,
+        }, index=_mailed_idx)
+
+        # Deposit join key
+        if _dep_join_oddd and _dep_join_oddd in rewards_df.columns:
+            _chunk['_dk'] = rewards_df.loc[_mailed_idx, _dep_join_oddd].astype(str).str.strip().values
+
+        # Demographics
+        for _col_name, _out_name in [('Account Holder Age', 'holder_age'),
+                                       ('Account Age', 'account_age')]:
+            if _col_name in rewards_df.columns:
+                _chunk[_out_name] = pd.to_numeric(
+                    rewards_df.loc[_mailed_idx, _col_name], errors='coerce').values
+
+        # Pre/post spend (vectorized)
+        if len(_spend_matrix) > 0:
+            _pre_s = _window_cols(_spend_cols, _month_dates, _wave_date, -3, -1)
+            _post3_s = _window_cols(_spend_cols, _month_dates, _wave_date, 1, 3)
+            _post6_s = _window_cols(_spend_cols, _month_dates, _wave_date, 1, 6)
+            if _pre_s:
+                _chunk['pre_spend'] = _spend_matrix.loc[_mailed_idx, _pre_s].mean(axis=1).values
+            if _post3_s:
+                _chunk['post_spend_3mo'] = _spend_matrix.loc[_mailed_idx, _post3_s].mean(axis=1).values
+            if _post6_s:
+                _chunk['post_spend_6mo'] = _spend_matrix.loc[_mailed_idx, _post6_s].mean(axis=1).values
+
+        # Pre/post MTD
+        if len(_mtd_matrix) > 0:
+            _pre_m = _window_cols(_mtd_cols, _mtd_dates, _wave_date, -3, -1)
+            _post3_m = _window_cols(_mtd_cols, _mtd_dates, _wave_date, 1, 3)
+            if _pre_m:
+                _chunk['pre_mtd'] = _mtd_matrix.loc[_mailed_idx, _pre_m].mean(axis=1).values
+            if _post3_m:
+                _chunk['post_mtd_3mo'] = _mtd_matrix.loc[_mailed_idx, _post3_m].mean(axis=1).values
+
+        # -------------------------------------------------------------------
+        # Merge deposit data from BEFORE and AFTER snapshots
+        # -------------------------------------------------------------------
+        if '_dk' in _chunk.columns:
+            for snap_label, snap_key in [('before', _before_snap), ('after', _after_snap)]:
+                if snap_key and snap_key in _dep_lookups:
+                    _lookup = _dep_lookups[snap_key]
+                    _matched = _chunk['_dk'].map(
+                        lambda dk: dk in _lookup.index
+                    )
+
+                    for dep_col in _dep_avail:
+                        _col_name = f"{snap_label}_{dep_col}"
+                        _chunk[_col_name] = _chunk['_dk'].map(
+                            lambda dk, c=dep_col: _lookup.loc[dk, c] if dk in _lookup.index else np.nan
+                        )
+
+        _chunks.append(_chunk)
+
+    if _chunks:
+        wave_cohort_df = pd.concat(_chunks, ignore_index=True)
+        wave_cohort_df = wave_cohort_df.dropna(subset=['segment'])
+
+        # Compute deltas
+        if 'pre_spend' in wave_cohort_df.columns and 'post_spend_3mo' in wave_cohort_df.columns:
+            wave_cohort_df['spend_delta'] = wave_cohort_df['post_spend_3mo'] - wave_cohort_df['pre_spend']
+        if 'pre_mtd' in wave_cohort_df.columns and 'post_mtd_3mo' in wave_cohort_df.columns:
+            wave_cohort_df['mtd_delta'] = wave_cohort_df['post_mtd_3mo'] - wave_cohort_df['pre_mtd']
+
+        # Deposit deltas (after - before)
+        for metric in ['DepAmt99', 'DepCount99', 'depAmt365', 'depCount365', 'balance']:
+            _b = f'before_{metric}'
+            _a = f'after_{metric}'
+            if _b in wave_cohort_df.columns and _a in wave_cohort_df.columns:
+                wave_cohort_df[f'delta_{metric}'] = wave_cohort_df[_a] - wave_cohort_df[_b]
+
+        # Deposit acceleration: (DepAmt33/33) vs (DepAmt66/66) at each snapshot
+        for snap_label in ['before', 'after']:
+            _d33 = f'{snap_label}_DepAmt33'
+            _d66 = f'{snap_label}_DepAmt66'
+            if _d33 in wave_cohort_df.columns and _d66 in wave_cohort_df.columns:
+                _rate33 = wave_cohort_df[_d33] / 33
+                _rate66 = wave_cohort_df[_d66] / 66
+                wave_cohort_df[f'{snap_label}_dep_accel'] = np.where(
+                    _rate66 > 0, _rate33 / _rate66, np.nan
+                )
+                # >1 = accelerating, <1 = decelerating
+
+        # -------------------------------------------------------------------
+        # Never Mailed reference group
+        # -------------------------------------------------------------------
+        _all_mailed = set(wave_cohort_df['acct_number'].unique())
+        _all_accts = set(_acct_nums)
+        _never_mailed = _all_accts - _all_mailed
+
+        if _has_deposits and _dep_join_oddd and _dep_join_oddd in rewards_df.columns:
+            _nm_mask = _acct_nums.isin(_never_mailed)
+            _nm_keys = rewards_df.loc[_nm_mask, _dep_join_oddd].astype(str).str.strip()
+            # Use latest snapshot for never-mailed profile
+            _latest_snap = _snap_keys_sorted[-1] if _snap_keys_sorted else None
+            if _latest_snap and _latest_snap in _dep_lookups:
+                _nm_dep = _dep_lookups[_latest_snap]
+                _nm_matched = _nm_dep[_nm_dep.index.isin(_nm_keys)]
+                for col in _dep_avail:
+                    if col in _nm_matched.columns:
+                        never_mailed_profile[f'{col}_mean'] = _nm_matched[col].mean()
+                        never_mailed_profile[f'{col}_median'] = _nm_matched[col].median()
+                never_mailed_profile['n_accounts'] = len(_nm_matched)
+
+        if len(_spend_matrix) > 0 and len(_never_mailed) > 0:
+            _nm_mask = _acct_nums.isin(_never_mailed)
+            never_mailed_profile['avg_monthly_spend'] = _spend_matrix.loc[_nm_mask].mean(axis=1).mean()
+
+        # -------------------------------------------------------------------
+        # Summary
+        # -------------------------------------------------------------------
+        print(f"\n  Wave cohort engine complete:")
+        print(f"    wave_cohort_df: {len(wave_cohort_df):,} account-wave rows")
+        print(f"    Waves: {wave_cohort_df['wave'].nunique()}")
+        print(f"    Never mailed: {len(_never_mailed):,}")
+
+        # Per-wave snapshot pairing
+        _wave_snaps = wave_cohort_df.groupby('wave').first()[['wave_date', 'before_snap', 'after_snap']]
+        print(f"\n  Wave -> Snapshot pairing:")
+        for wave, row in _wave_snaps.iterrows():
+            _b = row['before_snap'] if pd.notna(row['before_snap']) else 'none'
+            _a = row['after_snap'] if pd.notna(row['after_snap']) else 'none'
+            print(f"    {wave}: before={_b}, after={_a}")
+
+        # Deposit delta availability
+        _waves_with_deltas = wave_cohort_df[
+            wave_cohort_df['before_snap'].notna() & wave_cohort_df['after_snap'].notna()
+        ]['wave'].nunique()
+        print(f"\n  Waves with before+after deposit data: {_waves_with_deltas}")
+
+        # Distribution
+        print(f"\n  Segment x Outcome:")
+        _dist = wave_cohort_df.groupby(['segment', 'outcome']).size().reset_index(name='count')
+        for _, row in _dist.sort_values(['segment', 'outcome']).iterrows():
+            print(f"    {row['segment']:<8s} {row['outcome']:<16s}: {row['count']:>8,}")

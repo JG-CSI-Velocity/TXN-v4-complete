@@ -3,7 +3,7 @@
 # ===========================================================================
 # Two styled tables: (1) dynamically computed insights, (2) strategic actions.
 #
-# Depends on: challenge_cohort_df (cell 11), deposit_df (cell 01),
+# Depends on: wave_cohort_df (cell 11), deposit_df (cell 01),
 #             ncua_df (cell 04), response_journey_df (cell 02), GEN_COLORS
 
 # ---------------------------------------------------------------------------
@@ -12,9 +12,9 @@
 _insights = []
 
 # Overall response rate
-if 'challenge_cohort_df' in dir() and len(challenge_cohort_df) > 0:
-    _total = len(challenge_cohort_df)
-    _hits = (challenge_cohort_df['outcome'] == 'Hit').sum()
+if 'wave_cohort_df' in dir() and len(wave_cohort_df) > 0:
+    _total = len(wave_cohort_df)
+    _hits = (wave_cohort_df['outcome'] == 'Responder').sum()
     _rate = _hits / _total * 100 if _total > 0 else 0
     _insights.append({
         'Metric': 'Overall Response Rate',
@@ -22,24 +22,24 @@ if 'challenge_cohort_df' in dir() and len(challenge_cohort_df) > 0:
         'Detail': f"{_hits:,} hit responses out of {_total:,} account-waves",
     })
 
-# Best-performing challenge
-if 'challenge_cohort_df' in dir() and len(challenge_cohort_df) > 0:
-    _ch_rates = challenge_cohort_df.groupby('challenge').agg(
+# Best-performing segment
+if 'wave_cohort_df' in dir() and len(wave_cohort_df) > 0:
+    _ch_rates = wave_cohort_df.groupby('segment').agg(
         total=('outcome', 'count'),
-        hits=('outcome', lambda x: (x == 'Hit').sum()),
+        hits=('outcome', lambda x: (x == 'Responder').sum()),
     ).reset_index()
     _ch_rates['rate'] = _ch_rates['hits'] / _ch_rates['total'] * 100
     _best = _ch_rates.loc[_ch_rates['rate'].idxmax()]
     _insights.append({
-        'Metric': 'Best Challenge',
-        'Value': f"{_best['challenge']} ({_best['rate']:.1f}%)",
+        'Metric': 'Best Segment',
+        'Value': f"{_best['segment']} ({_best['rate']:.1f}%)",
         'Detail': f"{int(_best['hits']):,} hits from {int(_best['total']):,} mailings",
     })
 
 # Deposit gap (responder vs non)
-if 'challenge_cohort_df' in dir() and 'balance' in challenge_cohort_df.columns:
-    _h_bal = challenge_cohort_df[challenge_cohort_df['outcome'] == 'Hit']['balance'].mean()
-    _n_bal = challenge_cohort_df[challenge_cohort_df['outcome'] == 'No Response']['balance'].mean()
+if 'wave_cohort_df' in dir() and 'balance' in wave_cohort_df.columns:
+    _h_bal = wave_cohort_df[wave_cohort_df['outcome'] == 'Responder']['balance'].mean()
+    _n_bal = wave_cohort_df[wave_cohort_df['outcome'] == 'Non-Responder']['balance'].mean()
     _insights.append({
         'Metric': 'Deposit Balance Gap',
         'Value': f"${_h_bal - _n_bal:+,.0f}",
@@ -47,13 +47,13 @@ if 'challenge_cohort_df' in dir() and 'balance' in challenge_cohort_df.columns:
     })
 
 # Spend lift
-if 'challenge_cohort_df' in dir() and 'spend_delta' in challenge_cohort_df.columns:
-    _h_delta = challenge_cohort_df[challenge_cohort_df['outcome'] == 'Hit']['spend_delta'].mean()
-    _n_delta = challenge_cohort_df[challenge_cohort_df['outcome'] == 'No Response']['spend_delta'].mean()
+if 'wave_cohort_df' in dir() and 'spend_delta' in wave_cohort_df.columns:
+    _h_delta = wave_cohort_df[wave_cohort_df['outcome'] == 'Responder']['spend_delta'].mean()
+    _n_delta = wave_cohort_df[wave_cohort_df['outcome'] == 'Non-Responder']['spend_delta'].mean()
     _insights.append({
         'Metric': 'Avg Spend Lift (Hit)',
         'Value': f"${_h_delta:+,.0f}/mo",
-        'Detail': f"vs ${_n_delta:+,.0f}/mo for non-responders (same challenge)",
+        'Detail': f"vs ${_n_delta:+,.0f}/mo for non-responders (same segment)",
     })
 
 # Repeat responders
@@ -68,11 +68,11 @@ if 'response_journey_df' in dir() and len(response_journey_df) > 0:
     })
 
 # DD predictor
-if 'challenge_cohort_df' in dir() and 'has_direct_deposit' in challenge_cohort_df.columns:
-    _dd = challenge_cohort_df[challenge_cohort_df['has_direct_deposit'] == True]
-    _no_dd = challenge_cohort_df[challenge_cohort_df['has_direct_deposit'] == False]
-    _dd_r = (_dd['outcome'] == 'Hit').mean() * 100 if len(_dd) > 0 else 0
-    _no_dd_r = (_no_dd['outcome'] == 'Hit').mean() * 100 if len(_no_dd) > 0 else 0
+if 'wave_cohort_df' in dir() and 'has_direct_deposit' in wave_cohort_df.columns:
+    _dd = wave_cohort_df[wave_cohort_df['has_direct_deposit'] == True]
+    _no_dd = wave_cohort_df[wave_cohort_df['has_direct_deposit'] == False]
+    _dd_r = (_dd['outcome'] == 'Responder').mean() * 100 if len(_dd) > 0 else 0
+    _no_dd_r = (_no_dd['outcome'] == 'Responder').mean() * 100 if len(_no_dd) > 0 else 0
     _mult = _dd_r / _no_dd_r if _no_dd_r > 0 else 0
     _insights.append({
         'Metric': 'DD Response Multiplier',
@@ -109,7 +109,7 @@ _actions = [
         'Impact': 'High',
     },
     {
-        'Action': 'Test higher challenge levels for top responders',
+        'Action': 'Test higher segment levels for top responders',
         'Rationale': 'Repeat responders may benefit from escalated thresholds',
         'Timeline': '2-3 waves',
         'Impact': 'Medium',

@@ -3,14 +3,14 @@
 # ===========================================================================
 # Bar chart of response rate by member age band.
 #
-# Depends on: challenge_cohort_df (cell 11), GEN_COLORS, gen_clean_axes
+# Depends on: wave_cohort_df (cell 11), GEN_COLORS, gen_clean_axes
 
-if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
-    print("    No challenge cohort data. Run cell 11 first.")
-elif 'holder_age' not in challenge_cohort_df.columns:
-    print("    holder_age column missing from challenge_cohort_df.")
+if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
+    print("    No segment cohort data. Run cell 11 first.")
+elif 'holder_age' not in wave_cohort_df.columns:
+    print("    holder_age column missing from wave_cohort_df.")
 else:
-    _df = challenge_cohort_df[challenge_cohort_df['holder_age'].notna()].copy()
+    _df = wave_cohort_df[wave_cohort_df['holder_age'].notna()].copy()
 
     if len(_df) == 0:
         print("    No accounts with holder_age data.")
@@ -21,7 +21,7 @@ else:
 
         _agg = _df.groupby('age_band', observed=True).agg(
             total=('outcome', 'count'),
-            hits=('outcome', lambda x: (x == 'Hit').sum()),
+            hits=('outcome', lambda x: (x == 'Responder').sum()),
         ).reset_index()
 
         _agg['response_rate'] = _agg['hits'] / _agg['total'] * 100

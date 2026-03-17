@@ -1,30 +1,30 @@
 # ===========================================================================
-# RESPONSE RATE BY WAVE: Trend Over Time Per Challenge (Conference Edition)
+# RESPONSE RATE BY WAVE: Trend Over Time Per Segment (Conference Edition)
 # ===========================================================================
-# Line chart with one line per challenge level showing response rate (% Hit)
+# Line chart with one line per segment level showing response rate (% Hit)
 # over chronologically sorted waves. Pending waves excluded.
 #
-# Depends on: challenge_cohort_df (23/11), CHALLENGE_ORDER (23/11), GEN_COLORS
+# Depends on: wave_cohort_df (23/11), SEGMENT_ORDER (23/11), GEN_COLORS
 
-if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
-    print("    No challenge cohort data. Run cell 11 first.")
+if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
+    print("    No segment cohort data. Run cell 11 first.")
 else:
-    # Build per-wave, per-challenge response rate
+    # Build per-wave, per-segment response rate
     _wave_rates = []
-    for (wave, ch), grp in challenge_cohort_df.groupby(['wave', 'challenge']):
+    for (wave, ch), grp in wave_cohort_df.groupby(['wave', 'segment']):
         _n = len(grp)
-        _hits = (grp['outcome'] == 'Hit').sum()
+        _hits = (grp['outcome'] == 'Responder').sum()
         _rate = _hits / _n * 100 if _n > 0 else 0
         _wave_date = grp['wave_date'].iloc[0]
-        # Exclude pending waves (0 hits across ALL challenges in that wave)
+        # Exclude pending waves (0 hits across ALL segments in that wave)
         _wave_rates.append({
             'wave': wave, 'wave_date': _wave_date,
-            'challenge': ch, 'n': _n, 'hits': _hits, 'rate': _rate,
+            'segment': ch, 'n': _n, 'hits': _hits, 'rate': _rate,
         })
 
     _wr_df = pd.DataFrame(_wave_rates)
 
-    # Exclude waves where every challenge has 0 hits
+    # Exclude waves where every segment has 0 hits
     _wave_hit_totals = _wr_df.groupby('wave')['hits'].sum()
     _active_waves = _wave_hit_totals[_wave_hit_totals > 0].index
     _wr_df = _wr_df[_wr_df['wave'].isin(_active_waves)]
@@ -35,8 +35,8 @@ else:
         _wr_df = _wr_df.sort_values('wave_date')
         _wave_order = _wr_df.drop_duplicates('wave').sort_values('wave_date')['wave'].tolist()
 
-        # Distinct colors per challenge
-        _challenge_colors = {
+        # Distinct colors per segment
+        _segment_colors = {
             'NU':    GEN_COLORS['warning'],
             'TH-10': GEN_COLORS['info'],
             'TH-15': '#2EC4B6',
@@ -46,12 +46,12 @@ else:
 
         fig, ax = plt.subplots(figsize=(14, 7))
 
-        for ch in CHALLENGE_ORDER:
-            _sub = _wr_df[_wr_df['challenge'] == ch].sort_values('wave_date')
+        for ch in SEGMENT_ORDER:
+            _sub = _wr_df[_wr_df['segment'] == ch].sort_values('wave_date')
             if len(_sub) < 1:
                 continue
             _x_pos = [_wave_order.index(w) for w in _sub['wave']]
-            _color = _challenge_colors.get(ch, GEN_COLORS['muted'])
+            _color = _segment_colors.get(ch, GEN_COLORS['muted'])
             ax.plot(_x_pos, _sub['rate'],
                     color=_color, linewidth=2.5, marker='o',
                     markersize=8, markeredgecolor='white', markeredgewidth=2,

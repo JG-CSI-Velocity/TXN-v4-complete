@@ -1,16 +1,16 @@
 # ===========================================================================
-# TOTAL MEMBER VALUE: Composite Annual Value by Challenge (Conference Ed.)
+# TOTAL MEMBER VALUE: Composite Annual Value by Segment (Conference Ed.)
 # ===========================================================================
-# Horizontal bar: depAmt365 + spend + fees per challenge, Hit vs No Response.
+# Horizontal bar: depAmt365 + spend + fees per segment, Hit vs No Response.
 # Never-mailed reference line.
 #
-# Depends on: challenge_cohort_df (cell 11), never_mailed_profile (cell 11),
-#             CHALLENGE_ORDER, GEN_COLORS, gen_clean_axes
+# Depends on: wave_cohort_df (cell 11), never_mailed_profile (cell 11),
+#             SEGMENT_ORDER, GEN_COLORS, gen_clean_axes
 
-if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
-    print("    No challenge cohort data. Run cell 11 first.")
+if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
+    print("    No segment cohort data. Run cell 11 first.")
 else:
-    _df = challenge_cohort_df.copy()
+    _df = wave_cohort_df.copy()
 
     # Build composite value
     _value_cols = []
@@ -31,17 +31,17 @@ else:
     else:
         _df['_composite_value'] = _df[_value_cols].fillna(0).sum(axis=1)
 
-        _challenges = [c for c in CHALLENGE_ORDER if c in _df['challenge'].unique()]
-        _outcomes = ['Hit', 'No Response']
+        _segments = [c for c in SEGMENT_ORDER if c in _df['segment'].unique()]
+        _outcomes = ['Responder', 'Non-Responder']
 
         _data = []
-        for ch in _challenges:
+        for ch in _segments:
             for outcome in _outcomes:
-                _sub = _df[(_df['challenge'] == ch) & (_df['outcome'] == outcome)]
+                _sub = _df[(_df['segment'] == ch) & (_df['outcome'] == outcome)]
                 _val = _sub['_composite_value'].mean() if len(_sub) > 0 else 0
                 _n = len(_sub)
                 _data.append({
-                    'challenge': ch, 'outcome': outcome,
+                    'segment': ch, 'outcome': outcome,
                     'value': _val, 'n': _n,
                 })
 
@@ -52,7 +52,7 @@ else:
         else:
             fig, ax = plt.subplots(figsize=(14, 7))
 
-            _y = np.arange(len(_challenges))
+            _y = np.arange(len(_segments))
             _bar_h = 0.3
 
             _hit_color = GEN_COLORS.get('success', '#2a9d8f')
@@ -61,13 +61,13 @@ else:
             for i, outcome in enumerate(_outcomes):
                 _vals = []
                 _ns = []
-                for ch in _challenges:
-                    _match = _plot_df[(_plot_df['challenge'] == ch) &
+                for ch in _segments:
+                    _match = _plot_df[(_plot_df['segment'] == ch) &
                                        (_plot_df['outcome'] == outcome)]
                     _vals.append(_match['value'].values[0] if len(_match) > 0 else 0)
                     _ns.append(_match['n'].values[0] if len(_match) > 0 else 0)
 
-                _color = _hit_color if outcome == 'Hit' else _noresp_color
+                _color = _hit_color if outcome == 'Responder' else _noresp_color
                 _offset = -_bar_h / 2 if i == 0 else _bar_h / 2
 
                 bars = ax.barh(_y + _offset, _vals, height=_bar_h,
@@ -98,7 +98,7 @@ else:
                             label=f'Never Mailed (${_nm_value:,.0f})')
 
             ax.set_yticks(_y)
-            ax.set_yticklabels(_challenges, fontsize=14, fontweight='bold')
+            ax.set_yticklabels(_segments, fontsize=14, fontweight='bold')
             ax.set_xlabel("Total Annual Member Value ($)", fontsize=14,
                            fontweight='bold')
             ax.xaxis.set_major_formatter(

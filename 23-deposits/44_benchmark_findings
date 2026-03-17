@@ -5,7 +5,7 @@
 # growth, peer comparison, responder deposit gap, DD predictor, NU activation.
 #
 # Depends on: ncua_df (cell 04), ncua_peer_summary (cell 04),
-#             challenge_cohort_df (cell 11), deposit_df (cell 01),
+#             wave_cohort_df (cell 11), deposit_df (cell 01),
 #             GEN_COLORS
 
 _findings = []
@@ -49,24 +49,24 @@ if ('ncua_df' in dir() and len(ncua_df) >= 2 and
     })
 
 # (3) Responder deposit gap
-if 'challenge_cohort_df' in dir() and len(challenge_cohort_df) > 0 and 'balance' in challenge_cohort_df.columns:
-    _hit_bal = challenge_cohort_df[challenge_cohort_df['outcome'] == 'Hit']['balance'].mean()
-    _nr_bal = challenge_cohort_df[challenge_cohort_df['outcome'] == 'No Response']['balance'].mean()
+if 'wave_cohort_df' in dir() and len(wave_cohort_df) > 0 and 'balance' in wave_cohort_df.columns:
+    _hit_bal = wave_cohort_df[wave_cohort_df['outcome'] == 'Responder']['balance'].mean()
+    _nr_bal = wave_cohort_df[wave_cohort_df['outcome'] == 'Non-Responder']['balance'].mean()
     _gap = _hit_bal - _nr_bal
     _findings.append({
         'Category': 'Responder Deposit Gap',
         'Finding': f"Responders avg balance ${_hit_bal:,.0f} vs non-responders ${_nr_bal:,.0f} "
                    f"(gap: ${_gap:+,.0f})",
-        'Connection to ARS': 'Same-challenge comparison proves this gap is behavioral, not selection',
+        'Connection to ARS': 'Same-segment comparison proves this gap is behavioral, not selection',
         'Priority': 'High',
     })
 
 # (4) DD predictor finding
-if 'challenge_cohort_df' in dir() and 'has_direct_deposit' in challenge_cohort_df.columns:
-    _dd = challenge_cohort_df[challenge_cohort_df['has_direct_deposit'] == True]
-    _no_dd = challenge_cohort_df[challenge_cohort_df['has_direct_deposit'] == False]
-    _dd_rate = (_dd['outcome'] == 'Hit').mean() * 100 if len(_dd) > 0 else 0
-    _no_dd_rate = (_no_dd['outcome'] == 'Hit').mean() * 100 if len(_no_dd) > 0 else 0
+if 'wave_cohort_df' in dir() and 'has_direct_deposit' in wave_cohort_df.columns:
+    _dd = wave_cohort_df[wave_cohort_df['has_direct_deposit'] == True]
+    _no_dd = wave_cohort_df[wave_cohort_df['has_direct_deposit'] == False]
+    _dd_rate = (_dd['outcome'] == 'Responder').mean() * 100 if len(_dd) > 0 else 0
+    _no_dd_rate = (_no_dd['outcome'] == 'Responder').mean() * 100 if len(_no_dd) > 0 else 0
     _mult = _dd_rate / _no_dd_rate if _no_dd_rate > 0 else 0
     _findings.append({
         'Category': 'DD Predictor',
@@ -77,15 +77,15 @@ if 'challenge_cohort_df' in dir() and 'has_direct_deposit' in challenge_cohort_d
     })
 
 # (5) NU activation rate
-if 'challenge_cohort_df' in dir() and 'challenge' in challenge_cohort_df.columns:
-    _nu = challenge_cohort_df[challenge_cohort_df['challenge'] == 'NU']
+if 'wave_cohort_df' in dir() and 'segment' in wave_cohort_df.columns:
+    _nu = wave_cohort_df[wave_cohort_df['segment'] == 'NU']
     if len(_nu) > 0:
         _nu_best = _nu.sort_values(
-            _nu['outcome'].map({'Hit': 3, 'Near Miss': 2, 'No Response': 1}).fillna(0),
+            _nu['outcome'].map({'Responder': 3, 'Near Miss': 2, 'Non-Responder': 1}).fillna(0),
             ascending=False
         ).drop_duplicates(subset='acct_number', keep='first')
         _nu_total = len(_nu_best)
-        _nu_hit = len(_nu_best[_nu_best['outcome'] == 'Hit'])
+        _nu_hit = len(_nu_best[_nu_best['outcome'] == 'Responder'])
         _nu_rate = _nu_hit / _nu_total * 100 if _nu_total > 0 else 0
         _findings.append({
             'Category': 'NU Activation',

@@ -4,11 +4,11 @@
 # Line chart with 3 lines: all responded (Hit), all non-responded,
 # and never-mailed (flat reference). Mailer wave dates as vertical lines.
 #
-# Depends on: challenge_cohort_df (23/11), monthly_by_group (23/03),
+# Depends on: wave_cohort_df (23/11), monthly_by_group (23/03),
 #             never_mailed_profile (23/11), mail_cols, GEN_COLORS
 
-if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
-    print("    No challenge cohort data. Run cell 11 first.")
+if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
+    print("    No segment cohort data. Run cell 11 first.")
 else:
     # Try monthly_by_group first (cell 03), otherwise compute from cohort
     _use_monthly = ('monthly_by_group' in dir() and len(monthly_by_group) > 0
@@ -25,7 +25,7 @@ else:
 
         # Map response groups to our 3 lines
         _resp_groups = ['Threshold', 'NU 5+']
-        _noresp_groups = ['No Response', 'NU 1-4']
+        _noresp_groups = ['Non-Responder', 'NU 1-4']
 
         _resp_data = _mbg[_mbg['response_group'].isin(_resp_groups)].groupby('month_date')['mean_spend'].mean()
         _noresp_data = _mbg[_mbg['response_group'].isin(_noresp_groups)].groupby('month_date')['mean_spend'].mean()
@@ -35,7 +35,7 @@ else:
         _noresp_dates = _noresp_data.index
         _noresp_vals = _noresp_data.values
     else:
-        # Fallback: compute from challenge_cohort_df spend columns
+        # Fallback: compute from wave_cohort_df spend columns
         # This gives a simpler view (pre_spend only, not monthly)
         print("    monthly_by_group not available -- using cohort pre_spend as proxy.")
         _resp_dates = []

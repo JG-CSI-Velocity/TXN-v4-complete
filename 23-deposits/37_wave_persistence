@@ -4,14 +4,14 @@
 # Stacked bar: for each wave's responders, what happened in subsequent waves.
 # Green=responded again, amber=near miss, gray=went silent. Red line=persistence.
 #
-# Depends on: challenge_cohort_df (cell 11), GEN_COLORS, gen_clean_axes
+# Depends on: wave_cohort_df (cell 11), GEN_COLORS, gen_clean_axes
 
-if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
-    print("    No challenge cohort data. Run cell 11 first.")
-elif 'wave' not in challenge_cohort_df.columns:
-    print("    wave column missing from challenge_cohort_df.")
+if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
+    print("    No segment cohort data. Run cell 11 first.")
+elif 'wave' not in wave_cohort_df.columns:
+    print("    wave column missing from wave_cohort_df.")
 else:
-    _df = challenge_cohort_df.copy()
+    _df = wave_cohort_df.copy()
     _wave_dates = _df.groupby('wave')['wave_date'].first().sort_values()
     _waves = _wave_dates.index.tolist()
 
@@ -23,7 +23,7 @@ else:
         for i, w in enumerate(_waves[:-1]):
             # Responders (Hit) in wave w
             _hit_accts = set(
-                _df[(_df['wave'] == w) & (_df['outcome'] == 'Hit')]['acct_number']
+                _df[(_df['wave'] == w) & (_df['outcome'] == 'Responder')]['acct_number']
             )
 
             if len(_hit_accts) == 0:
@@ -40,7 +40,7 @@ else:
             _responded_again = set()
             _near_miss = set()
             for _, row in _sub_data.iterrows():
-                if row['outcome'] == 'Hit':
+                if row['outcome'] == 'Responder':
                     _responded_again.add(row['acct_number'])
                 elif row['outcome'] == 'Near Miss':
                     _near_miss.add(row['acct_number'])

@@ -1,25 +1,25 @@
 # ===========================================================================
-# PROFILE TABLE: Full Same-Challenge Comparison (Conference Edition)
+# PROFILE TABLE: Full Same-Segment Comparison (Conference Edition)
 # ===========================================================================
-# Styled HTML table: rows = challenge, columns = key metrics for Hit vs
+# Styled HTML table: rows = segment, columns = key metrics for Hit vs
 # No Response. The comprehensive leave-behind.
 #
-# Depends on: challenge_cohort_df (cell 11), CHALLENGE_ORDER, GEN_COLORS
+# Depends on: wave_cohort_df (cell 11), SEGMENT_ORDER, GEN_COLORS
 
-if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
-    print("    No challenge cohort data. Run cell 11 first.")
+if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
+    print("    No segment cohort data. Run cell 11 first.")
 else:
-    _df = challenge_cohort_df.copy()
-    _challenges = [c for c in CHALLENGE_ORDER if c in _df['challenge'].unique()]
+    _df = wave_cohort_df.copy()
+    _segments = [c for c in SEGMENT_ORDER if c in _df['segment'].unique()]
 
-    if len(_challenges) == 0:
-        print("    No challenges found in data.")
+    if len(_segments) == 0:
+        print("    No segments found in data.")
     else:
         _rows = []
-        for ch in _challenges:
-            _ch_data = _df[_df['challenge'] == ch]
-            _hit = _ch_data[_ch_data['outcome'] == 'Hit']
-            _nr = _ch_data[_ch_data['outcome'] == 'No Response']
+        for ch in _segments:
+            _ch_data = _df[_df['segment'] == ch]
+            _hit = _ch_data[_ch_data['outcome'] == 'Responder']
+            _nr = _ch_data[_ch_data['outcome'] == 'Non-Responder']
 
             _n_hit = len(_hit)
             _n_nr = len(_nr)
@@ -30,7 +30,7 @@ else:
                 return series.mean() if len(series) > 0 else 0
 
             _row = {
-                'Challenge': ch,
+                'Segment': ch,
                 'N Responded': f"{_n_hit:,}",
                 'N Did Not': f"{_n_nr:,}",
                 'Response Rate': f"{_rate:.1f}%",
@@ -69,10 +69,10 @@ else:
         _html = f"""
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 1200px;">
             <h2 style="color: {_dark}; font-size: 26px; margin-bottom: 4px;">
-                Same-Challenge Comparison: Full Profile
+                Same-Segment Comparison: Full Profile
             </h2>
             <p style="color: {_muted}; font-style: italic; font-size: 14px; margin-top: 0;">
-                Comprehensive leave-behind: every metric, same challenge, responded vs not
+                Comprehensive leave-behind: every metric, same segment, responded vs not
             </p>
             <table style="border-collapse: collapse; width: 100%; font-size: 13px;">
                 <thead>
@@ -89,7 +89,7 @@ else:
             for j, col in enumerate(_table_df.columns):
                 _align = 'left' if j == 0 else 'center'
                 _fw = 'bold' if j == 0 or col == 'Response Rate' else 'normal'
-                _color = _success if 'Hit' in col else (_muted if 'NR' in col else _dark)
+                _color = _success if 'Responder' in col else (_muted if 'NR' in col else _dark)
                 _html += (f'<td style="padding: 8px; text-align: {_align}; '
                          f'font-weight: {_fw}; color: {_color}; '
                          f'border-bottom: 1px solid #e0e0e0;">{row[col]}</td>')
@@ -100,5 +100,5 @@ else:
         from IPython.display import display, HTML
         display(HTML(_html))
 
-        print(f"\n  Profile table: {len(_challenges)} challenges, "
-              f"{len(_table_df.columns) - 1} metrics per challenge")
+        print(f"\n  Profile table: {len(_segments)} segments, "
+              f"{len(_table_df.columns) - 1} metrics per segment")

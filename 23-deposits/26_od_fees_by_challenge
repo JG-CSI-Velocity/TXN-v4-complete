@@ -1,18 +1,18 @@
 # ===========================================================================
 # OD FEES BY CHALLENGE: Same-Cohort Hit vs No Response (Conference Ed.)
 # ===========================================================================
-# Grouped bar: avg CollectedFees365 per challenge, Hit vs No Response.
+# Grouped bar: avg CollectedFees365 per segment, Hit vs No Response.
 #
-# Depends on: challenge_cohort_df (cell 11), never_mailed_profile (cell 11),
-#             CHALLENGE_ORDER (cell 11), GEN_COLORS, gen_clean_axes, gen_fmt_dollar
+# Depends on: wave_cohort_df (cell 11), never_mailed_profile (cell 11),
+#             SEGMENT_ORDER (cell 11), GEN_COLORS, gen_clean_axes, gen_fmt_dollar
 
-if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
-    print("    No challenge cohort data. Run cell 11 first.")
-elif 'CollectedFees365' not in challenge_cohort_df.columns:
-    print("    No CollectedFees365 column in challenge_cohort_df.")
+if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
+    print("    No segment cohort data. Run cell 11 first.")
+elif 'CollectedFees365' not in wave_cohort_df.columns:
+    print("    No CollectedFees365 column in wave_cohort_df.")
 else:
-    _plot_df = challenge_cohort_df[
-        challenge_cohort_df['outcome'].isin(['Hit', 'No Response'])
+    _plot_df = wave_cohort_df[
+        wave_cohort_df['outcome'].isin(['Responder', 'Non-Responder'])
     ].copy()
 
     if len(_plot_df) == 0:
@@ -21,8 +21,8 @@ else:
         fig, ax = plt.subplots(figsize=(14, 7))
 
         _bar_width = 0.35
-        _challenges = [c for c in CHALLENGE_ORDER if c in _plot_df['challenge'].unique()]
-        _x = np.arange(len(_challenges))
+        _segments = [c for c in SEGMENT_ORDER if c in _plot_df['segment'].unique()]
+        _x = np.arange(len(_segments))
 
         _hit_means = []
         _hit_medians = []
@@ -31,9 +31,9 @@ else:
         _nr_medians = []
         _nr_counts = []
 
-        for ch in _challenges:
-            _h = _plot_df[(_plot_df['challenge'] == ch) & (_plot_df['outcome'] == 'Hit')]['CollectedFees365']
-            _n = _plot_df[(_plot_df['challenge'] == ch) & (_plot_df['outcome'] == 'No Response')]['CollectedFees365']
+        for ch in _segments:
+            _h = _plot_df[(_plot_df['segment'] == ch) & (_plot_df['outcome'] == 'Responder')]['CollectedFees365']
+            _n = _plot_df[(_plot_df['segment'] == ch) & (_plot_df['outcome'] == 'Non-Responder')]['CollectedFees365']
             _hit_means.append(_h.mean() if len(_h) > 0 else 0)
             _hit_medians.append(_h.median() if len(_h) > 0 else 0)
             _hit_counts.append(len(_h))
@@ -46,7 +46,7 @@ else:
                           linewidth=1.5, label='Hit (Responded)', zorder=3)
         bars_nr = ax.bar(_x + _bar_width / 2, _nr_means, _bar_width,
                          color=GEN_COLORS['muted'], edgecolor='white',
-                         linewidth=1.5, label='No Response', zorder=3)
+                         linewidth=1.5, label='Non-Responder', zorder=3)
 
         for bar, med, cnt in zip(bars_hit, _hit_medians, _hit_counts):
             _y = bar.get_height()
@@ -68,7 +68,7 @@ else:
                        linewidth=2.5, zorder=4, label=f'Never Mailed (${_nm_val:,.0f})')
 
         ax.set_xticks(_x)
-        ax.set_xticklabels(_challenges, fontsize=14, fontweight='bold')
+        ax.set_xticklabels(_segments, fontsize=14, fontweight='bold')
         ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
         ax.set_ylabel("Avg Annual OD/NSF Fees", fontsize=16, fontweight='bold', labelpad=10)
 
@@ -78,7 +78,7 @@ else:
         ax.legend(fontsize=13, loc='upper right', frameon=True,
                   facecolor='white', edgecolor=GEN_COLORS['grid'])
 
-        ax.set_title("Same Challenge: Fee Revenue",
+        ax.set_title("Same Segment: Fee Revenue",
                       fontsize=26, fontweight='bold',
                       color=GEN_COLORS['dark_text'], pad=35, loc='left')
         ax.text(0.0, 1.02,

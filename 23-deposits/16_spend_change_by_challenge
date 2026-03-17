@@ -1,29 +1,29 @@
 # ===========================================================================
 # SPEND CHANGE BY CHALLENGE: Hit vs No Response (Conference Edition)
 # ===========================================================================
-# Grouped bar chart: for each challenge level, two bars side by side --
+# Grouped bar chart: for each segment level, two bars side by side --
 # avg spend_delta for Hit (green) vs avg spend_delta for No Response (gray).
-# The KEY comparison: same challenge, same cohort, two outcomes.
+# The KEY comparison: same segment, same cohort, two outcomes.
 #
-# Depends on: challenge_cohort_df (23/11), CHALLENGE_ORDER (23/11), GEN_COLORS
+# Depends on: wave_cohort_df (23/11), SEGMENT_ORDER (23/11), GEN_COLORS
 
-if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
-    print("    No challenge cohort data. Run cell 11 first.")
-elif 'spend_delta' not in challenge_cohort_df.columns:
+if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
+    print("    No segment cohort data. Run cell 11 first.")
+elif 'spend_delta' not in wave_cohort_df.columns:
     print("    spend_delta not computed. Check pre/post spend columns in cell 11.")
 else:
     _COLOR_HIT = GEN_COLORS['success']
     _COLOR_NO = GEN_COLORS['muted']
 
     _rows = []
-    for ch in CHALLENGE_ORDER:
-        _sub = challenge_cohort_df[challenge_cohort_df['challenge'] == ch]
-        _hit = _sub[_sub['outcome'] == 'Hit']
-        _no = _sub[_sub['outcome'] == 'No Response']
+    for ch in SEGMENT_ORDER:
+        _sub = wave_cohort_df[wave_cohort_df['segment'] == ch]
+        _hit = _sub[_sub['outcome'] == 'Responder']
+        _no = _sub[_sub['outcome'] == 'Non-Responder']
         if len(_hit) == 0 and len(_no) == 0:
             continue
         _rows.append({
-            'challenge': ch,
+            'segment': ch,
             'hit_delta': _hit['spend_delta'].mean() if len(_hit) > 0 else 0,
             'hit_n': len(_hit),
             'no_delta': _no['spend_delta'].mean() if len(_no) > 0 else 0,
@@ -33,7 +33,7 @@ else:
     _cmp = pd.DataFrame(_rows)
 
     if len(_cmp) == 0:
-        print("    No challenge levels with both Hit and No Response data.")
+        print("    No segment levels with both Hit and No Response data.")
     else:
         fig, ax = plt.subplots(figsize=(14, 7))
 
@@ -82,7 +82,7 @@ else:
                     color=GEN_COLORS['muted'])
 
         ax.set_xticks(_x)
-        ax.set_xticklabels(_cmp['challenge'], fontsize=14, fontweight='bold')
+        ax.set_xticklabels(_cmp['segment'], fontsize=14, fontweight='bold')
         ax.set_ylabel("Avg Spend Change ($)", fontsize=16, fontweight='bold', labelpad=10)
         ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
         ax.axhline(y=0, color=GEN_COLORS['dark_text'], linewidth=0.8, alpha=0.5)
@@ -93,7 +93,7 @@ else:
         ax.legend(fontsize=13, loc='best', frameon=True,
                   facecolor='white', edgecolor=GEN_COLORS['grid'])
 
-        ax.set_title("Same Challenge, Two Outcomes: Spend Change",
+        ax.set_title("Same Segment, Two Outcomes: Spend Change",
                       fontsize=26, fontweight='bold',
                       color=GEN_COLORS['dark_text'], pad=35, loc='left')
         ax.text(0.0, 1.02,

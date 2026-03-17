@@ -5,13 +5,13 @@
 # Three lines: responded (Hit), didn't respond, never mailed.
 # Uses the spend matrix from rewards_df monthly Spend columns.
 #
-# Depends on: rewards_df, challenge_cohort_df (23/11),
+# Depends on: rewards_df, wave_cohort_df (23/11),
 #             never_mailed_profile (23/11), GEN_COLORS
 
 if 'rewards_df' not in dir():
     print("    rewards_df not available. Run 00-setup cells first.")
-elif 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
-    print("    No challenge cohort data. Run cell 11 first.")
+elif 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
+    print("    No segment cohort data. Run cell 11 first.")
 else:
     _rewards_cols = [c.strip() for c in rewards_df.columns]
     _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
@@ -30,11 +30,11 @@ else:
 
         # Build sets of accounts by response status
         _hit_accts = set(
-            challenge_cohort_df[challenge_cohort_df['outcome'] == 'Hit']['acct_number'].unique()
-        ) if 'acct_number' in challenge_cohort_df.columns else set()
+            wave_cohort_df[wave_cohort_df['outcome'] == 'Responder']['acct_number'].unique()
+        ) if 'acct_number' in wave_cohort_df.columns else set()
         _mailed_accts = set(
-            challenge_cohort_df['acct_number'].unique()
-        ) if 'acct_number' in challenge_cohort_df.columns else set()
+            wave_cohort_df['acct_number'].unique()
+        ) if 'acct_number' in wave_cohort_df.columns else set()
         _no_resp_accts = _mailed_accts - _hit_accts
         _never_mailed_accts = set(_acct_nums) - _mailed_accts
 

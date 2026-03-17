@@ -3,17 +3,17 @@
 # ===========================================================================
 # 6 FancyBboxPatch KPI cards summarizing the deposit portfolio at a glance.
 #
-# Depends on: challenge_cohort_df (23/11), deposit_df (23/01), GEN_COLORS
+# Depends on: wave_cohort_df (23/11), deposit_df (23/01), GEN_COLORS
 
 from matplotlib.patches import FancyBboxPatch
 import matplotlib.patheffects as pe
 
-if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
-    print("    No challenge cohort data. Run cell 11 first.")
+if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
+    print("    No segment cohort data. Run cell 11 first.")
 else:
     # Compute KPI values with safe fallbacks
-    _total_mailed = challenge_cohort_df['acct_number'].nunique() if 'acct_number' in challenge_cohort_df.columns else len(challenge_cohort_df)
-    _total_responded = challenge_cohort_df[challenge_cohort_df['outcome'] == 'Hit']['acct_number'].nunique() if 'acct_number' in challenge_cohort_df.columns else (challenge_cohort_df['outcome'] == 'Hit').sum()
+    _total_mailed = wave_cohort_df['acct_number'].nunique() if 'acct_number' in wave_cohort_df.columns else len(wave_cohort_df)
+    _total_responded = wave_cohort_df[wave_cohort_df['outcome'] == 'Responder']['acct_number'].nunique() if 'acct_number' in wave_cohort_df.columns else (wave_cohort_df['outcome'] == 'Responder').sum()
     _overall_rate = _total_responded / _total_mailed * 100 if _total_mailed > 0 else 0
 
     _avg_balance = 0
@@ -21,8 +21,8 @@ else:
         _avg_balance = deposit_df['balance'].mean()
 
     _avg_spend = 0
-    if 'pre_spend' in challenge_cohort_df.columns:
-        _avg_spend = challenge_cohort_df['pre_spend'].mean()
+    if 'pre_spend' in wave_cohort_df.columns:
+        _avg_spend = wave_cohort_df['pre_spend'].mean()
 
     _dd_pct = 0
     if 'deposit_df' in dir() and len(deposit_df) > 0 and 'has_direct_deposit' in deposit_df.columns:
@@ -31,10 +31,10 @@ else:
     # KPI definitions: (label, value_str, subtitle)
     _kpis = [
         ("Total Mailed", f"{_total_mailed:,}", "unique accounts"),
-        ("Total Responded", f"{_total_responded:,}", "hit their challenge"),
+        ("Total Responded", f"{_total_responded:,}", "hit their segment"),
         ("Overall Response Rate", f"{_overall_rate:.1f}%", "of mailed accounts"),
         ("Avg Deposit Balance", f"${_avg_balance:,.0f}", "latest snapshot"),
-        ("Avg Monthly Spend", f"${_avg_spend:,.0f}", "pre-challenge baseline"),
+        ("Avg Monthly Spend", f"${_avg_spend:,.0f}", "pre-segment baseline"),
         ("Direct Deposit %", f"{_dd_pct:.1f}%", "of deposit accounts"),
     ]
 
