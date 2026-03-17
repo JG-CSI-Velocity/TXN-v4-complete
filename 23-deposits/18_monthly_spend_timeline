@@ -80,10 +80,13 @@ else:
                                linewidth=1, linestyle=':', alpha=0.5, zorder=2)
                 except (ValueError, TypeError):
                     pass
-            # Single legend entry for wave lines
-            ax.axvline(x=pd.NaT, color=GEN_COLORS['accent'],
-                       linewidth=1, linestyle=':', alpha=0.5,
-                       label='Mailer Waves')
+            # Legend proxy for wave lines (can't use axvline at NaT)
+            from matplotlib.lines import Line2D
+            ax.legend(handles=ax.get_legend_handles_labels()[0] + [
+                Line2D([0], [0], color=GEN_COLORS['accent'], linewidth=1,
+                       linestyle=':', alpha=0.5, label='Mailer Waves')
+            ], fontsize=12, loc='upper left', frameon=True,
+               facecolor='white', edgecolor=GEN_COLORS['grid'])
 
         ax.set_ylabel("Avg Monthly Spend ($)", fontsize=16,
                        fontweight='bold', labelpad=10)
@@ -92,8 +95,7 @@ else:
         gen_clean_axes(ax)
         ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
         ax.set_axisbelow(True)
-        ax.legend(fontsize=13, loc='best', frameon=True,
-                  facecolor='white', edgecolor=GEN_COLORS['grid'])
+        # Legend already set above with wave proxy line
 
         fig.autofmt_xdate(rotation=45)
 
