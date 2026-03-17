@@ -1,0 +1,123 @@
+# ===========================================================================
+# PPTX EXPORT: Revenue Optimization (Storyline 4 of 7, CORE)
+# ===========================================================================
+# Exports a single storyline deck: "Revenue Optimization"
+# Audience: CFO, VP Card Services, VP Payments
+# Requires: 10_pptx_figure_registry has already run
+#
+# Data sources: interchange_df, rege_df, payroll_df
+
+import os
+
+from dashboard.storyline_config import STORYLINES
+from dashboard.pptx_engine import export_storyline
+
+_STORYLINE_KEY = "revenue_optimization"
+_config = STORYLINES[_STORYLINE_KEY]
+
+_cu_name = CU_NAME if 'CU_NAME' in dir() else "Credit Union"
+_dataset_label = DATASET_LABEL if 'DATASET_LABEL' in dir() else "Analysis Period"
+_csm_name = CSM_NAME if 'CSM_NAME' in dir() else ""
+
+EXPORT_DIR = os.path.join(PPTX_BASE_PATH, 'pptx_output')
+os.makedirs(EXPORT_DIR, exist_ok=True)
+
+print(f"PPTX Export: {_config['title']}")
+print("=" * 60)
+print(f"  Type:     {_config['type']}")
+print(f"  Audience: {_config['audience']}")
+print(f"  CU:       {_cu_name}")
+print(f"  Dataset:  {_dataset_label}")
+
+# ---------------------------------------------------------------------------
+# Build KPI values relevant to Revenue Optimization
+# ---------------------------------------------------------------------------
+_kpi_values = {}
+
+if 'interchange_df' in dir() and len(interchange_df) > 0:
+    _td = interchange_df['total_sig_dollars'].sum() if 'total_sig_dollars' in interchange_df.columns else 0
+    _tp = interchange_df['total_pin_dollars'].sum() if 'total_pin_dollars' in interchange_df.columns else 0
+    if _td + _tp > 0:
+        _kpi_values['SIG Ratio'] = f"{_td / (_td + _tp) * 100:.1f}%"
+
+    if 'annual_ic_revenue' in dir():
+        _kpi_values['Annual IC'] = gen_fmt_dollar(annual_ic_revenue, None)
+    elif 'total_sig_dollars' in interchange_df.columns:
+        _est_ic = _td * 0.015 + _tp * 0.005
+        _kpi_values['Est. IC Revenue'] = gen_fmt_dollar(_est_ic, None)
+
+    if 'pin_shift_gain' in dir():
+        _kpi_values['PIN Shift Gain'] = gen_fmt_dollar(pin_shift_gain, None)
+
+if 'rege_df' in dir() and len(rege_df) > 0:
+    _oi = len(rege_df[rege_df['current_status'] == 'Opted-In'])
+    _kpi_values['Reg E Opt-In'] = f"{_oi / len(rege_df) * 100:.1f}%"
+
+if 'payroll_df' in dir() and len(payroll_df) > 0 and 'has_payroll' in payroll_df.columns:
+    _kpi_values['Payroll DD'] = f"{payroll_df['has_payroll'].sum() / len(payroll_df) * 100:.1f}%"
+
+print(f"  KPIs:     {len(_kpi_values)} populated")
+
+# ---------------------------------------------------------------------------
+# Build findings for revenue narrative
+# ---------------------------------------------------------------------------
+_findings = []
+
+if 'interchange_df' in dir() and len(interchange_df) > 0:
+    _td = interchange_df['total_sig_dollars'].sum() if 'total_sig_dollars' in interchange_df.columns else 0
+    _tp = interchange_df['total_pin_dollars'].sum() if 'total_pin_dollars' in interchange_df.columns else 0
+    if _td + _tp > 0:
+        _sig_ratio = _td / (_td + _tp) * 100
+        _findings.append(
+            f"Signature ratio at {_sig_ratio:.1f}% -- "
+            f"every 10% PIN-to-SIG shift generates additional interchange"
+        )
+
+    if 'total_pin_dollars' in interchange_df.columns:
+        _pin_heavy = (interchange_df['total_pin_dollars'] > interchange_df.get('total_sig_dollars', 0)).sum() \
+            if 'total_sig_dollars' in interchange_df.columns else 0
+        if _pin_heavy > 0:
+            _findings.append(
+                f"{_pin_heavy:,} PIN-heavy accounts represent conversion opportunity"
+            )
+
+if 'rege_df' in dir() and len(rege_df) > 0:
+    _oi = len(rege_df[rege_df['current_status'] == 'Opted-In'])
+    _optin_pct = _oi / len(rege_df) * 100
+    _not_opted = len(rege_df) - _oi
+    _findings.append(
+        f"Reg E opt-in at {_optin_pct:.1f}% -- "
+        f"{_not_opted:,} eligible members not yet opted in"
+    )
+
+if 'payroll_df' in dir() and len(payroll_df) > 0 and 'has_payroll' in payroll_df.columns:
+    _payroll_pct = payroll_df['has_payroll'].sum() / len(payroll_df) * 100
+    _findings.append(
+        f"Payroll direct deposit detected for {_payroll_pct:.1f}% of accounts"
+    )
+
+# ---------------------------------------------------------------------------
+# Export
+# ---------------------------------------------------------------------------
+try:
+    _path = export_storyline(
+        storyline_key=_STORYLINE_KEY,
+        fig_registry=pptx_fig_registry,
+        kpi_values=_kpi_values,
+        findings=_findings,
+        cu_name=_cu_name,
+        dataset_label=_dataset_label,
+        csm_name=_csm_name,
+        output_dir=EXPORT_DIR,
+        notebook_globals=globals(),
+        base_path=PPTX_BASE_PATH,
+    )
+    _size = os.path.getsize(_path) / 1024
+    print(f"\n{'='*60}")
+    print(f"  EXPORT COMPLETE: {_config['title']}")
+    print(f"  File: {os.path.basename(_path)} ({_size:.0f} KB)")
+    print(f"  Path: {_path}")
+    print(f"{'='*60}")
+except Exception as e:
+    print(f"\n  FAILED: {_STORYLINE_KEY} -- {e}")
+    print(f"{'='*60}")
