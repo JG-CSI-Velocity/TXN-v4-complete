@@ -1,83 +1,265 @@
 # ===========================================================================
-# PORTFOLIO KPI CARDS: Deposit Portfolio Overview (Conference Edition)
+# PORTFOLIO KPIs BY RESPONSE FREQUENCY (Conference Edition)
 # ===========================================================================
-# 6 FancyBboxPatch KPI cards summarizing the deposit portfolio at a glance.
+# Compares key deposit/spend metrics across response groups:
+# Never Responded, Responded Once, Responded 2+. Never Mailed as reference.
 #
-# Depends on: wave_cohort_df (23/11), deposit_df (23/01), GEN_COLORS
-
-from matplotlib.patches import FancyBboxPatch
-import matplotlib.patheffects as pe
+# Depends on: wave_cohort_df (23/11), never_mailed_profile (23/11), GEN_COLORS
 
 if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
-    print("    No segment cohort data. Run cell 11 first.")
+    print("    No cohort data. Run cell 11 first.")
 else:
-    # Compute KPI values with safe fallbacks
-    _total_mailed = wave_cohort_df['acct_number'].nunique() if 'acct_number' in wave_cohort_df.columns else len(wave_cohort_df)
-    _total_responded = wave_cohort_df[wave_cohort_df['outcome'] == 'Responder']['acct_number'].nunique() if 'acct_number' in wave_cohort_df.columns else (wave_cohort_df['outcome'] == 'Responder').sum()
-    _overall_rate = _total_responded / _total_mailed * 100 if _total_mailed > 0 else 0
+    from IPython.display import display
 
-    _avg_balance = 0
-    if 'deposit_df' in dir() and len(deposit_df) > 0 and 'balance' in deposit_df.columns:
-        _avg_balance = deposit_df['balance'].mean()
+    _cohort = wave_cohort_df.copy()
 
-    _avg_spend = 0
-    if 'pre_spend' in wave_cohort_df.columns:
-        _avg_spend = wave_cohort_df['pre_spend'].mean()
+    # -----------------------------------------------------------------
+    # Build response frequency per unique account
+    # -----------------------------------------------------------------
+    _resp_per_acct = (
+        _cohort[_cohort['outcome'] == 'Responder']
+        .groupby('acct_number')
+        .size()
+    )
+    _all_accts = _cohort['acct_number'].unique()
+    _resp_counts = (
+        pd.Series(0, index=_all_accts)
+        .add(_resp_per_acct, fill_value=0)
+        .astype(int)
+    )
+    _resp_groups = _resp_counts.map(
+        lambda x: 'Never Responded' if x == 0
+        else 'Responded Once' if x == 1
+        else 'Responded 2+'
+    )
 
-    _dd_pct = 0
-    if 'deposit_df' in dir() and len(deposit_df) > 0 and 'has_direct_deposit' in deposit_df.columns:
-        _dd_pct = deposit_df['has_direct_deposit'].mean() * 100
+    # Take latest row per account (most recent mailer data)
+    _acct = (
+        _cohort.sort_values('wave_date')
+        .groupby('acct_number')
+        .last()
+        .reset_index()
+    )
+    _acct['resp_group'] = _acct['acct_number'].map(_resp_groups)
 
-    # KPI definitions: (label, value_str, subtitle)
-    _kpis = [
-        ("Total Mailed", f"{_total_mailed:,}", "unique accounts"),
-        ("Total Responded", f"{_total_responded:,}", "hit their segment"),
-        ("Overall Response Rate", f"{_overall_rate:.1f}%", "of mailed accounts"),
-        ("Avg Deposit Balance", f"${_avg_balance:,.0f}", "latest snapshot"),
-        ("Avg Monthly Spend", f"${_avg_spend:,.0f}", "pre-segment baseline"),
-        ("Direct Deposit %", f"{_dd_pct:.1f}%", "of deposit accounts"),
-    ]
+    # Discover snapshot balance/deposit columns and average across them
+    _balance_cols = sorted(
+        [c for c in _cohort.columns
+         if c.endswith('_balance') and not c.startswith('delta')],
+        key=lambda c: pd.to_datetime(c.replace('_balance', ''), format='%b%y')
+    )
+    _dep365_cols = sorted(
+        [c for c in _cohort.columns if c.endswith('_depAmt365')],
+        key=lambda c: pd.to_datetime(c.replace('_depAmt365', ''), format='%b%y')
+    )
 
-    # Layout: 3 columns x 2 rows
-    fig, axes = plt.subplots(2, 3, figsize=(14, 7))
-    fig.subplots_adjust(hspace=0.35, wspace=0.25)
+    if _balance_cols:
+        _acct['avg_balance'] = _acct[_balance_cols].mean(axis=1)
+    if _dep365_cols:
+        _acct['avg_dep365'] = _acct[_dep365_cols].mean(axis=1)
 
-    _card_colors = [
-        GEN_COLORS['primary'], GEN_COLORS['success'], GEN_COLORS['info'],
-        GEN_COLORS['warning'], GEN_COLORS['accent'], '#264653',
-    ]
+    # -----------------------------------------------------------------
+    # Compute group-level KPIs
+    # -----------------------------------------------------------------
+    _GROUP_ORDER = ['Never Responded', 'Responded Once', 'Responded 2+']
+    _kpi_rows = []
 
-    for idx, (ax, (label, val_str, subtitle)) in enumerate(zip(axes.flat, _kpis)):
-        ax.set_xlim(0, 10)
-        ax.set_ylim(0, 10)
-        ax.axis('off')
+    for grp in _GROUP_ORDER:
+        _g = _acct[_acct['resp_group'] == grp]
+        if len(_g) == 0:
+            continue
+        _row = {'Group': grp, 'Accounts': len(_g)}
 
-        card = FancyBboxPatch(
-            (0.3, 0.3), 9.4, 9.4,
-            boxstyle="round,pad=0.3",
-            facecolor=_card_colors[idx],
-            edgecolor='white', linewidth=3,
-        )
-        ax.add_patch(card)
+        if 'avg_balance' in _g.columns:
+            _row['Avg Balance'] = _g['avg_balance'].mean()
+        if 'pre_spend' in _g.columns:
+            _row['Avg Monthly Spend'] = _g['pre_spend'].mean()
+        if 'post_spend_3mo' in _g.columns:
+            _row['Avg Post Spend'] = _g['post_spend_3mo'].mean()
+        if 'avg_dep365' in _g.columns:
+            _row['Avg Dep Amt (365d)'] = _g['avg_dep365'].mean()
+        if 'pre_mtd' in _g.columns:
+            _row['Avg MTD Items'] = _g['pre_mtd'].mean()
+        if 'spend_delta' in _g.columns:
+            _row['Spend Delta'] = _g['spend_delta'].mean()
 
-        ax.text(5, 7.0, label,
-                ha='center', va='center', fontsize=13, fontweight='bold',
-                color='white', alpha=0.85)
-        ax.text(5, 4.5, val_str,
-                ha='center', va='center', fontsize=30, fontweight='bold',
-                color='white',
-                path_effects=[pe.withStroke(linewidth=2, foreground='black', alpha=0.15)])
-        ax.text(5, 2.3, subtitle,
-                ha='center', va='center', fontsize=11,
-                color='white', alpha=0.8)
+        _kpi_rows.append(_row)
 
-    fig.suptitle("Deposit Portfolio Overview",
-                 fontsize=26, fontweight='bold',
-                 color=GEN_COLORS['dark_text'], x=0.02, ha='left', y=1.02)
+    # Never Mailed reference row
+    if 'never_mailed_profile' in dir() and never_mailed_profile:
+        _nm = {'Group': 'Never Mailed (ref)'}
+        _nm['Accounts'] = never_mailed_profile.get('n_accounts', 0)
+        if 'balance_mean' in never_mailed_profile:
+            _nm['Avg Balance'] = never_mailed_profile['balance_mean']
+        if 'avg_monthly_spend' in never_mailed_profile:
+            _nm['Avg Monthly Spend'] = never_mailed_profile['avg_monthly_spend']
+        if 'depAmt365_mean' in never_mailed_profile:
+            _nm['Avg Dep Amt (365d)'] = never_mailed_profile['depAmt365_mean']
+        _kpi_rows.append(_nm)
 
-    plt.tight_layout()
-    plt.show()
+    _kpi_df = pd.DataFrame(_kpi_rows)
 
-    print(f"\n  Portfolio KPIs:")
-    for label, val_str, subtitle in _kpis:
-        print(f"    {label}: {val_str} ({subtitle})")
+    # -----------------------------------------------------------------
+    # Chart: 2x2 panel -- key metrics by response frequency
+    # -----------------------------------------------------------------
+    _group_colors = {
+        'Never Responded': GEN_COLORS['muted'],
+        'Responded Once':  GEN_COLORS['info'],
+        'Responded 2+':    GEN_COLORS['success'],
+    }
+
+    _chart_groups = [g for g in _GROUP_ORDER if g in _kpi_df['Group'].values]
+
+    _metric_panels = []
+    if 'Avg Balance' in _kpi_df.columns:
+        _metric_panels.append(('Avg Balance', 'Avg Deposit Balance', gen_fmt_dollar))
+    if 'Avg Monthly Spend' in _kpi_df.columns:
+        _metric_panels.append(('Avg Monthly Spend', 'Avg Monthly Spend', gen_fmt_dollar))
+    if 'Avg Dep Amt (365d)' in _kpi_df.columns:
+        _metric_panels.append(('Avg Dep Amt (365d)', 'Deposit Volume (365d)', gen_fmt_dollar))
+    if 'Avg MTD Items' in _kpi_df.columns:
+        _metric_panels.append(('Avg MTD Items', 'Avg MTD Items', gen_fmt_count))
+
+    _n_panels = min(len(_metric_panels), 4)
+    if _n_panels > 0:
+        _rows_chart = 1 if _n_panels <= 2 else 2
+        _cols_chart = min(_n_panels, 2)
+        fig, axes = plt.subplots(_rows_chart, _cols_chart,
+                                  figsize=(8 * _cols_chart, 5 * _rows_chart))
+        if _n_panels == 1:
+            axes = [axes]
+        else:
+            axes = axes.flat if hasattr(axes, 'flat') else [axes]
+
+        _x = np.arange(len(_chart_groups))
+
+        for ax, (col, title, fmt_fn) in zip(axes, _metric_panels[:_n_panels]):
+            _vals = []
+            _colors = []
+            for g in _chart_groups:
+                _gdata = _kpi_df[_kpi_df['Group'] == g]
+                _v = _gdata[col].iloc[0] if len(_gdata) > 0 and col in _gdata.columns and pd.notna(_gdata[col].iloc[0]) else 0
+                _vals.append(_v)
+                _colors.append(_group_colors.get(g, GEN_COLORS['muted']))
+
+            bars = ax.bar(_x, _vals, color=_colors,
+                          edgecolor='white', linewidth=1.5, width=0.55, zorder=3)
+
+            for bar, val in zip(bars, _vals):
+                if val > 0:
+                    ax.text(bar.get_x() + bar.get_width() / 2,
+                            bar.get_height() + ax.get_ylim()[1] * 0.01,
+                            fmt_fn(val, None),
+                            ha='center', va='bottom', fontsize=13, fontweight='bold',
+                            color=GEN_COLORS['dark_text'])
+
+            ax.set_xticks(_x)
+            ax.set_xticklabels(_chart_groups, fontsize=11, fontweight='bold')
+            ax.set_title(title, fontsize=16, fontweight='bold',
+                          color=GEN_COLORS['dark_text'], pad=10)
+            gen_clean_axes(ax)
+            ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(fmt_fn))
+
+            _ylim = ax.get_ylim()
+            ax.set_ylim(0, max(_vals) * 1.2 if max(_vals) > 0 else 1)
+
+        # Turn off unused axes
+        for ax in list(axes)[_n_panels:]:
+            ax.axis('off')
+
+        fig.suptitle("Portfolio KPIs by Response Frequency",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], x=0.02, ha='left', y=1.02)
+
+        plt.tight_layout()
+        plt.show()
+
+    # -----------------------------------------------------------------
+    # Styled table: full KPI comparison
+    # -----------------------------------------------------------------
+    _display_cols = [c for c in _kpi_df.columns if _kpi_df[c].notna().any()]
+    _display_df = _kpi_df[_display_cols].copy()
+
+    _last_idx = len(_display_df) - 1
+    _has_nm = 'Never Mailed (ref)' in _display_df['Group'].values
+
+    def _style_rows(row):
+        if _has_nm and row.name == _last_idx:
+            return ['font-style: italic; border-top: 2px solid #1B2A4A; '
+                    'color: #6C757D'] * len(row)
+        return [''] * len(row)
+
+    _fmt = {}
+    if 'Accounts' in _display_cols:
+        _fmt['Accounts'] = '{:,.0f}'
+    for col in ['Avg Balance', 'Avg Monthly Spend', 'Avg Post Spend',
+                'Avg Dep Amt (365d)']:
+        if col in _display_cols:
+            _fmt[col] = '${:,.0f}'
+    if 'Avg MTD Items' in _display_cols:
+        _fmt['Avg MTD Items'] = '{:,.1f}'
+    if 'Spend Delta' in _display_cols:
+        _fmt['Spend Delta'] = lambda v: (f"+${v:,.0f}" if pd.notna(v) and v > 0
+                                          else f"-${abs(v):,.0f}" if pd.notna(v) and v < 0
+                                          else '--' if pd.isna(v)
+                                          else '$0')
+
+    _styled = (
+        _display_df.style
+        .hide(axis='index')
+        .format(_fmt, na_rep='--')
+        .apply(_style_rows, axis=1)
+        .set_properties(**{
+            'font-size': '14px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF',
+            'padding': '10px 12px',
+        })
+        .set_properties(subset=['Group'], **{
+            'text-align': 'left', 'color': GEN_COLORS['primary'],
+        })
+        .set_table_styles([
+            {'selector': 'th', 'props': [
+                ('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '14px'),
+                ('font-weight', 'bold'), ('text-align', 'center'),
+                ('padding', '10px 12px'),
+            ]},
+            {'selector': 'caption', 'props': [
+                ('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']),
+                ('text-align', 'left'), ('padding-bottom', '12px'),
+            ]},
+        ])
+        .set_caption("Portfolio KPIs by Response Frequency")
+    )
+    display(_styled)
+
+    # -----------------------------------------------------------------
+    # Narrative
+    # -----------------------------------------------------------------
+    _mailed_groups = _kpi_df[_kpi_df['Group'] != 'Never Mailed (ref)']
+    if len(_mailed_groups) >= 2:
+        _nr = _mailed_groups[_mailed_groups['Group'] == 'Never Responded']
+        _r2 = _mailed_groups[_mailed_groups['Group'] == 'Responded 2+']
+
+        print(f"\n  Response frequency breakdown:")
+        for _, row in _mailed_groups.iterrows():
+            print(f"    {row['Group']:<20s}: {int(row['Accounts']):>6,} accounts")
+
+        if len(_nr) > 0 and len(_r2) > 0 and 'Avg Balance' in _kpi_df.columns:
+            _nr_bal = _nr['Avg Balance'].iloc[0]
+            _r2_bal = _r2['Avg Balance'].iloc[0]
+            if _nr_bal > 0:
+                _lift = (_r2_bal - _nr_bal) / _nr_bal * 100
+                print(f"\n    Responded 2+ carry ${_r2_bal:,.0f} avg balance vs "
+                      f"${_nr_bal:,.0f} for Never Responded ({_lift:+.1f}%)")
+
+        if len(_nr) > 0 and len(_r2) > 0 and 'Avg Monthly Spend' in _kpi_df.columns:
+            _nr_sp = _nr['Avg Monthly Spend'].iloc[0]
+            _r2_sp = _r2['Avg Monthly Spend'].iloc[0]
+            if _nr_sp > 0:
+                _sp_lift = (_r2_sp - _nr_sp) / _nr_sp * 100
+                print(f"    Responded 2+ spend ${_r2_sp:,.0f}/mo avg vs "
+                      f"${_nr_sp:,.0f} for Never Responded ({_sp_lift:+.1f}%)")
