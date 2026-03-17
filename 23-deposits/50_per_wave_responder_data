@@ -208,6 +208,10 @@ else:
             _dep_avail = [c for c in _dep_cols if c in deposit_long.columns]
             _dep_sub = deposit_long[_dep_avail].copy()
 
+            # Ensure matching dtypes on join keys (string on both sides)
+            wave_cohort_df['acct_number'] = wave_cohort_df['acct_number'].astype(str).str.strip()
+            _dep_sub[_dep_join_col] = _dep_sub[_dep_join_col].astype(str).str.strip()
+
             wave_cohort_df = wave_cohort_df.merge(
                 _dep_sub,
                 left_on=['acct_number', 'nearest_snapshot'],
