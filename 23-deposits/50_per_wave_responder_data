@@ -198,28 +198,55 @@ else:
 
         # Merge deposit data from nearest snapshot
         _has_deposits = 'deposit_long' in dir() and len(deposit_long) > 0
-        _dep_join_col = DEPOSIT_JOIN_KEY_DEPOSIT if 'DEPOSIT_JOIN_KEY_DEPOSIT' in dir() else 'HASHED_ACCOUNT'
 
-        if _has_deposits and _dep_join_col in deposit_long.columns:
-            _dep_cols = [_dep_join_col, 'snapshot', 'balance', 'depAmt365',
-                         'depCount365', 'DepAmt33', 'DepCount33',
-                         'avgdaysbetweendeposits', 'CollectedFees365',
-                         'fdicoccasionsrolling12months']
-            _dep_avail = [c for c in _dep_cols if c in deposit_long.columns]
-            _dep_sub = deposit_long[_dep_avail].copy()
+        if _has_deposits:
+            # Find the join column -- try _join_key first (set by cell 01),
+            # then DEPOSIT_JOIN_KEY_DEPOSIT, then common column names
+            _dep_join_col = None
+            if '_join_key' in deposit_long.columns:
+                _dep_join_col = '_join_key'
+            elif 'DEPOSIT_JOIN_KEY_DEPOSIT' in dir() and DEPOSIT_JOIN_KEY_DEPOSIT in deposit_long.columns:
+                _dep_join_col = DEPOSIT_JOIN_KEY_DEPOSIT
+            else:
+                # Try common column names
+                for _try in ['acctid', 'HASHED_ACCOUNT', 'acct_number']:
+                    if _try in deposit_long.columns:
+                        _dep_join_col = _try
+                        break
 
-            # Ensure matching dtypes on join keys (string on both sides)
-            wave_cohort_df['acct_number'] = wave_cohort_df['acct_number'].astype(str).str.strip()
-            _dep_sub[_dep_join_col] = _dep_sub[_dep_join_col].astype(str).str.strip()
+            if _dep_join_col is None:
+                print(f"  WARNING: No join column found in deposit_long.")
+                print(f"    Available: {[c for c in deposit_long.columns if 'acct' in c.lower() or 'hash' in c.lower() or 'id' in c.lower() or 'join' in c.lower()]}")
+            else:
+                _dep_metric_cols = ['balance', 'depAmt365', 'depCount365', 'DepAmt33',
+                                    'DepCount33', 'avgdaysbetweendeposits',
+                                    'CollectedFees365', 'fdicoccasionsrolling12months']
+                _dep_avail = [c for c in [_dep_join_col, 'snapshot'] + _dep_metric_cols
+                              if c in deposit_long.columns]
+                _dep_sub = deposit_long[_dep_avail].copy()
 
-            wave_cohort_df = wave_cohort_df.merge(
-                _dep_sub,
-                left_on=['acct_number', 'nearest_snapshot'],
-                right_on=[_dep_join_col, 'snapshot'],
-                how='left'
-            )
-            _dep_match = wave_cohort_df['balance'].notna().sum() if 'balance' in wave_cohort_df.columns else 0
-            print(f"  Deposit data merged: {_dep_match:,} of {len(wave_cohort_df):,} rows matched")
+                # Cast BOTH join keys to string to prevent type mismatch
+                wave_cohort_df['_wc_join'] = wave_cohort_df['acct_number'].astype(str).str.strip()
+                _dep_sub['_dep_join'] = _dep_sub[_dep_join_col].astype(str).str.strip()
+                _dep_sub['_dep_snap'] = _dep_sub['snapshot'].astype(str).str.strip()
+                wave_cohort_df['_wc_snap'] = wave_cohort_df['nearest_snapshot'].astype(str).str.strip()
+
+                _before = len(wave_cohort_df)
+                wave_cohort_df = wave_cohort_df.merge(
+                    _dep_sub.drop(columns=[_dep_join_col, 'snapshot']),
+                    left_on=['_wc_join', '_wc_snap'],
+                    right_on=['_dep_join', '_dep_snap'],
+                    how='left'
+                )
+
+                # Clean up temp columns
+                for _tc in ['_wc_join', '_wc_snap', '_dep_join', '_dep_snap']:
+                    if _tc in wave_cohort_df.columns:
+                        wave_cohort_df.drop(columns=_tc, inplace=True)
+
+                _dep_match = wave_cohort_df['balance'].notna().sum() if 'balance' in wave_cohort_df.columns else 0
+                print(f"  Deposit data merged via '{_dep_join_col}': "
+                      f"{_dep_match:,} of {len(wave_cohort_df):,} rows matched")
 
         # Build summary: one row per wave-tier (vectorized)
         _tier_order = ['No Response', 'NU 1-4', 'NU 5+', 'TH-10', 'TH-15', 'TH-20', 'TH-25']
