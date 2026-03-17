@@ -68,6 +68,12 @@ else:
 
     _wt_df = pd.DataFrame(_wave_tiers)
 
+    # Sort chronologically
+    if len(_wt_df) > 0:
+        _wt_df['_sort'] = _wt_df['wave'].apply(
+            lambda w: pd.to_datetime(w, format='%b%y'))
+        _wt_df = _wt_df.sort_values('_sort').drop(columns='_sort').reset_index(drop=True)
+
     if len(_wt_df) == 0:
         print("    No wave tier data.")
     else:

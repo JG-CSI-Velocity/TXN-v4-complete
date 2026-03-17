@@ -62,6 +62,12 @@ else:
 
     _wave_df = pd.DataFrame(_wave_stats)
 
+    # Sort chronologically by parsing wave label (e.g., "Apr23" -> datetime)
+    if len(_wave_df) > 0:
+        _wave_df['_sort'] = _wave_df['wave'].apply(
+            lambda w: pd.to_datetime(w, format='%b%y'))
+        _wave_df = _wave_df.sort_values('_sort').drop(columns='_sort').reset_index(drop=True)
+
     if len(_wave_df) == 0:
         print("    No wave statistics computed.")
     else:
