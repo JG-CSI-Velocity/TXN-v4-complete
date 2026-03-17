@@ -1,0 +1,139 @@
+# ===========================================================================
+# WAVE PERSISTENCE: Do Responders Keep Responding? (Conference Edition)
+# ===========================================================================
+# Stacked bar: for each wave's responders, what happened in subsequent waves.
+# Green=responded again, amber=near miss, gray=went silent. Red line=persistence.
+#
+# Depends on: challenge_cohort_df (cell 11), GEN_COLORS, gen_clean_axes
+
+if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
+    print("    No challenge cohort data. Run cell 11 first.")
+elif 'wave' not in challenge_cohort_df.columns:
+    print("    wave column missing from challenge_cohort_df.")
+else:
+    _df = challenge_cohort_df.copy()
+    _wave_dates = _df.groupby('wave')['wave_date'].first().sort_values()
+    _waves = _wave_dates.index.tolist()
+
+    if len(_waves) < 2:
+        print("    Need at least 2 waves for persistence analysis.")
+    else:
+        _persistence_data = []
+
+        for i, w in enumerate(_waves[:-1]):
+            # Responders (Hit) in wave w
+            _hit_accts = set(
+                _df[(_df['wave'] == w) & (_df['outcome'] == 'Hit')]['acct_number']
+            )
+
+            if len(_hit_accts) == 0:
+                continue
+
+            # Track what happened to these accounts in ALL subsequent waves
+            _subsequent_waves = _waves[i + 1:]
+            _sub_data = _df[
+                _df['wave'].isin(_subsequent_waves) &
+                _df['acct_number'].isin(_hit_accts)
+            ]
+
+            # Classify: responded again, near miss, went silent
+            _responded_again = set()
+            _near_miss = set()
+            for _, row in _sub_data.iterrows():
+                if row['outcome'] == 'Hit':
+                    _responded_again.add(row['acct_number'])
+                elif row['outcome'] == 'Near Miss':
+                    _near_miss.add(row['acct_number'])
+
+            # Remove double-counted: responded again takes priority
+            _near_miss -= _responded_again
+
+            _silent = _hit_accts - _responded_again - _near_miss
+
+            _persistence_data.append({
+                'wave': w,
+                'n_hit': len(_hit_accts),
+                'responded_again': len(_responded_again),
+                'near_miss': len(_near_miss),
+                'went_silent': len(_silent),
+                'persistence_pct': len(_responded_again) / len(_hit_accts) * 100,
+            })
+
+        if len(_persistence_data) == 0:
+            print("    No waves had Hit responders with subsequent wave data.")
+        else:
+            _pdata = pd.DataFrame(_persistence_data)
+
+            fig, ax1 = plt.subplots(figsize=(14, 7))
+
+            _x = np.arange(len(_pdata))
+            _w = 0.5
+
+            _green = GEN_COLORS.get('success', '#2a9d8f')
+            _amber = GEN_COLORS.get('warning', '#e9c46a')
+            _gray = GEN_COLORS.get('muted', '#adb5bd')
+
+            _bottom = np.zeros(len(_pdata))
+
+            bars1 = ax1.bar(_x, _pdata['responded_again'], width=_w,
+                             color=_green, edgecolor='white', linewidth=1,
+                             label='Responded Again', zorder=3, bottom=_bottom)
+            _bottom += _pdata['responded_again'].values
+
+            bars2 = ax1.bar(_x, _pdata['near_miss'], width=_w,
+                             color=_amber, edgecolor='white', linewidth=1,
+                             label='Near Miss', zorder=3, bottom=_bottom)
+            _bottom += _pdata['near_miss'].values
+
+            bars3 = ax1.bar(_x, _pdata['went_silent'], width=_w,
+                             color=_gray, edgecolor='white', linewidth=1,
+                             label='Went Silent', zorder=3, bottom=_bottom)
+
+            # Annotate total on each bar
+            for j, (_, row) in enumerate(_pdata.iterrows()):
+                ax1.text(_x[j], row['n_hit'] + row['n_hit'] * 0.01,
+                         f"n={row['n_hit']:,}",
+                         ha='center', va='bottom', fontsize=11, fontweight='bold',
+                         color=GEN_COLORS.get('dark_text', '#2d3436'))
+
+            ax1.set_ylabel("Number of Accounts", fontsize=16, fontweight='bold', labelpad=10)
+            ax1.set_xticks(_x)
+            ax1.set_xticklabels(_pdata['wave'], fontsize=13, fontweight='bold')
+            ax1.set_xlabel("Wave (Hit responders)", fontsize=14, fontweight='bold')
+
+            # Red persistence line on secondary axis
+            ax2 = ax1.twinx()
+            ax2.plot(_x, _pdata['persistence_pct'],
+                     color=GEN_COLORS.get('danger', '#e76f51'),
+                     linewidth=3, marker='D', markersize=9,
+                     markeredgecolor='white', markeredgewidth=2,
+                     label='Persistence Rate (%)', zorder=6)
+            ax2.set_ylabel("Persistence Rate (%)", fontsize=16, fontweight='bold',
+                            color=GEN_COLORS.get('danger', '#e76f51'), labelpad=10)
+            ax2.spines['right'].set_visible(True)
+            ax2.spines['right'].set_color(GEN_COLORS.get('danger', '#e76f51'))
+            ax2.tick_params(axis='y', colors=GEN_COLORS.get('danger', '#e76f51'))
+
+            # Combined legend
+            _h1, _l1 = ax1.get_legend_handles_labels()
+            _h2, _l2 = ax2.get_legend_handles_labels()
+            ax1.legend(_h1 + _h2, _l1 + _l2, fontsize=11, loc='upper right',
+                       frameon=True, facecolor='white',
+                       edgecolor=GEN_COLORS.get('grid', '#e0e0e0'))
+
+            gen_clean_axes(ax1)
+            ax1.yaxis.grid(True, color=GEN_COLORS.get('grid', '#e0e0e0'),
+                            linewidth=0.5, alpha=0.7)
+            ax1.set_axisbelow(True)
+
+            ax1.set_title("Wave Persistence: Do Responders Keep Responding?",
+                           fontsize=26, fontweight='bold',
+                           color=GEN_COLORS.get('dark_text', '#2d3436'),
+                           pad=35, loc='left')
+            ax1.text(0.0, 1.02,
+                     "For each wave's successes -- what happened next?",
+                     transform=ax1.transAxes, fontsize=14,
+                     color=GEN_COLORS.get('muted', '#adb5bd'), style='italic')
+
+            plt.tight_layout()
+            plt.show()

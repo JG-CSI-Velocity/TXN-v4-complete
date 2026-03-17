@@ -1,0 +1,105 @@
+# ===========================================================================
+# BALANCE TRAJECTORY: Deposit Balance Across Snapshots (Conference Edition)
+# ===========================================================================
+# Line chart: matched cohort deposit balance for responded, not responded,
+# and never mailed. Solid=mean, dashed=median.
+#
+# Depends on: deposit_long (cell 01), response_journey_df (cell 02),
+#             never_mailed_profile (cell 11), SNAPSHOT_ORDER, SNAPSHOT_CONFIG,
+#             GEN_COLORS, gen_clean_axes
+
+if 'deposit_long' not in dir() or len(deposit_long) == 0:
+    print("    No deposit_long data. Run cell 01 first.")
+elif 'response_journey_df' not in dir() or len(response_journey_df) == 0:
+    print("    No response journey. Run cell 02 first.")
+elif 'balance' not in deposit_long.columns:
+    print("    balance column missing from deposit_long.")
+elif 'in_matched_cohort' not in deposit_long.columns:
+    print("    in_matched_cohort missing -- only one snapshot?")
+else:
+    _matched = deposit_long[deposit_long['in_matched_cohort']].copy()
+
+    if len(_matched) == 0:
+        print("    No matched cohort accounts.")
+    else:
+        # Build responder/non-responder flags from response_journey_df
+        _responded_accts = set()
+        _mailed_no_resp_accts = set()
+        if 'HASHED_ACCOUNT' in response_journey_df.columns:
+            _responded_accts = set(
+                response_journey_df[response_journey_df['times_responded'] > 0]['HASHED_ACCOUNT']
+            )
+            _mailed_no_resp_accts = set(
+                response_journey_df[
+                    (response_journey_df['times_mailed'] > 0) &
+                    (response_journey_df['times_responded'] == 0)
+                ]['HASHED_ACCOUNT']
+            )
+
+        # Classify matched cohort accounts
+        _matched['_group'] = 'Never Mailed'
+        _matched.loc[_matched['HASHED_ACCOUNT'].isin(_mailed_no_resp_accts), '_group'] = 'Mailed, No Response'
+        _matched.loc[_matched['HASHED_ACCOUNT'].isin(_responded_accts), '_group'] = 'Responded'
+
+        _groups = ['Responded', 'Mailed, No Response', 'Never Mailed']
+        _colors = {
+            'Responded': GEN_COLORS.get('success', '#2a9d8f'),
+            'Mailed, No Response': GEN_COLORS.get('muted', '#adb5bd'),
+            'Never Mailed': GEN_COLORS.get('warning', '#e9c46a'),
+        }
+
+        _snap_labels = [SNAPSHOT_CONFIG[sk]['label'] for sk in SNAPSHOT_ORDER
+                         if sk in _matched['snapshot'].unique()]
+        _snap_keys = [sk for sk in SNAPSHOT_ORDER if sk in _matched['snapshot'].unique()]
+        _x = range(len(_snap_keys))
+
+        fig, ax = plt.subplots(figsize=(14, 7))
+
+        for grp in _groups:
+            _grp_data = _matched[_matched['_group'] == grp]
+            if len(_grp_data) == 0:
+                continue
+
+            _means = []
+            _medians = []
+            for sk in _snap_keys:
+                _snap = _grp_data[_grp_data['snapshot'] == sk]
+                _means.append(_snap['balance'].mean() if len(_snap) > 0 else np.nan)
+                _medians.append(_snap['balance'].median() if len(_snap) > 0 else np.nan)
+
+            _n = _grp_data['HASHED_ACCOUNT'].nunique()
+
+            ax.plot(_x, _means, color=_colors[grp], linewidth=3,
+                    marker='o', markersize=10, markeredgecolor='white',
+                    markeredgewidth=2, label=f"{grp} mean (n={_n:,})",
+                    zorder=5)
+            ax.plot(_x, _medians, color=_colors[grp], linewidth=2,
+                    linestyle='--', marker='s', markersize=7,
+                    markeredgecolor='white', markeredgewidth=1.5,
+                    label=f"{grp} median", alpha=0.7, zorder=4)
+
+        ax.set_xticks(list(_x))
+        ax.set_xticklabels(_snap_labels, fontsize=14, fontweight='bold')
+        ax.set_ylabel("Deposit Balance ($)", fontsize=16, fontweight='bold', labelpad=10)
+        ax.yaxis.set_major_formatter(
+            mticker.FuncFormatter(lambda x, p: f"${x:,.0f}")
+        )
+
+        gen_clean_axes(ax)
+        ax.yaxis.grid(True, color=GEN_COLORS.get('grid', '#e0e0e0'),
+                       linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+        ax.legend(fontsize=11, loc='upper left', frameon=True, ncol=2,
+                  facecolor='white', edgecolor=GEN_COLORS.get('grid', '#e0e0e0'))
+
+        ax.set_title("Deposit Balance Trajectory",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS.get('dark_text', '#2d3436'),
+                      pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                "Same accounts across snapshots -- responded vs not vs never mailed",
+                transform=ax.transAxes, fontsize=14,
+                color=GEN_COLORS.get('muted', '#adb5bd'), style='italic')
+
+        plt.tight_layout()
+        plt.show()

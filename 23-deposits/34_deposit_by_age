@@ -1,0 +1,108 @@
+# ===========================================================================
+# DEPOSIT BY AGE: Responded vs Not by Age Band (Conference Edition)
+# ===========================================================================
+# Grouped bar: two age groups (highest and lowest response rate), showing
+# deposit amount for Hit vs No Response within each.
+#
+# Depends on: challenge_cohort_df (cell 11), GEN_COLORS, gen_clean_axes
+
+if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
+    print("    No challenge cohort data. Run cell 11 first.")
+elif 'holder_age' not in challenge_cohort_df.columns:
+    print("    holder_age column missing from challenge_cohort_df.")
+elif 'depAmt365' not in challenge_cohort_df.columns and 'balance' not in challenge_cohort_df.columns:
+    print("    No deposit metric columns (depAmt365/balance) available.")
+else:
+    _df = challenge_cohort_df[challenge_cohort_df['holder_age'].notna()].copy()
+
+    if len(_df) == 0:
+        print("    No accounts with holder_age data.")
+    else:
+        _bins = [18, 26, 36, 46, 56, 66, 120]
+        _labels = ['18-25', '26-35', '36-45', '46-55', '56-65', '65+']
+        _df['age_band'] = pd.cut(_df['holder_age'], bins=_bins, labels=_labels, right=False)
+
+        # Find best and worst response rate bands
+        _rates = _df.groupby('age_band', observed=True).agg(
+            total=('outcome', 'count'),
+            hits=('outcome', lambda x: (x == 'Hit').sum()),
+        ).reset_index()
+        _rates['response_rate'] = _rates['hits'] / _rates['total'] * 100
+        _rates = _rates[_rates['total'] >= 10]
+
+        if len(_rates) < 2:
+            print("    Need at least 2 age bands with sufficient data.")
+        else:
+            _best_band = _rates.loc[_rates['response_rate'].idxmax(), 'age_band']
+            _worst_band = _rates.loc[_rates['response_rate'].idxmin(), 'age_band']
+
+            _dep_col = 'depAmt365' if 'depAmt365' in _df.columns else 'balance'
+            _dep_label = 'Deposit Amt (365d)' if _dep_col == 'depAmt365' else 'Balance'
+
+            _selected_bands = [_best_band, _worst_band]
+            _sub = _df[_df['age_band'].isin(_selected_bands) &
+                       _df['outcome'].isin(['Hit', 'No Response'])]
+
+            _grouped = _sub.groupby(['age_band', 'outcome'], observed=True).agg(
+                dep_mean=(_dep_col, 'mean'),
+                n=(_dep_col, 'count'),
+            ).reset_index()
+
+            fig, ax = plt.subplots(figsize=(14, 7))
+
+            _band_labels = [f"{b}\n(Best)" if b == _best_band else f"{b}\n(Worst)"
+                           for b in _selected_bands]
+            _x = np.arange(len(_selected_bands))
+            _w = 0.3
+
+            _hit_color = GEN_COLORS.get('success', '#2a9d8f')
+            _noresp_color = GEN_COLORS.get('muted', '#adb5bd')
+
+            for i, outcome in enumerate(['Hit', 'No Response']):
+                _vals = []
+                _ns = []
+                for band in _selected_bands:
+                    _match = _grouped[(_grouped['age_band'] == band) &
+                                      (_grouped['outcome'] == outcome)]
+                    _vals.append(_match['dep_mean'].values[0] if len(_match) > 0 else 0)
+                    _ns.append(_match['n'].values[0] if len(_match) > 0 else 0)
+
+                _color = _hit_color if outcome == 'Hit' else _noresp_color
+                _offset = -_w / 2 if i == 0 else _w / 2
+
+                bars = ax.bar(_x + _offset, _vals, width=_w,
+                               color=_color, edgecolor='white', linewidth=1.5,
+                               label=f"{outcome}", zorder=3)
+
+                for bar, val, n in zip(bars, _vals, _ns):
+                    ax.text(bar.get_x() + bar.get_width() / 2,
+                             bar.get_height() + max(_vals) * 0.01,
+                             f"${val:,.0f}\n(n={n:,})",
+                             ha='center', va='bottom', fontsize=12, fontweight='bold',
+                             color=GEN_COLORS.get('dark_text', '#2d3436'))
+
+            ax.set_xticks(_x)
+            ax.set_xticklabels(_band_labels, fontsize=14, fontweight='bold')
+            ax.set_ylabel(f"Avg {_dep_label} ($)", fontsize=16, fontweight='bold', labelpad=10)
+            ax.yaxis.set_major_formatter(
+                mticker.FuncFormatter(lambda x, p: f"${x:,.0f}")
+            )
+
+            gen_clean_axes(ax)
+            ax.yaxis.grid(True, color=GEN_COLORS.get('grid', '#e0e0e0'),
+                           linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+            ax.legend(fontsize=13, loc='upper right', frameon=True,
+                      facecolor='white', edgecolor=GEN_COLORS.get('grid', '#e0e0e0'))
+
+            ax.set_title("Deposit Behavior by Age: Responded vs Not",
+                          fontsize=26, fontweight='bold',
+                          color=GEN_COLORS.get('dark_text', '#2d3436'),
+                          pad=35, loc='left')
+            ax.text(0.0, 1.02,
+                    "Does age affect the deposit lift from responding?",
+                    transform=ax.transAxes, fontsize=14,
+                    color=GEN_COLORS.get('muted', '#adb5bd'), style='italic')
+
+            plt.tight_layout()
+            plt.show()

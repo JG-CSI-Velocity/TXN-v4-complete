@@ -1,0 +1,107 @@
+# ===========================================================================
+# NU SUCCESS VS FAILURE: Three Outcomes Within Same Target Group
+# ===========================================================================
+# Side-by-side horizontal bars comparing NU Hit, Near Miss, and No Response
+# on multiple deposit and spend metrics.
+#
+# Depends on: challenge_cohort_df (cell 11), GEN_COLORS, gen_clean_axes
+
+if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
+    print("    No challenge cohort data. Run cell 11 first.")
+elif 'challenge' not in challenge_cohort_df.columns:
+    print("    challenge column missing from challenge_cohort_df.")
+else:
+    _nu = challenge_cohort_df[challenge_cohort_df['challenge'] == 'NU'].copy()
+
+    if len(_nu) == 0:
+        print("    No NU accounts found in challenge_cohort_df.")
+    else:
+        _metrics = [
+            ('pre_spend',          'Pre Spend'),
+            ('post_spend_3mo',     'Post Spend (3mo)'),
+            ('spend_delta',        'Spend Delta'),
+            ('balance',            'Balance'),
+            ('depAmt365',          'Deposit Amt (365d)'),
+            ('depCount365',        'Deposit Count (365d)'),
+            ('CollectedFees365',   'Collected Fees (365d)'),
+            ('pre_mtd',            'Pre MTD Items'),
+            ('post_mtd_3mo',       'Post MTD (3mo)'),
+        ]
+
+        _avail = [(col, label) for col, label in _metrics if col in _nu.columns]
+
+        if len(_avail) == 0:
+            print("    No metrics available for NU accounts.")
+        else:
+            _outcomes = ['Hit', 'Near Miss', 'No Response']
+            _colors = {
+                'Hit': GEN_COLORS.get('success', '#2a9d8f'),
+                'Near Miss': GEN_COLORS.get('warning', '#e9c46a'),
+                'No Response': GEN_COLORS.get('muted', '#adb5bd'),
+            }
+
+            _data = {}
+            for outcome in _outcomes:
+                _sub = _nu[_nu['outcome'] == outcome]
+                _vals = []
+                for col, label in _avail:
+                    _vals.append(_sub[col].mean() if len(_sub) > 0 else 0)
+                _data[outcome] = _vals
+
+            _labels = [label for _, label in _avail]
+            _n_metrics = len(_labels)
+            _bar_height = 0.25
+
+            fig, ax = plt.subplots(figsize=(14, 7))
+
+            _y = np.arange(_n_metrics)
+
+            for i, outcome in enumerate(_outcomes):
+                _positions = _y + (i - 1) * _bar_height
+                bars = ax.barh(
+                    _positions, _data[outcome],
+                    height=_bar_height,
+                    color=_colors[outcome],
+                    edgecolor='white', linewidth=0.8,
+                    label=f"{outcome} (n={len(_nu[_nu['outcome'] == outcome]):,})",
+                    zorder=3,
+                )
+                for bar in bars:
+                    val = bar.get_width()
+                    if abs(val) > 0:
+                        _fmt = f"${val:,.0f}" if abs(val) >= 10 else f"{val:.1f}"
+                        ax.text(
+                            val + max(abs(v) for v in _data[outcome]) * 0.01 if val >= 0 else val - max(abs(v) for v in _data[outcome]) * 0.01,
+                            bar.get_y() + bar.get_height() / 2,
+                            _fmt, ha='left' if val >= 0 else 'right',
+                            va='center', fontsize=10, fontweight='bold',
+                            color=GEN_COLORS.get('dark_text', '#2d3436'),
+                        )
+
+            ax.set_yticks(_y)
+            ax.set_yticklabels(_labels, fontsize=13, fontweight='bold')
+            ax.axvline(x=0, color=GEN_COLORS.get('dark_text', '#2d3436'),
+                        linewidth=0.8, alpha=0.5)
+
+            gen_clean_axes(ax)
+            ax.xaxis.grid(True, color=GEN_COLORS.get('grid', '#e0e0e0'),
+                           linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+            ax.legend(fontsize=12, loc='lower right', frameon=True,
+                      facecolor='white', edgecolor=GEN_COLORS.get('grid', '#e0e0e0'))
+
+            ax.set_title("NU Accounts: Three Outcomes, One Target Group",
+                          fontsize=26, fontweight='bold',
+                          color=GEN_COLORS.get('dark_text', '#2d3436'),
+                          pad=35, loc='left')
+            ax.text(0.0, 1.02,
+                    "Same non-users received the same mailer -- what separates success?",
+                    transform=ax.transAxes, fontsize=14,
+                    color=GEN_COLORS.get('muted', '#adb5bd'), style='italic')
+
+            plt.tight_layout()
+            plt.show()
+
+            for outcome in _outcomes:
+                _n = len(_nu[_nu['outcome'] == outcome])
+                print(f"  {outcome}: {_n:,} account-waves")

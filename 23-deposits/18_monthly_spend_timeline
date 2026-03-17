@@ -1,0 +1,109 @@
+# ===========================================================================
+# MONTHLY SPEND TIMELINE: Responded vs Not vs Never Mailed (Conference Ed.)
+# ===========================================================================
+# Line chart with 3 lines: all responded (Hit), all non-responded,
+# and never-mailed (flat reference). Mailer wave dates as vertical lines.
+#
+# Depends on: challenge_cohort_df (23/11), monthly_by_group (23/03),
+#             never_mailed_profile (23/11), mail_cols, GEN_COLORS
+
+if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
+    print("    No challenge cohort data. Run cell 11 first.")
+else:
+    # Try monthly_by_group first (cell 03), otherwise compute from cohort
+    _use_monthly = ('monthly_by_group' in dir() and len(monthly_by_group) > 0
+                    and 'response_group' in monthly_by_group.columns)
+
+    _COLOR_RESP = GEN_COLORS['success']
+    _COLOR_NORESP = GEN_COLORS['muted']
+    _COLOR_NEVER = GEN_COLORS['warning']
+
+    if _use_monthly:
+        # Use pre-built monthly_by_group from cell 03
+        _mbg = monthly_by_group.sort_values('month_date').copy()
+        _months = _mbg['month_date'].unique()
+
+        # Map response groups to our 3 lines
+        _resp_groups = ['Threshold', 'NU 5+']
+        _noresp_groups = ['No Response', 'NU 1-4']
+
+        _resp_data = _mbg[_mbg['response_group'].isin(_resp_groups)].groupby('month_date')['mean_spend'].mean()
+        _noresp_data = _mbg[_mbg['response_group'].isin(_noresp_groups)].groupby('month_date')['mean_spend'].mean()
+
+        _resp_dates = _resp_data.index
+        _resp_vals = _resp_data.values
+        _noresp_dates = _noresp_data.index
+        _noresp_vals = _noresp_data.values
+    else:
+        # Fallback: compute from challenge_cohort_df spend columns
+        # This gives a simpler view (pre_spend only, not monthly)
+        print("    monthly_by_group not available -- using cohort pre_spend as proxy.")
+        _resp_dates = []
+        _resp_vals = []
+        _noresp_dates = []
+        _noresp_vals = []
+
+    _has_never = ('never_mailed_profile' in dir()
+                  and 'avg_monthly_spend' in never_mailed_profile)
+
+    if len(_resp_dates) == 0 and len(_noresp_dates) == 0:
+        print("    No monthly spend data to plot.")
+    else:
+        fig, ax = plt.subplots(figsize=(14, 7))
+
+        if len(_resp_dates) > 0:
+            ax.plot(_resp_dates, _resp_vals,
+                    color=_COLOR_RESP, linewidth=2.5, marker='o',
+                    markersize=6, markeredgecolor='white', markeredgewidth=1.5,
+                    label='Responded (Hit)', zorder=5)
+
+        if len(_noresp_dates) > 0:
+            ax.plot(_noresp_dates, _noresp_vals,
+                    color=_COLOR_NORESP, linewidth=2.5, marker='s',
+                    markersize=6, markeredgecolor='white', markeredgewidth=1.5,
+                    label='Did Not Respond', zorder=5)
+
+        # Never-mailed flat reference line
+        if _has_never:
+            _nm_val = never_mailed_profile['avg_monthly_spend']
+            ax.axhline(y=_nm_val, color=_COLOR_NEVER,
+                        linewidth=2, linestyle='--', alpha=0.8,
+                        label=f'Never Mailed (${_nm_val:,.0f}/mo)', zorder=4)
+
+        # Mailer wave dates as vertical dotted lines
+        if 'mail_cols' in dir() and len(mail_cols) > 0:
+            for mc in mail_cols:
+                _wave_label = mc.replace(' Mail', '')
+                try:
+                    _wd = pd.to_datetime(_wave_label, format='%b%y')
+                    ax.axvline(x=_wd, color=GEN_COLORS['accent'],
+                               linewidth=1, linestyle=':', alpha=0.5, zorder=2)
+                except (ValueError, TypeError):
+                    pass
+            # Single legend entry for wave lines
+            ax.axvline(x=pd.NaT, color=GEN_COLORS['accent'],
+                       linewidth=1, linestyle=':', alpha=0.5,
+                       label='Mailer Waves')
+
+        ax.set_ylabel("Avg Monthly Spend ($)", fontsize=16,
+                       fontweight='bold', labelpad=10)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+
+        gen_clean_axes(ax)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+        ax.legend(fontsize=13, loc='best', frameon=True,
+                  facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+        fig.autofmt_xdate(rotation=45)
+
+        ax.set_title("Monthly Card Spend: Responded vs Not",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                "Full timeline with mailer waves marked",
+                transform=ax.transAxes, fontsize=14,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()

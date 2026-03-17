@@ -1,0 +1,88 @@
+# ===========================================================================
+# RESPONSE BY HOLDER AGE: Demographic Age Bands (Conference Edition)
+# ===========================================================================
+# Bar chart of response rate by member age band.
+#
+# Depends on: challenge_cohort_df (cell 11), GEN_COLORS, gen_clean_axes
+
+if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
+    print("    No challenge cohort data. Run cell 11 first.")
+elif 'holder_age' not in challenge_cohort_df.columns:
+    print("    holder_age column missing from challenge_cohort_df.")
+else:
+    _df = challenge_cohort_df[challenge_cohort_df['holder_age'].notna()].copy()
+
+    if len(_df) == 0:
+        print("    No accounts with holder_age data.")
+    else:
+        _bins = [18, 26, 36, 46, 56, 66, 120]
+        _labels = ['18-25', '26-35', '36-45', '46-55', '56-65', '65+']
+        _df['age_band'] = pd.cut(_df['holder_age'], bins=_bins, labels=_labels, right=False)
+
+        _agg = _df.groupby('age_band', observed=True).agg(
+            total=('outcome', 'count'),
+            hits=('outcome', lambda x: (x == 'Hit').sum()),
+        ).reset_index()
+
+        _agg['response_rate'] = _agg['hits'] / _agg['total'] * 100
+        _agg = _agg[_agg['total'] >= 10]
+
+        if len(_agg) == 0:
+            print("    Not enough data per age band (minimum 10).")
+        else:
+            # Find highest and lowest for annotation
+            _best_idx = _agg['response_rate'].idxmax()
+            _worst_idx = _agg['response_rate'].idxmin()
+
+            fig, ax = plt.subplots(figsize=(14, 7))
+
+            _x = np.arange(len(_agg))
+            _bar_colors = []
+            for i, (_, row) in enumerate(_agg.iterrows()):
+                if i == _best_idx or row.name == _best_idx:
+                    _bar_colors.append(GEN_COLORS.get('success', '#2a9d8f'))
+                elif i == _worst_idx or row.name == _worst_idx:
+                    _bar_colors.append(GEN_COLORS.get('danger', '#e76f51'))
+                else:
+                    _bar_colors.append(GEN_COLORS.get('primary', '#264653'))
+
+            bars = ax.bar(_x, _agg['response_rate'].values,
+                           width=0.55, color=_bar_colors,
+                           edgecolor='white', linewidth=1.5, zorder=3)
+
+            for bar, (_, row) in zip(bars, _agg.iterrows()):
+                ax.text(bar.get_x() + bar.get_width() / 2,
+                         bar.get_height() + 0.3,
+                         f"{row['response_rate']:.1f}%\n(n={row['total']:,})",
+                         ha='center', va='bottom', fontsize=12, fontweight='bold',
+                         color=GEN_COLORS.get('dark_text', '#2d3436'))
+
+            ax.set_xticks(_x)
+            ax.set_xticklabels(_agg['age_band'].values, fontsize=14, fontweight='bold')
+            ax.set_xlabel("Member Age", fontsize=14, fontweight='bold')
+            ax.set_ylabel("Response Rate (%)", fontsize=16, fontweight='bold', labelpad=10)
+
+            gen_clean_axes(ax)
+            ax.yaxis.grid(True, color=GEN_COLORS.get('grid', '#e0e0e0'),
+                           linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+
+            ax.set_title("Response Rate by Member Age",
+                          fontsize=26, fontweight='bold',
+                          color=GEN_COLORS.get('dark_text', '#2d3436'),
+                          pad=35, loc='left')
+            ax.text(0.0, 1.02,
+                    "Which demographics respond best to ARS?",
+                    transform=ax.transAxes, fontsize=14,
+                    color=GEN_COLORS.get('muted', '#adb5bd'), style='italic')
+
+            plt.tight_layout()
+            plt.show()
+
+            # Store best/worst for cell 34
+            _best_band = _agg.loc[_best_idx, 'age_band']
+            _worst_band = _agg.loc[_worst_idx, 'age_band']
+            print(f"\n  Best responding age band:  {_best_band} "
+                  f"({_agg.loc[_best_idx, 'response_rate']:.1f}%)")
+            print(f"  Worst responding age band: {_worst_band} "
+                  f"({_agg.loc[_worst_idx, 'response_rate']:.1f}%)")

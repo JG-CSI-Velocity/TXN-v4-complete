@@ -1,0 +1,69 @@
+# ===========================================================================
+# CHALLENGE DISTRIBUTION: Assignment Across All Waves (Conference Edition)
+# ===========================================================================
+# Horizontal bar chart showing how many account-wave rows were assigned to
+# each challenge level. Annotated with count and percentage.
+#
+# Depends on: challenge_cohort_df (23/11), CHALLENGE_ORDER (23/11), GEN_COLORS
+
+if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
+    print("    No challenge cohort data. Run cell 11 first.")
+else:
+    _dist = (
+        challenge_cohort_df
+        .groupby('challenge')
+        .size()
+        .reindex(CHALLENGE_ORDER)
+        .fillna(0)
+        .astype(int)
+    )
+    _total = _dist.sum()
+
+    if _total == 0:
+        print("    No challenge assignments found in cohort data.")
+    else:
+        fig, ax = plt.subplots(figsize=(14, 7))
+
+        _y = np.arange(len(_dist))
+        _counts = _dist.values
+        _labels = _dist.index.tolist()
+
+        bars = ax.barh(_y, _counts,
+                       color=GEN_COLORS['primary'], edgecolor='white',
+                       linewidth=1.5, height=0.55, zorder=3)
+
+        for bar, count in zip(bars, _counts):
+            pct = count / _total * 100
+            ax.text(bar.get_width() + _total * 0.01,
+                    bar.get_y() + bar.get_height() / 2,
+                    f"{count:,}  ({pct:.1f}%)",
+                    va='center', ha='left', fontsize=14, fontweight='bold',
+                    color=GEN_COLORS['dark_text'])
+
+        ax.set_yticks(_y)
+        ax.set_yticklabels(_labels, fontsize=14, fontweight='bold')
+        ax.set_xlabel("Account-Wave Count", fontsize=16, fontweight='bold', labelpad=10)
+        ax.invert_yaxis()
+        ax.xaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
+
+        gen_clean_axes(ax)
+        ax.xaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+
+        _xlim = ax.get_xlim()
+        ax.set_xlim(_xlim[0], _xlim[1] * 1.2)
+
+        ax.set_title("ARS Challenge Assignment Distribution",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                "Which challenges are members receiving?",
+                transform=ax.transAxes, fontsize=14,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()
+
+        print(f"\n  Total account-wave assignments: {_total:,}")
+        for label, count in zip(_labels, _counts):
+            print(f"    {label:<8s}: {count:>8,} ({count / _total * 100:>5.1f}%)")

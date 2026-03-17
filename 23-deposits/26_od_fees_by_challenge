@@ -1,0 +1,90 @@
+# ===========================================================================
+# OD FEES BY CHALLENGE: Same-Cohort Hit vs No Response (Conference Ed.)
+# ===========================================================================
+# Grouped bar: avg CollectedFees365 per challenge, Hit vs No Response.
+#
+# Depends on: challenge_cohort_df (cell 11), never_mailed_profile (cell 11),
+#             CHALLENGE_ORDER (cell 11), GEN_COLORS, gen_clean_axes, gen_fmt_dollar
+
+if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
+    print("    No challenge cohort data. Run cell 11 first.")
+elif 'CollectedFees365' not in challenge_cohort_df.columns:
+    print("    No CollectedFees365 column in challenge_cohort_df.")
+else:
+    _plot_df = challenge_cohort_df[
+        challenge_cohort_df['outcome'].isin(['Hit', 'No Response'])
+    ].copy()
+
+    if len(_plot_df) == 0:
+        print("    No Hit / No Response rows to plot.")
+    else:
+        fig, ax = plt.subplots(figsize=(14, 7))
+
+        _bar_width = 0.35
+        _challenges = [c for c in CHALLENGE_ORDER if c in _plot_df['challenge'].unique()]
+        _x = np.arange(len(_challenges))
+
+        _hit_means = []
+        _hit_medians = []
+        _hit_counts = []
+        _nr_means = []
+        _nr_medians = []
+        _nr_counts = []
+
+        for ch in _challenges:
+            _h = _plot_df[(_plot_df['challenge'] == ch) & (_plot_df['outcome'] == 'Hit')]['CollectedFees365']
+            _n = _plot_df[(_plot_df['challenge'] == ch) & (_plot_df['outcome'] == 'No Response')]['CollectedFees365']
+            _hit_means.append(_h.mean() if len(_h) > 0 else 0)
+            _hit_medians.append(_h.median() if len(_h) > 0 else 0)
+            _hit_counts.append(len(_h))
+            _nr_means.append(_n.mean() if len(_n) > 0 else 0)
+            _nr_medians.append(_n.median() if len(_n) > 0 else 0)
+            _nr_counts.append(len(_n))
+
+        bars_hit = ax.bar(_x - _bar_width / 2, _hit_means, _bar_width,
+                          color=GEN_COLORS['success'], edgecolor='white',
+                          linewidth=1.5, label='Hit (Responded)', zorder=3)
+        bars_nr = ax.bar(_x + _bar_width / 2, _nr_means, _bar_width,
+                         color=GEN_COLORS['muted'], edgecolor='white',
+                         linewidth=1.5, label='No Response', zorder=3)
+
+        for bar, med, cnt in zip(bars_hit, _hit_medians, _hit_counts):
+            _y = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width() / 2, _y * 1.01,
+                    f"${_y:,.0f}\nmed ${med:,.0f}\nn={cnt:,}",
+                    ha='center', va='bottom', fontsize=10, fontweight='bold',
+                    color=GEN_COLORS['dark_text'])
+
+        for bar, med, cnt in zip(bars_nr, _nr_medians, _nr_counts):
+            _y = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width() / 2, _y * 1.01,
+                    f"${_y:,.0f}\nmed ${med:,.0f}\nn={cnt:,}",
+                    ha='center', va='bottom', fontsize=10, fontweight='bold',
+                    color=GEN_COLORS['dark_text'])
+
+        if 'never_mailed_profile' in dir() and 'CollectedFees365_mean' in never_mailed_profile:
+            _nm_val = never_mailed_profile['CollectedFees365_mean']
+            ax.axhline(_nm_val, color=GEN_COLORS['warning'], linestyle='--',
+                       linewidth=2.5, zorder=4, label=f'Never Mailed (${_nm_val:,.0f})')
+
+        ax.set_xticks(_x)
+        ax.set_xticklabels(_challenges, fontsize=14, fontweight='bold')
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+        ax.set_ylabel("Avg Annual OD/NSF Fees", fontsize=16, fontweight='bold', labelpad=10)
+
+        gen_clean_axes(ax)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+        ax.legend(fontsize=13, loc='upper right', frameon=True,
+                  facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+        ax.set_title("Same Challenge: Fee Revenue",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                "Annual OD/NSF fee revenue per account",
+                transform=ax.transAxes, fontsize=14,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()

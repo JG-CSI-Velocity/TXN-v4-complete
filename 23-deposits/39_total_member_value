@@ -1,0 +1,125 @@
+# ===========================================================================
+# TOTAL MEMBER VALUE: Composite Annual Value by Challenge (Conference Ed.)
+# ===========================================================================
+# Horizontal bar: depAmt365 + spend + fees per challenge, Hit vs No Response.
+# Never-mailed reference line.
+#
+# Depends on: challenge_cohort_df (cell 11), never_mailed_profile (cell 11),
+#             CHALLENGE_ORDER, GEN_COLORS, gen_clean_axes
+
+if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
+    print("    No challenge cohort data. Run cell 11 first.")
+else:
+    _df = challenge_cohort_df.copy()
+
+    # Build composite value
+    _value_cols = []
+    if 'depAmt365' in _df.columns:
+        _value_cols.append('depAmt365')
+    if 'post_spend_3mo' in _df.columns:
+        # Annualize 3mo spend
+        _df['_annual_spend'] = _df['post_spend_3mo'] * 4
+        _value_cols.append('_annual_spend')
+    elif 'pre_spend' in _df.columns:
+        _df['_annual_spend'] = _df['pre_spend'] * 12
+        _value_cols.append('_annual_spend')
+    if 'CollectedFees365' in _df.columns:
+        _value_cols.append('CollectedFees365')
+
+    if len(_value_cols) == 0:
+        print("    No value columns available (depAmt365, spend, fees).")
+    else:
+        _df['_composite_value'] = _df[_value_cols].fillna(0).sum(axis=1)
+
+        _challenges = [c for c in CHALLENGE_ORDER if c in _df['challenge'].unique()]
+        _outcomes = ['Hit', 'No Response']
+
+        _data = []
+        for ch in _challenges:
+            for outcome in _outcomes:
+                _sub = _df[(_df['challenge'] == ch) & (_df['outcome'] == outcome)]
+                _val = _sub['_composite_value'].mean() if len(_sub) > 0 else 0
+                _n = len(_sub)
+                _data.append({
+                    'challenge': ch, 'outcome': outcome,
+                    'value': _val, 'n': _n,
+                })
+
+        _plot_df = pd.DataFrame(_data)
+
+        if len(_plot_df) == 0:
+            print("    No data to plot.")
+        else:
+            fig, ax = plt.subplots(figsize=(14, 7))
+
+            _y = np.arange(len(_challenges))
+            _bar_h = 0.3
+
+            _hit_color = GEN_COLORS.get('success', '#2a9d8f')
+            _noresp_color = GEN_COLORS.get('muted', '#adb5bd')
+
+            for i, outcome in enumerate(_outcomes):
+                _vals = []
+                _ns = []
+                for ch in _challenges:
+                    _match = _plot_df[(_plot_df['challenge'] == ch) &
+                                       (_plot_df['outcome'] == outcome)]
+                    _vals.append(_match['value'].values[0] if len(_match) > 0 else 0)
+                    _ns.append(_match['n'].values[0] if len(_match) > 0 else 0)
+
+                _color = _hit_color if outcome == 'Hit' else _noresp_color
+                _offset = -_bar_h / 2 if i == 0 else _bar_h / 2
+
+                bars = ax.barh(_y + _offset, _vals, height=_bar_h,
+                                color=_color, edgecolor='white', linewidth=1,
+                                label=outcome, zorder=3)
+
+                for bar, val, n in zip(bars, _vals, _ns):
+                    if val > 0:
+                        ax.text(val + max(_vals) * 0.01,
+                                bar.get_y() + bar.get_height() / 2,
+                                f"${val:,.0f} (n={n:,})",
+                                ha='left', va='center', fontsize=11, fontweight='bold',
+                                color=GEN_COLORS.get('dark_text', '#2d3436'))
+
+            # Never-mailed reference line
+            _nm_value = 0
+            if 'never_mailed_profile' in dir() and never_mailed_profile:
+                for vc in ['depAmt365', '_annual_spend', 'CollectedFees365']:
+                    _key = f'{vc}_mean'
+                    if _key in never_mailed_profile:
+                        _nm_value += never_mailed_profile[_key]
+                    elif vc == '_annual_spend' and 'avg_monthly_spend' in never_mailed_profile:
+                        _nm_value += never_mailed_profile['avg_monthly_spend'] * 12
+
+            if _nm_value > 0:
+                ax.axvline(x=_nm_value, color=GEN_COLORS.get('warning', '#e9c46a'),
+                            linewidth=2.5, linestyle='--', zorder=4,
+                            label=f'Never Mailed (${_nm_value:,.0f})')
+
+            ax.set_yticks(_y)
+            ax.set_yticklabels(_challenges, fontsize=14, fontweight='bold')
+            ax.set_xlabel("Total Annual Member Value ($)", fontsize=14,
+                           fontweight='bold')
+            ax.xaxis.set_major_formatter(
+                mticker.FuncFormatter(lambda x, p: f"${x:,.0f}")
+            )
+
+            gen_clean_axes(ax)
+            ax.xaxis.grid(True, color=GEN_COLORS.get('grid', '#e0e0e0'),
+                           linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+            ax.legend(fontsize=12, loc='lower right', frameon=True,
+                      facecolor='white', edgecolor=GEN_COLORS.get('grid', '#e0e0e0'))
+
+            ax.set_title("Total Annual Member Value",
+                          fontsize=26, fontweight='bold',
+                          color=GEN_COLORS.get('dark_text', '#2d3436'),
+                          pad=35, loc='left')
+            ax.text(0.0, 1.02,
+                    "Deposits + Spend + Fees -- what is a responder worth?",
+                    transform=ax.transAxes, fontsize=14,
+                    color=GEN_COLORS.get('muted', '#adb5bd'), style='italic')
+
+            plt.tight_layout()
+            plt.show()

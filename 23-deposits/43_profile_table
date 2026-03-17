@@ -1,0 +1,104 @@
+# ===========================================================================
+# PROFILE TABLE: Full Same-Challenge Comparison (Conference Edition)
+# ===========================================================================
+# Styled HTML table: rows = challenge, columns = key metrics for Hit vs
+# No Response. The comprehensive leave-behind.
+#
+# Depends on: challenge_cohort_df (cell 11), CHALLENGE_ORDER, GEN_COLORS
+
+if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
+    print("    No challenge cohort data. Run cell 11 first.")
+else:
+    _df = challenge_cohort_df.copy()
+    _challenges = [c for c in CHALLENGE_ORDER if c in _df['challenge'].unique()]
+
+    if len(_challenges) == 0:
+        print("    No challenges found in data.")
+    else:
+        _rows = []
+        for ch in _challenges:
+            _ch_data = _df[_df['challenge'] == ch]
+            _hit = _ch_data[_ch_data['outcome'] == 'Hit']
+            _nr = _ch_data[_ch_data['outcome'] == 'No Response']
+
+            _n_hit = len(_hit)
+            _n_nr = len(_nr)
+            _total = _n_hit + _n_nr
+            _rate = _n_hit / _total * 100 if _total > 0 else 0
+
+            def _safe_mean(series):
+                return series.mean() if len(series) > 0 else 0
+
+            _row = {
+                'Challenge': ch,
+                'N Responded': f"{_n_hit:,}",
+                'N Did Not': f"{_n_nr:,}",
+                'Response Rate': f"{_rate:.1f}%",
+            }
+
+            # Spend delta
+            if 'spend_delta' in _df.columns:
+                _row['Avg Spend Delta (Hit)'] = f"${_safe_mean(_hit['spend_delta']):,.0f}"
+                _row['Avg Spend Delta (NR)'] = f"${_safe_mean(_nr['spend_delta']):,.0f}"
+
+            # Balance
+            if 'balance' in _df.columns:
+                _row['Avg Balance (Hit)'] = f"${_safe_mean(_hit['balance']):,.0f}"
+                _row['Avg Balance (NR)'] = f"${_safe_mean(_nr['balance']):,.0f}"
+
+            # Deposit amount
+            if 'depAmt365' in _df.columns:
+                _row['Avg Dep Amt (Hit)'] = f"${_safe_mean(_hit['depAmt365']):,.0f}"
+                _row['Avg Dep Amt (NR)'] = f"${_safe_mean(_nr['depAmt365']):,.0f}"
+
+            # MTD delta
+            if 'mtd_delta' in _df.columns:
+                _row['Avg MTD Delta (Hit)'] = f"{_safe_mean(_hit['mtd_delta']):,.1f}"
+                _row['Avg MTD Delta (NR)'] = f"{_safe_mean(_nr['mtd_delta']):,.1f}"
+
+            _rows.append(_row)
+
+        _table_df = pd.DataFrame(_rows)
+
+        # Style as HTML table
+        _primary = GEN_COLORS.get('primary', '#264653')
+        _success = GEN_COLORS.get('success', '#2a9d8f')
+        _muted = GEN_COLORS.get('muted', '#adb5bd')
+        _dark = GEN_COLORS.get('dark_text', '#2d3436')
+
+        _html = f"""
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 1200px;">
+            <h2 style="color: {_dark}; font-size: 26px; margin-bottom: 4px;">
+                Same-Challenge Comparison: Full Profile
+            </h2>
+            <p style="color: {_muted}; font-style: italic; font-size: 14px; margin-top: 0;">
+                Comprehensive leave-behind: every metric, same challenge, responded vs not
+            </p>
+            <table style="border-collapse: collapse; width: 100%; font-size: 13px;">
+                <thead>
+                    <tr style="background-color: {_primary}; color: white;">
+        """
+
+        for col in _table_df.columns:
+            _html += f'<th style="padding: 10px 8px; text-align: center; font-weight: bold;">{col}</th>'
+        _html += '</tr></thead><tbody>'
+
+        for i, (_, row) in enumerate(_table_df.iterrows()):
+            _bg = '#f8f9fa' if i % 2 == 0 else 'white'
+            _html += f'<tr style="background-color: {_bg};">'
+            for j, col in enumerate(_table_df.columns):
+                _align = 'left' if j == 0 else 'center'
+                _fw = 'bold' if j == 0 or col == 'Response Rate' else 'normal'
+                _color = _success if 'Hit' in col else (_muted if 'NR' in col else _dark)
+                _html += (f'<td style="padding: 8px; text-align: {_align}; '
+                         f'font-weight: {_fw}; color: {_color}; '
+                         f'border-bottom: 1px solid #e0e0e0;">{row[col]}</td>')
+            _html += '</tr>'
+
+        _html += '</tbody></table></div>'
+
+        from IPython.display import display, HTML
+        display(HTML(_html))
+
+        print(f"\n  Profile table: {len(_challenges)} challenges, "
+              f"{len(_table_df.columns) - 1} metrics per challenge")

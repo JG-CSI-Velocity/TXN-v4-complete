@@ -1,0 +1,93 @@
+# ===========================================================================
+# SPEND PERSISTENCE: Indexed Lift After Response (Conference Edition)
+# ===========================================================================
+# Line chart for Hit accounts only. Indexes spend at pre=100 and plots
+# +1mo, +3mo, +6mo per challenge level. Dashed baseline at 100.
+#
+# Depends on: challenge_cohort_df (23/11), CHALLENGE_ORDER (23/11), GEN_COLORS
+
+if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
+    print("    No challenge cohort data. Run cell 11 first.")
+elif 'pre_spend' not in challenge_cohort_df.columns:
+    print("    pre_spend not available. Check cell 11 spend column discovery.")
+else:
+    _hits = challenge_cohort_df[challenge_cohort_df['outcome'] == 'Hit'].copy()
+
+    if len(_hits) == 0:
+        print("    No Hit accounts found.")
+    else:
+        # Build indexed spend per challenge
+        _time_points = ['Pre', '+1mo', '+3mo', '+6mo']
+        _spend_cols_map = {
+            'Pre': 'pre_spend',
+            '+1mo': 'post_spend_1mo',
+            '+3mo': 'post_spend_3mo',
+            '+6mo': 'post_spend_6mo',
+        }
+
+        # Only include time points that exist in the data
+        _avail_points = [tp for tp in _time_points
+                         if _spend_cols_map[tp] in _hits.columns]
+
+        if len(_avail_points) < 2:
+            print("    Need at least pre + one post period for persistence chart.")
+        else:
+            _challenge_colors = {
+                'NU':    GEN_COLORS['warning'],
+                'TH-10': GEN_COLORS['info'],
+                'TH-15': '#2EC4B6',
+                'TH-20': '#264653',
+                'TH-25': GEN_COLORS['accent'],
+            }
+
+            fig, ax = plt.subplots(figsize=(14, 7))
+
+            _x = np.arange(len(_avail_points))
+
+            for ch in CHALLENGE_ORDER:
+                _sub = _hits[_hits['challenge'] == ch]
+                if len(_sub) == 0:
+                    continue
+                _pre_mean = _sub['pre_spend'].mean()
+                if _pre_mean <= 0:
+                    continue
+
+                _indexed = []
+                for tp in _avail_points:
+                    col = _spend_cols_map[tp]
+                    _val = _sub[col].mean()
+                    _indexed.append(_val / _pre_mean * 100)
+
+                _color = _challenge_colors.get(ch, GEN_COLORS['muted'])
+                ax.plot(_x, _indexed,
+                        color=_color, linewidth=2.5, marker='o',
+                        markersize=9, markeredgecolor='white', markeredgewidth=2,
+                        label=f"{ch} (n={len(_sub):,})", zorder=5)
+
+            # Baseline
+            ax.axhline(y=100, color=GEN_COLORS['dark_text'],
+                        linewidth=1.5, linestyle='--', alpha=0.5, zorder=2)
+            ax.text(len(_avail_points) - 0.5, 100.5, "Baseline (100)",
+                    fontsize=11, color=GEN_COLORS['muted'], va='bottom')
+
+            ax.set_xticks(_x)
+            ax.set_xticklabels(_avail_points, fontsize=14, fontweight='bold')
+            ax.set_ylabel("Indexed Spend (Pre = 100)", fontsize=16,
+                          fontweight='bold', labelpad=10)
+
+            gen_clean_axes(ax)
+            ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+            ax.legend(fontsize=13, loc='best', frameon=True,
+                      facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+            ax.set_title("Spend Lift Persistence After Response",
+                          fontsize=26, fontweight='bold',
+                          color=GEN_COLORS['dark_text'], pad=35, loc='left')
+            ax.text(0.0, 1.02,
+                    "Indexed to pre-response baseline (100) -- does the lift last?",
+                    transform=ax.transAxes, fontsize=14,
+                    color=GEN_COLORS['muted'], style='italic')
+
+            plt.tight_layout()
+            plt.show()

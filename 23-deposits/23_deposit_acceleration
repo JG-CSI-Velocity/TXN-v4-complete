@@ -1,0 +1,84 @@
+# ===========================================================================
+# DEPOSIT ACCELERATION: 33-Day Velocity Across Snapshots (Conference Ed.)
+# ===========================================================================
+# Line chart: DepAmt33 across snapshots for matched cohort, split by
+# responded vs non-responded vs never mailed. Solid=mean, dashed=median.
+#
+# Depends on: deposit_long (cell 01), SNAPSHOT_ORDER (cell 01),
+#             SNAPSHOT_CONFIG (cell 01), GEN_COLORS, gen_clean_axes, gen_fmt_dollar
+
+if 'deposit_long' not in dir() or len(deposit_long) == 0:
+    print("    No deposit_long data. Run cell 01 first.")
+elif 'DepAmt33' not in deposit_long.columns:
+    print("    No DepAmt33 column in deposit_long.")
+elif 'in_matched_cohort' not in deposit_long.columns:
+    print("    No matched cohort flag. Run cell 01 first.")
+elif 'camp_status' not in deposit_long.columns:
+    print("    No camp_status column. Run cell 01 first.")
+else:
+    _mc = deposit_long[deposit_long['in_matched_cohort']].copy()
+
+    if len(_mc) == 0:
+        print("    No matched cohort rows.")
+    else:
+        # Define groups
+        _responded = _mc[_mc['camp_status'] == 'Responder']
+        _non_resp = _mc[_mc['camp_status'] == 'Non-Responder']
+        _never = _mc[_mc['camp_status'] == 'Never Mailed']
+
+        _snap_labels = [SNAPSHOT_CONFIG[s]['label'] for s in SNAPSHOT_ORDER
+                        if s in _mc['snapshot'].unique()]
+        _snap_keys = [s for s in SNAPSHOT_ORDER if s in _mc['snapshot'].unique()]
+
+        if len(_snap_keys) < 2:
+            print("    Need at least 2 snapshots for trajectory chart.")
+        else:
+            fig, ax = plt.subplots(figsize=(14, 7))
+            _x = np.arange(len(_snap_keys))
+
+            # Compute means and medians per snapshot for each group
+            for grp, grp_label, color in [
+                (_responded, 'Responded', GEN_COLORS['success']),
+                (_non_resp, 'Non-Responder', GEN_COLORS['muted']),
+                (_never, 'Never Mailed', GEN_COLORS['warning']),
+            ]:
+                if len(grp) == 0:
+                    continue
+                _means = [grp[grp['snapshot'] == s]['DepAmt33'].mean() for s in _snap_keys]
+                _medians = [grp[grp['snapshot'] == s]['DepAmt33'].median() for s in _snap_keys]
+
+                ax.plot(_x, _means, color=color, linewidth=3, marker='o',
+                        markersize=9, markeredgecolor='white', markeredgewidth=2,
+                        label=f'{grp_label} (mean)', zorder=5)
+                ax.plot(_x, _medians, color=color, linewidth=2, linestyle='--',
+                        marker='s', markersize=7, markeredgecolor='white',
+                        markeredgewidth=1.5, alpha=0.7,
+                        label=f'{grp_label} (median)', zorder=4)
+
+                # Annotate mean values
+                for xi, val in zip(_x, _means):
+                    ax.text(xi, val * 1.03, f"${val:,.0f}",
+                            ha='center', va='bottom', fontsize=11,
+                            fontweight='bold', color=color)
+
+            ax.set_xticks(_x)
+            ax.set_xticklabels(_snap_labels, fontsize=14, fontweight='bold')
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+            ax.set_ylabel("33-Day Deposit Amount", fontsize=16, fontweight='bold', labelpad=10)
+
+            gen_clean_axes(ax)
+            ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+            ax.legend(fontsize=11, loc='upper left', frameon=True,
+                      facecolor='white', edgecolor=GEN_COLORS['grid'], ncol=2)
+
+            ax.set_title("Deposit Velocity: Accelerating or Decelerating?",
+                          fontsize=26, fontweight='bold',
+                          color=GEN_COLORS['dark_text'], pad=35, loc='left')
+            ax.text(0.0, 1.02,
+                    "33-day deposit amount across snapshots -- matched cohort",
+                    transform=ax.transAxes, fontsize=14,
+                    color=GEN_COLORS['muted'], style='italic')
+
+            plt.tight_layout()
+            plt.show()

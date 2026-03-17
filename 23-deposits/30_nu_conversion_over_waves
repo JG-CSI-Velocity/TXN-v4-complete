@@ -1,0 +1,123 @@
+# ===========================================================================
+# NU CONVERSION OVER WAVES: 1-4 to 5+ Pipeline (Conference Edition)
+# ===========================================================================
+# Line chart tracking cumulative NU 1-4 pool and conversions to NU 5+
+# across chronological waves.
+#
+# Depends on: challenge_cohort_df (cell 11), GEN_COLORS, gen_clean_axes
+
+if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
+    print("    No challenge cohort data. Run cell 11 first.")
+elif 'challenge' not in challenge_cohort_df.columns:
+    print("    challenge column missing from challenge_cohort_df.")
+else:
+    _nu = challenge_cohort_df[challenge_cohort_df['challenge'] == 'NU'].copy()
+
+    if len(_nu) == 0:
+        print("    No NU accounts found in challenge_cohort_df.")
+    elif 'wave' not in _nu.columns:
+        print("    wave column missing.")
+    else:
+        # Sort waves chronologically
+        _wave_dates = _nu.groupby('wave')['wave_date'].first().sort_values()
+        _waves = _wave_dates.index.tolist()
+
+        if len(_waves) < 2:
+            print("    Need at least 2 waves for conversion tracking.")
+        else:
+            _ever_nu14 = set()
+            _ever_converted = set()
+
+            _cum_nu14 = []
+            _cum_converted = []
+            _wave_labels = []
+
+            for w in _waves:
+                _w_data = _nu[_nu['wave'] == w]
+
+                # Accounts that got NU 1-4 (Near Miss) this wave
+                _new_nu14 = set(
+                    _w_data[_w_data['outcome'] == 'Near Miss']['acct_number']
+                )
+                _ever_nu14 |= _new_nu14
+
+                # Accounts that got NU 5+ (Hit) this wave
+                _new_hits = set(
+                    _w_data[_w_data['outcome'] == 'Hit']['acct_number']
+                )
+
+                # Conversions = previously NU 1-4, now Hit
+                _new_conversions = _new_hits & _ever_nu14
+                _ever_converted |= _new_conversions
+
+                _cum_nu14.append(len(_ever_nu14))
+                _cum_converted.append(len(_ever_converted))
+                _wave_labels.append(w)
+
+            fig, ax = plt.subplots(figsize=(14, 7))
+
+            _x = range(len(_wave_labels))
+
+            ax.plot(_x, _cum_nu14,
+                    color=GEN_COLORS.get('warning', '#e9c46a'),
+                    linewidth=3, marker='o', markersize=10,
+                    markeredgecolor='white', markeredgewidth=2,
+                    label='Cumulative NU 1-4 Ever', zorder=5)
+
+            ax.plot(_x, _cum_converted,
+                    color=GEN_COLORS.get('success', '#2a9d8f'),
+                    linewidth=3, marker='s', markersize=10,
+                    markeredgecolor='white', markeredgewidth=2,
+                    label='Cumulative Converted to NU 5+', zorder=5)
+
+            # Fill between
+            ax.fill_between(_x, _cum_converted, _cum_nu14,
+                            alpha=0.15, color=GEN_COLORS.get('warning', '#e9c46a'))
+            ax.fill_between(_x, 0, _cum_converted,
+                            alpha=0.15, color=GEN_COLORS.get('success', '#2a9d8f'))
+
+            # Annotate final values
+            if _cum_nu14:
+                ax.annotate(f"{_cum_nu14[-1]:,} near-miss pool",
+                            xy=(len(_wave_labels) - 1, _cum_nu14[-1]),
+                            xytext=(15, 10), textcoords='offset points',
+                            fontsize=12, fontweight='bold',
+                            color=GEN_COLORS.get('warning', '#e9c46a'))
+                ax.annotate(f"{_cum_converted[-1]:,} converted",
+                            xy=(len(_wave_labels) - 1, _cum_converted[-1]),
+                            xytext=(15, -15), textcoords='offset points',
+                            fontsize=12, fontweight='bold',
+                            color=GEN_COLORS.get('success', '#2a9d8f'))
+
+                _conv_rate = (_cum_converted[-1] / _cum_nu14[-1] * 100
+                              if _cum_nu14[-1] > 0 else 0)
+                ax.text(0.5, 0.92,
+                        f"Conversion rate: {_conv_rate:.1f}%",
+                        transform=ax.transAxes, fontsize=16,
+                        fontweight='bold', ha='center',
+                        color=GEN_COLORS.get('dark_text', '#2d3436'),
+                        bbox=dict(boxstyle='round,pad=0.4',
+                                  facecolor='white', edgecolor=GEN_COLORS.get('grid', '#e0e0e0')))
+
+            ax.set_xticks(list(_x))
+            ax.set_xticklabels(_wave_labels, fontsize=13, fontweight='bold')
+            ax.set_ylabel("Cumulative Accounts", fontsize=16, fontweight='bold', labelpad=10)
+
+            gen_clean_axes(ax)
+            ax.yaxis.grid(True, color=GEN_COLORS.get('grid', '#e0e0e0'),
+                           linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+            ax.legend(fontsize=13, loc='upper left', frameon=True,
+                      facecolor='white', edgecolor=GEN_COLORS.get('grid', '#e0e0e0'))
+
+            ax.set_title("NU 1-4 to NU 5+ Conversion Pipeline",
+                          fontsize=26, fontweight='bold',
+                          color=GEN_COLORS.get('dark_text', '#2d3436'),
+                          pad=35, loc='left')
+            ax.text(0.0, 1.02,
+                    "Do near-miss accounts eventually activate?",
+                    transform=ax.transAxes, fontsize=14,
+                    color=GEN_COLORS.get('muted', '#adb5bd'), style='italic')
+
+            plt.tight_layout()
+            plt.show()

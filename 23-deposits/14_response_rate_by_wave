@@ -1,0 +1,80 @@
+# ===========================================================================
+# RESPONSE RATE BY WAVE: Trend Over Time Per Challenge (Conference Edition)
+# ===========================================================================
+# Line chart with one line per challenge level showing response rate (% Hit)
+# over chronologically sorted waves. Pending waves excluded.
+#
+# Depends on: challenge_cohort_df (23/11), CHALLENGE_ORDER (23/11), GEN_COLORS
+
+if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
+    print("    No challenge cohort data. Run cell 11 first.")
+else:
+    # Build per-wave, per-challenge response rate
+    _wave_rates = []
+    for (wave, ch), grp in challenge_cohort_df.groupby(['wave', 'challenge']):
+        _n = len(grp)
+        _hits = (grp['outcome'] == 'Hit').sum()
+        _rate = _hits / _n * 100 if _n > 0 else 0
+        _wave_date = grp['wave_date'].iloc[0]
+        # Exclude pending waves (0 hits across ALL challenges in that wave)
+        _wave_rates.append({
+            'wave': wave, 'wave_date': _wave_date,
+            'challenge': ch, 'n': _n, 'hits': _hits, 'rate': _rate,
+        })
+
+    _wr_df = pd.DataFrame(_wave_rates)
+
+    # Exclude waves where every challenge has 0 hits
+    _wave_hit_totals = _wr_df.groupby('wave')['hits'].sum()
+    _active_waves = _wave_hit_totals[_wave_hit_totals > 0].index
+    _wr_df = _wr_df[_wr_df['wave'].isin(_active_waves)]
+
+    if len(_wr_df) == 0:
+        print("    No active waves with responses.")
+    else:
+        _wr_df = _wr_df.sort_values('wave_date')
+        _wave_order = _wr_df.drop_duplicates('wave').sort_values('wave_date')['wave'].tolist()
+
+        # Distinct colors per challenge
+        _challenge_colors = {
+            'NU':    GEN_COLORS['warning'],
+            'TH-10': GEN_COLORS['info'],
+            'TH-15': '#2EC4B6',
+            'TH-20': '#264653',
+            'TH-25': GEN_COLORS['accent'],
+        }
+
+        fig, ax = plt.subplots(figsize=(14, 7))
+
+        for ch in CHALLENGE_ORDER:
+            _sub = _wr_df[_wr_df['challenge'] == ch].sort_values('wave_date')
+            if len(_sub) < 1:
+                continue
+            _x_pos = [_wave_order.index(w) for w in _sub['wave']]
+            _color = _challenge_colors.get(ch, GEN_COLORS['muted'])
+            ax.plot(_x_pos, _sub['rate'],
+                    color=_color, linewidth=2.5, marker='o',
+                    markersize=8, markeredgecolor='white', markeredgewidth=2,
+                    label=ch, zorder=5)
+
+        ax.set_xticks(range(len(_wave_order)))
+        ax.set_xticklabels(_wave_order, fontsize=12, fontweight='bold', rotation=45, ha='right')
+        ax.set_ylabel("Response Rate (%)", fontsize=16, fontweight='bold', labelpad=10)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_pct))
+
+        gen_clean_axes(ax)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+        ax.legend(fontsize=13, loc='best', frameon=True,
+                  facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+        ax.set_title("Response Rate Trend by Wave",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                "Is campaign effectiveness changing over time?",
+                transform=ax.transAxes, fontsize=14,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()

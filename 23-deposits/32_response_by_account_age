@@ -1,0 +1,98 @@
+# ===========================================================================
+# RESPONSE BY ACCOUNT AGE: Tenure Bands vs Response Rate (Conference Ed.)
+# ===========================================================================
+# Dual-axis: bars = response rate (% Hit), line = avg deposit balance.
+#
+# Depends on: challenge_cohort_df (cell 11), GEN_COLORS, gen_clean_axes,
+#             gen_fmt_pct
+
+if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
+    print("    No challenge cohort data. Run cell 11 first.")
+elif 'account_age' not in challenge_cohort_df.columns:
+    print("    account_age column missing from challenge_cohort_df.")
+else:
+    _df = challenge_cohort_df[challenge_cohort_df['account_age'].notna()].copy()
+
+    if len(_df) == 0:
+        print("    No accounts with account_age data.")
+    else:
+        # Create age bands (in years)
+        _bins = [0, 1, 2, 5, 10, 20, 999]
+        _labels = ['0-1yr', '1-2yr', '2-5yr', '5-10yr', '10-20yr', '20yr+']
+        _df['age_band'] = pd.cut(_df['account_age'], bins=_bins, labels=_labels, right=False)
+
+        _agg = _df.groupby('age_band', observed=True).agg(
+            total=('outcome', 'count'),
+            hits=('outcome', lambda x: (x == 'Hit').sum()),
+            avg_balance=('balance', 'mean') if 'balance' in _df.columns else ('outcome', 'count'),
+        ).reset_index()
+
+        _agg['response_rate'] = _agg['hits'] / _agg['total'] * 100
+        _agg = _agg[_agg['total'] >= 10]
+
+        if len(_agg) == 0:
+            print("    Not enough data per age band (minimum 10).")
+        else:
+            fig, ax1 = plt.subplots(figsize=(14, 7))
+
+            _x = np.arange(len(_agg))
+            _w = 0.5
+
+            bars = ax1.bar(_x, _agg['response_rate'],
+                            width=_w, color=GEN_COLORS.get('primary', '#264653'),
+                            edgecolor='white', linewidth=1.5, zorder=3,
+                            label='Response Rate (%)')
+
+            for bar, (_, row) in zip(bars, _agg.iterrows()):
+                ax1.text(bar.get_x() + bar.get_width() / 2,
+                         bar.get_height() + 0.5,
+                         f"{row['response_rate']:.1f}%\n(n={row['total']:,})",
+                         ha='center', va='bottom', fontsize=11, fontweight='bold',
+                         color=GEN_COLORS.get('dark_text', '#2d3436'))
+
+            ax1.set_ylabel("Response Rate (%)", fontsize=16, fontweight='bold',
+                            color=GEN_COLORS.get('primary', '#264653'), labelpad=10)
+            ax1.set_xticks(_x)
+            ax1.set_xticklabels(_agg['age_band'], fontsize=13, fontweight='bold')
+            ax1.set_xlabel("Account Tenure", fontsize=14, fontweight='bold')
+
+            # Dual axis: avg balance
+            if 'balance' in _df.columns and 'avg_balance' in _agg.columns:
+                ax2 = ax1.twinx()
+                ax2.plot(_x, _agg['avg_balance'],
+                         color=GEN_COLORS.get('danger', '#e76f51'),
+                         linewidth=3, marker='D', markersize=9,
+                         markeredgecolor='white', markeredgewidth=2,
+                         label='Avg Deposit Balance', zorder=5)
+                ax2.set_ylabel("Avg Deposit Balance ($)", fontsize=16, fontweight='bold',
+                                color=GEN_COLORS.get('danger', '#e76f51'), labelpad=10)
+                ax2.yaxis.set_major_formatter(
+                    mticker.FuncFormatter(lambda x, p: f"${x:,.0f}")
+                )
+                ax2.spines['right'].set_visible(True)
+                ax2.spines['right'].set_color(GEN_COLORS.get('danger', '#e76f51'))
+                ax2.tick_params(axis='y', colors=GEN_COLORS.get('danger', '#e76f51'))
+
+                # Combined legend
+                _lines1, _labels1 = ax1.get_legend_handles_labels()
+                _lines2, _labels2 = ax2.get_legend_handles_labels()
+                ax1.legend(_lines1 + _lines2, _labels1 + _labels2,
+                           fontsize=12, loc='upper right', frameon=True,
+                           facecolor='white', edgecolor=GEN_COLORS.get('grid', '#e0e0e0'))
+
+            gen_clean_axes(ax1)
+            ax1.yaxis.grid(True, color=GEN_COLORS.get('grid', '#e0e0e0'),
+                            linewidth=0.5, alpha=0.7)
+            ax1.set_axisbelow(True)
+
+            ax1.set_title("Response Rate by Account Tenure",
+                           fontsize=26, fontweight='bold',
+                           color=GEN_COLORS.get('dark_text', '#2d3436'),
+                           pad=35, loc='left')
+            ax1.text(0.0, 1.02,
+                     "Which account ages respond best? Red line = avg deposits",
+                     transform=ax1.transAxes, fontsize=14,
+                     color=GEN_COLORS.get('muted', '#adb5bd'), style='italic')
+
+            plt.tight_layout()
+            plt.show()

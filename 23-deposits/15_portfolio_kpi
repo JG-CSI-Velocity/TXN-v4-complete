@@ -1,0 +1,83 @@
+# ===========================================================================
+# PORTFOLIO KPI CARDS: Deposit Portfolio Overview (Conference Edition)
+# ===========================================================================
+# 6 FancyBboxPatch KPI cards summarizing the deposit portfolio at a glance.
+#
+# Depends on: challenge_cohort_df (23/11), deposit_df (23/01), GEN_COLORS
+
+from matplotlib.patches import FancyBboxPatch
+import matplotlib.patheffects as pe
+
+if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
+    print("    No challenge cohort data. Run cell 11 first.")
+else:
+    # Compute KPI values with safe fallbacks
+    _total_mailed = challenge_cohort_df['acct_number'].nunique() if 'acct_number' in challenge_cohort_df.columns else len(challenge_cohort_df)
+    _total_responded = challenge_cohort_df[challenge_cohort_df['outcome'] == 'Hit']['acct_number'].nunique() if 'acct_number' in challenge_cohort_df.columns else (challenge_cohort_df['outcome'] == 'Hit').sum()
+    _overall_rate = _total_responded / _total_mailed * 100 if _total_mailed > 0 else 0
+
+    _avg_balance = 0
+    if 'deposit_df' in dir() and len(deposit_df) > 0 and 'balance' in deposit_df.columns:
+        _avg_balance = deposit_df['balance'].mean()
+
+    _avg_spend = 0
+    if 'pre_spend' in challenge_cohort_df.columns:
+        _avg_spend = challenge_cohort_df['pre_spend'].mean()
+
+    _dd_pct = 0
+    if 'deposit_df' in dir() and len(deposit_df) > 0 and 'has_direct_deposit' in deposit_df.columns:
+        _dd_pct = deposit_df['has_direct_deposit'].mean() * 100
+
+    # KPI definitions: (label, value_str, subtitle)
+    _kpis = [
+        ("Total Mailed", f"{_total_mailed:,}", "unique accounts"),
+        ("Total Responded", f"{_total_responded:,}", "hit their challenge"),
+        ("Overall Response Rate", f"{_overall_rate:.1f}%", "of mailed accounts"),
+        ("Avg Deposit Balance", f"${_avg_balance:,.0f}", "latest snapshot"),
+        ("Avg Monthly Spend", f"${_avg_spend:,.0f}", "pre-challenge baseline"),
+        ("Direct Deposit %", f"{_dd_pct:.1f}%", "of deposit accounts"),
+    ]
+
+    # Layout: 3 columns x 2 rows
+    fig, axes = plt.subplots(2, 3, figsize=(14, 7))
+    fig.subplots_adjust(hspace=0.35, wspace=0.25)
+
+    _card_colors = [
+        GEN_COLORS['primary'], GEN_COLORS['success'], GEN_COLORS['info'],
+        GEN_COLORS['warning'], GEN_COLORS['accent'], '#264653',
+    ]
+
+    for idx, (ax, (label, val_str, subtitle)) in enumerate(zip(axes.flat, _kpis)):
+        ax.set_xlim(0, 10)
+        ax.set_ylim(0, 10)
+        ax.axis('off')
+
+        card = FancyBboxPatch(
+            (0.3, 0.3), 9.4, 9.4,
+            boxstyle="round,pad=0.3",
+            facecolor=_card_colors[idx],
+            edgecolor='white', linewidth=3,
+        )
+        ax.add_patch(card)
+
+        ax.text(5, 7.0, label,
+                ha='center', va='center', fontsize=13, fontweight='bold',
+                color='white', alpha=0.85)
+        ax.text(5, 4.5, val_str,
+                ha='center', va='center', fontsize=30, fontweight='bold',
+                color='white',
+                path_effects=[pe.withStroke(linewidth=2, foreground='black', alpha=0.15)])
+        ax.text(5, 2.3, subtitle,
+                ha='center', va='center', fontsize=11,
+                color='white', alpha=0.8)
+
+    fig.suptitle("Deposit Portfolio Overview",
+                 fontsize=26, fontweight='bold',
+                 color=GEN_COLORS['dark_text'], x=0.02, ha='left', y=1.02)
+
+    plt.tight_layout()
+    plt.show()
+
+    print(f"\n  Portfolio KPIs:")
+    for label, val_str, subtitle in _kpis:
+        print(f"    {label}: {val_str} ({subtitle})")

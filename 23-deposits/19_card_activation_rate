@@ -1,0 +1,117 @@
+# ===========================================================================
+# CARD ACTIVATION RATE: % With Any Spend Each Month (Conference Edition)
+# ===========================================================================
+# Line chart: for each month, % of accounts with spend > $0.
+# Three lines: responded (Hit), didn't respond, never mailed.
+# Uses the spend matrix from rewards_df monthly Spend columns.
+#
+# Depends on: rewards_df, challenge_cohort_df (23/11),
+#             never_mailed_profile (23/11), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available. Run 00-setup cells first.")
+elif 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
+    print("    No challenge cohort data. Run cell 11 first.")
+else:
+    _rewards_cols = [c.strip() for c in rewards_df.columns]
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+
+    _spend_cols = sorted(
+        [c for c in _rewards_cols if c.endswith(' Spend') and c[0].isupper()
+         and len(c.split(' ')[0]) in (5, 6) and c.split(' ')[0][:3] in _VALID_MON],
+        key=lambda c: pd.to_datetime(c.replace(' Spend', ''), format='%b%y')
+    )
+
+    if len(_spend_cols) == 0:
+        print("    No monthly Spend columns found.")
+    else:
+        _acct_col = 'Acct Number' if 'Acct Number' in rewards_df.columns else ' Acct Number'
+        _acct_nums = rewards_df[_acct_col].astype(str).str.strip()
+
+        # Build sets of accounts by response status
+        _hit_accts = set(
+            challenge_cohort_df[challenge_cohort_df['outcome'] == 'Hit']['acct_number'].unique()
+        ) if 'acct_number' in challenge_cohort_df.columns else set()
+        _mailed_accts = set(
+            challenge_cohort_df['acct_number'].unique()
+        ) if 'acct_number' in challenge_cohort_df.columns else set()
+        _no_resp_accts = _mailed_accts - _hit_accts
+        _never_mailed_accts = set(_acct_nums) - _mailed_accts
+
+        # Build masks on rewards_df index
+        _hit_mask = _acct_nums.isin(_hit_accts)
+        _no_mask = _acct_nums.isin(_no_resp_accts)
+        _never_mask = _acct_nums.isin(_never_mailed_accts)
+
+        _month_labels = [c.replace(' Spend', '') for c in _spend_cols]
+        _month_dates = [pd.to_datetime(m, format='%b%y') for m in _month_labels]
+
+        _act_rows = []
+        for sc, ml, md in zip(_spend_cols, _month_labels, _month_dates):
+            _vals = pd.to_numeric(rewards_df[sc], errors='coerce').fillna(0)
+
+            for mask, grp_name in [(_hit_mask, 'Responded'),
+                                   (_no_mask, 'Did Not Respond'),
+                                   (_never_mask, 'Never Mailed')]:
+                _n = mask.sum()
+                if _n == 0:
+                    continue
+                _active = (_vals[mask] > 0).sum()
+                _act_rows.append({
+                    'month_date': md,
+                    'group': grp_name,
+                    'active_pct': _active / _n * 100,
+                    'n': _n,
+                })
+
+        _act_df = pd.DataFrame(_act_rows)
+
+        if len(_act_df) == 0:
+            print("    No activation data computed.")
+        else:
+            _COLOR_MAP = {
+                'Responded': GEN_COLORS['success'],
+                'Did Not Respond': GEN_COLORS['muted'],
+                'Never Mailed': GEN_COLORS['warning'],
+            }
+            _MARKER_MAP = {
+                'Responded': 'o',
+                'Did Not Respond': 's',
+                'Never Mailed': 'D',
+            }
+
+            fig, ax = plt.subplots(figsize=(14, 7))
+
+            for grp in ['Responded', 'Did Not Respond', 'Never Mailed']:
+                _sub = _act_df[_act_df['group'] == grp].sort_values('month_date')
+                if len(_sub) == 0:
+                    continue
+                _n_accts = _sub['n'].iloc[0]
+                ax.plot(_sub['month_date'], _sub['active_pct'],
+                        color=_COLOR_MAP[grp], linewidth=2.5,
+                        marker=_MARKER_MAP[grp], markersize=6,
+                        markeredgecolor='white', markeredgewidth=1.5,
+                        label=f"{grp} (n={_n_accts:,})", zorder=5)
+
+            ax.set_ylabel("Activation Rate (%)", fontsize=16,
+                           fontweight='bold', labelpad=10)
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_pct))
+
+            gen_clean_axes(ax)
+            ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+            ax.legend(fontsize=13, loc='best', frameon=True,
+                      facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+            fig.autofmt_xdate(rotation=45)
+
+            ax.set_title("Card Activation Rate Over Time",
+                          fontsize=26, fontweight='bold',
+                          color=GEN_COLORS['dark_text'], pad=35, loc='left')
+            ax.text(0.0, 1.02,
+                    "% of accounts with any card activity each month",
+                    transform=ax.transAxes, fontsize=14,
+                    color=GEN_COLORS['muted'], style='italic')
+
+            plt.tight_layout()
+            plt.show()

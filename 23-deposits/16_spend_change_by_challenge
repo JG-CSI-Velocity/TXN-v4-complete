@@ -1,0 +1,105 @@
+# ===========================================================================
+# SPEND CHANGE BY CHALLENGE: Hit vs No Response (Conference Edition)
+# ===========================================================================
+# Grouped bar chart: for each challenge level, two bars side by side --
+# avg spend_delta for Hit (green) vs avg spend_delta for No Response (gray).
+# The KEY comparison: same challenge, same cohort, two outcomes.
+#
+# Depends on: challenge_cohort_df (23/11), CHALLENGE_ORDER (23/11), GEN_COLORS
+
+if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
+    print("    No challenge cohort data. Run cell 11 first.")
+elif 'spend_delta' not in challenge_cohort_df.columns:
+    print("    spend_delta not computed. Check pre/post spend columns in cell 11.")
+else:
+    _COLOR_HIT = GEN_COLORS['success']
+    _COLOR_NO = GEN_COLORS['muted']
+
+    _rows = []
+    for ch in CHALLENGE_ORDER:
+        _sub = challenge_cohort_df[challenge_cohort_df['challenge'] == ch]
+        _hit = _sub[_sub['outcome'] == 'Hit']
+        _no = _sub[_sub['outcome'] == 'No Response']
+        if len(_hit) == 0 and len(_no) == 0:
+            continue
+        _rows.append({
+            'challenge': ch,
+            'hit_delta': _hit['spend_delta'].mean() if len(_hit) > 0 else 0,
+            'hit_n': len(_hit),
+            'no_delta': _no['spend_delta'].mean() if len(_no) > 0 else 0,
+            'no_n': len(_no),
+        })
+
+    _cmp = pd.DataFrame(_rows)
+
+    if len(_cmp) == 0:
+        print("    No challenge levels with both Hit and No Response data.")
+    else:
+        fig, ax = plt.subplots(figsize=(14, 7))
+
+        _x = np.arange(len(_cmp))
+        _w = 0.32
+
+        bars_hit = ax.bar(_x - _w / 2, _cmp['hit_delta'],
+                          _w, color=_COLOR_HIT, edgecolor='white',
+                          linewidth=1.5, label='Responded (Hit)', zorder=3)
+        bars_no = ax.bar(_x + _w / 2, _cmp['no_delta'],
+                         _w, color=_COLOR_NO, edgecolor='white',
+                         linewidth=1.5, label='Did Not Respond', zorder=3)
+
+        # Annotate Hit bars
+        for bar, (_, row) in zip(bars_hit, _cmp.iterrows()):
+            _val = bar.get_height()
+            _sign = '+' if _val >= 0 else ''
+            _va = 'bottom' if _val >= 0 else 'top'
+            _offset = abs(_val) * 0.05 + 1 if _val >= 0 else -(abs(_val) * 0.05 + 1)
+            ax.text(bar.get_x() + bar.get_width() / 2,
+                    _val + _offset,
+                    f"{_sign}${_val:,.0f}",
+                    ha='center', va=_va, fontsize=12, fontweight='bold',
+                    color=GEN_COLORS['dark_text'])
+            ax.text(bar.get_x() + bar.get_width() / 2,
+                    _val + _offset + (12 if _val >= 0 else -12),
+                    f"n={row['hit_n']:,}",
+                    ha='center', va=_va, fontsize=9,
+                    color=GEN_COLORS['muted'])
+
+        # Annotate No Response bars
+        for bar, (_, row) in zip(bars_no, _cmp.iterrows()):
+            _val = bar.get_height()
+            _sign = '+' if _val >= 0 else ''
+            _va = 'bottom' if _val >= 0 else 'top'
+            _offset = abs(_val) * 0.05 + 1 if _val >= 0 else -(abs(_val) * 0.05 + 1)
+            ax.text(bar.get_x() + bar.get_width() / 2,
+                    _val + _offset,
+                    f"{_sign}${_val:,.0f}",
+                    ha='center', va=_va, fontsize=12, fontweight='bold',
+                    color=GEN_COLORS['dark_text'])
+            ax.text(bar.get_x() + bar.get_width() / 2,
+                    _val + _offset + (12 if _val >= 0 else -12),
+                    f"n={row['no_n']:,}",
+                    ha='center', va=_va, fontsize=9,
+                    color=GEN_COLORS['muted'])
+
+        ax.set_xticks(_x)
+        ax.set_xticklabels(_cmp['challenge'], fontsize=14, fontweight='bold')
+        ax.set_ylabel("Avg Spend Change ($)", fontsize=16, fontweight='bold', labelpad=10)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+        ax.axhline(y=0, color=GEN_COLORS['dark_text'], linewidth=0.8, alpha=0.5)
+
+        gen_clean_axes(ax)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+        ax.legend(fontsize=13, loc='best', frameon=True,
+                  facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+        ax.set_title("Same Challenge, Two Outcomes: Spend Change",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                "Did responding lift spend within the same cohort?",
+                transform=ax.transAxes, fontsize=14,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()

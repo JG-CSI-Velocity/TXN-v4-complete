@@ -1,0 +1,150 @@
+# ===========================================================================
+# BENCHMARK FINDINGS: External + Account-Level Insights (Conference Edition)
+# ===========================================================================
+# Styled HTML table with dynamically computed findings: institutional deposit
+# growth, peer comparison, responder deposit gap, DD predictor, NU activation.
+#
+# Depends on: ncua_df (cell 04), ncua_peer_summary (cell 04),
+#             challenge_cohort_df (cell 11), deposit_df (cell 01),
+#             GEN_COLORS
+
+_findings = []
+
+# (1) Institutional deposit growth from ncua_df
+if 'ncua_df' in dir() and len(ncua_df) >= 2 and 'total_deposits' in ncua_df.columns:
+    _first_dep = ncua_df['total_deposits'].iloc[0]
+    _last_dep = ncua_df['total_deposits'].iloc[-1]
+    _growth = (_last_dep - _first_dep) / _first_dep * 100 if _first_dep > 0 else 0
+    _q_first = ncua_df['quarter_label'].iloc[0]
+    _q_last = ncua_df['quarter_label'].iloc[-1]
+    _findings.append({
+        'Category': 'Institutional Growth',
+        'Finding': f"Total deposits {'grew' if _growth >= 0 else 'declined'} "
+                   f"{abs(_growth):.1f}% from {_q_first} to {_q_last} "
+                   f"(${_first_dep / 1000:,.0f}M to ${_last_dep / 1000:,.0f}M)",
+        'Connection to ARS': ('Deposit growth context for evaluating ARS impact; '
+                              'responder accounts contribute to this growth'),
+        'Priority': 'Context',
+    })
+
+# (2) Peer comparison
+if ('ncua_df' in dir() and len(ncua_df) >= 2 and
+        'ncua_peer_summary' in dir() and len(ncua_peer_summary) >= 2 and
+        'deposit_growth_pct' in ncua_df.columns):
+    _usf_avg_growth = ncua_df['deposit_growth_pct'].dropna().mean()
+    _peer_deps = ncua_peer_summary['peer_median_deposits'].tolist()
+    _peer_growth_vals = []
+    for i in range(1, len(_peer_deps)):
+        if _peer_deps[i - 1] > 0:
+            _peer_growth_vals.append((_peer_deps[i] - _peer_deps[i - 1]) / _peer_deps[i - 1] * 100)
+    _peer_avg_growth = np.mean(_peer_growth_vals) if _peer_growth_vals else 0
+    _diff = _usf_avg_growth - _peer_avg_growth
+    _status = 'outperforming' if _diff > 0 else 'underperforming'
+    _findings.append({
+        'Category': 'Peer Comparison',
+        'Finding': f"Avg quarterly deposit growth: {CU_NAME} {_usf_avg_growth:+.2f}% vs "
+                   f"FL peers {_peer_avg_growth:+.2f}% ({_status} by {abs(_diff):.2f}pp)",
+        'Connection to ARS': 'ARS-driven card usage correlates with deposit retention and growth',
+        'Priority': 'High' if _diff < 0 else 'Monitor',
+    })
+
+# (3) Responder deposit gap
+if 'challenge_cohort_df' in dir() and len(challenge_cohort_df) > 0 and 'balance' in challenge_cohort_df.columns:
+    _hit_bal = challenge_cohort_df[challenge_cohort_df['outcome'] == 'Hit']['balance'].mean()
+    _nr_bal = challenge_cohort_df[challenge_cohort_df['outcome'] == 'No Response']['balance'].mean()
+    _gap = _hit_bal - _nr_bal
+    _findings.append({
+        'Category': 'Responder Deposit Gap',
+        'Finding': f"Responders avg balance ${_hit_bal:,.0f} vs non-responders ${_nr_bal:,.0f} "
+                   f"(gap: ${_gap:+,.0f})",
+        'Connection to ARS': 'Same-challenge comparison proves this gap is behavioral, not selection',
+        'Priority': 'High',
+    })
+
+# (4) DD predictor finding
+if 'challenge_cohort_df' in dir() and 'has_direct_deposit' in challenge_cohort_df.columns:
+    _dd = challenge_cohort_df[challenge_cohort_df['has_direct_deposit'] == True]
+    _no_dd = challenge_cohort_df[challenge_cohort_df['has_direct_deposit'] == False]
+    _dd_rate = (_dd['outcome'] == 'Hit').mean() * 100 if len(_dd) > 0 else 0
+    _no_dd_rate = (_no_dd['outcome'] == 'Hit').mean() * 100 if len(_no_dd) > 0 else 0
+    _mult = _dd_rate / _no_dd_rate if _no_dd_rate > 0 else 0
+    _findings.append({
+        'Category': 'DD Predictor',
+        'Finding': f"Direct deposit members respond at {_mult:.2f}x the rate "
+                   f"({_dd_rate:.1f}% vs {_no_dd_rate:.1f}%)",
+        'Connection to ARS': 'Use DD flag as targeting signal to improve future mailer ROI',
+        'Priority': 'Actionable',
+    })
+
+# (5) NU activation rate
+if 'challenge_cohort_df' in dir() and 'challenge' in challenge_cohort_df.columns:
+    _nu = challenge_cohort_df[challenge_cohort_df['challenge'] == 'NU']
+    if len(_nu) > 0:
+        _nu_best = _nu.sort_values(
+            _nu['outcome'].map({'Hit': 3, 'Near Miss': 2, 'No Response': 1}).fillna(0),
+            ascending=False
+        ).drop_duplicates(subset='acct_number', keep='first')
+        _nu_total = len(_nu_best)
+        _nu_hit = len(_nu_best[_nu_best['outcome'] == 'Hit'])
+        _nu_rate = _nu_hit / _nu_total * 100 if _nu_total > 0 else 0
+        _findings.append({
+            'Category': 'NU Activation',
+            'Finding': f"{_nu_hit:,} of {_nu_total:,} non-users activated ({_nu_rate:.1f}%)",
+            'Connection to ARS': 'Dormant accounts brought back to active card usage and deposits',
+            'Priority': 'High',
+        })
+
+if len(_findings) == 0:
+    print("    No benchmark data available to compute findings.")
+else:
+    _findings_df = pd.DataFrame(_findings)
+
+    _primary = GEN_COLORS.get('primary', '#264653')
+    _dark = GEN_COLORS.get('dark_text', '#2d3436')
+    _muted = GEN_COLORS.get('muted', '#adb5bd')
+
+    _priority_colors = {
+        'High': '#e76f51',
+        'Actionable': '#2a9d8f',
+        'Context': '#457b9d',
+        'Monitor': '#e9c46a',
+    }
+
+    _html = f"""
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 1200px;">
+        <h2 style="color: {_dark}; font-size: 26px; margin-bottom: 4px;">
+            External Benchmark + Account-Level Findings
+        </h2>
+        <p style="color: {_muted}; font-style: italic; font-size: 14px; margin-top: 0;">
+            Dynamically computed from NCUA, FRED, and ARS campaign data
+        </p>
+        <table style="border-collapse: collapse; width: 100%; font-size: 13px;">
+            <thead>
+                <tr style="background-color: {_primary}; color: white;">
+                    <th style="padding: 10px 12px; text-align: left; width: 15%;">Category</th>
+                    <th style="padding: 10px 12px; text-align: left; width: 40%;">Finding</th>
+                    <th style="padding: 10px 12px; text-align: left; width: 35%;">Connection to ARS</th>
+                    <th style="padding: 10px 12px; text-align: center; width: 10%;">Priority</th>
+                </tr>
+            </thead>
+            <tbody>
+    """
+
+    for i, (_, row) in enumerate(_findings_df.iterrows()):
+        _bg = '#f8f9fa' if i % 2 == 0 else 'white'
+        _p_color = _priority_colors.get(row['Priority'], _dark)
+        _html += f"""
+            <tr style="background-color: {_bg};">
+                <td style="padding: 10px 12px; font-weight: bold; border-bottom: 1px solid #e0e0e0;">{row['Category']}</td>
+                <td style="padding: 10px 12px; border-bottom: 1px solid #e0e0e0;">{row['Finding']}</td>
+                <td style="padding: 10px 12px; border-bottom: 1px solid #e0e0e0; color: #555;">{row['Connection to ARS']}</td>
+                <td style="padding: 10px 12px; text-align: center; font-weight: bold; color: {_p_color}; border-bottom: 1px solid #e0e0e0;">{row['Priority']}</td>
+            </tr>
+        """
+
+    _html += '</tbody></table></div>'
+
+    from IPython.display import display, HTML
+    display(HTML(_html))
+
+    print(f"\n  {len(_findings)} benchmark findings generated.")

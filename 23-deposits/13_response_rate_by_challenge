@@ -1,0 +1,71 @@
+# ===========================================================================
+# RESPONSE RATE BY CHALLENGE: Hit Rate Per Challenge Level (Conference Ed.)
+# ===========================================================================
+# Vertical bar chart showing % of accounts that Hit for each challenge level.
+# Annotated with response rate and account count.
+#
+# Depends on: challenge_cohort_df (23/11), CHALLENGE_ORDER (23/11), GEN_COLORS
+
+if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
+    print("    No challenge cohort data. Run cell 11 first.")
+else:
+    _rates = []
+    for ch in CHALLENGE_ORDER:
+        _sub = challenge_cohort_df[challenge_cohort_df['challenge'] == ch]
+        _n = len(_sub)
+        _hits = (_sub['outcome'] == 'Hit').sum()
+        _rate = _hits / _n * 100 if _n > 0 else 0
+        _rates.append({'challenge': ch, 'n': _n, 'hits': _hits, 'rate': _rate})
+
+    _rates_df = pd.DataFrame(_rates)
+    _rates_df = _rates_df[_rates_df['n'] > 0]
+
+    if len(_rates_df) == 0:
+        print("    No challenge data with accounts.")
+    else:
+        fig, ax = plt.subplots(figsize=(14, 7))
+
+        _x = np.arange(len(_rates_df))
+        bars = ax.bar(_x, _rates_df['rate'],
+                      color=GEN_COLORS['primary'], edgecolor='white',
+                      linewidth=1.5, width=0.5, zorder=3)
+
+        for bar, (_, row) in zip(bars, _rates_df.iterrows()):
+            ax.text(bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() + 0.8,
+                    f"{row['rate']:.1f}%",
+                    ha='center', va='bottom', fontsize=15, fontweight='bold',
+                    color=GEN_COLORS['dark_text'])
+            ax.text(bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() * 0.5,
+                    f"n={row['n']:,}",
+                    ha='center', va='center', fontsize=11,
+                    color='white', fontweight='bold')
+
+        ax.set_xticks(_x)
+        ax.set_xticklabels(_rates_df['challenge'], fontsize=14, fontweight='bold')
+        ax.set_ylabel("Response Rate (%)", fontsize=16, fontweight='bold', labelpad=10)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_pct))
+
+        gen_clean_axes(ax)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+
+        _ylim = ax.get_ylim()
+        ax.set_ylim(0, _ylim[1] * 1.15)
+
+        ax.set_title("Response Rate by Challenge Level",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                "Which challenges are hardest to hit?",
+                transform=ax.transAxes, fontsize=14,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()
+
+        print(f"\n  Response rates by challenge:")
+        for _, row in _rates_df.iterrows():
+            print(f"    {row['challenge']:<8s}: {row['rate']:>5.1f}% "
+                  f"({row['hits']:,} hits / {row['n']:,} mailed)")

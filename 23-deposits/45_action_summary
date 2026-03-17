@@ -1,0 +1,222 @@
+# ===========================================================================
+# ACTION SUMMARY: Strategic Findings & Recommended Actions (Conference Ed.)
+# ===========================================================================
+# Two styled tables: (1) dynamically computed insights, (2) strategic actions.
+#
+# Depends on: challenge_cohort_df (cell 11), deposit_df (cell 01),
+#             ncua_df (cell 04), response_journey_df (cell 02), GEN_COLORS
+
+# ---------------------------------------------------------------------------
+# 1. Dynamically computed insights
+# ---------------------------------------------------------------------------
+_insights = []
+
+# Overall response rate
+if 'challenge_cohort_df' in dir() and len(challenge_cohort_df) > 0:
+    _total = len(challenge_cohort_df)
+    _hits = (challenge_cohort_df['outcome'] == 'Hit').sum()
+    _rate = _hits / _total * 100 if _total > 0 else 0
+    _insights.append({
+        'Metric': 'Overall Response Rate',
+        'Value': f"{_rate:.1f}%",
+        'Detail': f"{_hits:,} hit responses out of {_total:,} account-waves",
+    })
+
+# Best-performing challenge
+if 'challenge_cohort_df' in dir() and len(challenge_cohort_df) > 0:
+    _ch_rates = challenge_cohort_df.groupby('challenge').agg(
+        total=('outcome', 'count'),
+        hits=('outcome', lambda x: (x == 'Hit').sum()),
+    ).reset_index()
+    _ch_rates['rate'] = _ch_rates['hits'] / _ch_rates['total'] * 100
+    _best = _ch_rates.loc[_ch_rates['rate'].idxmax()]
+    _insights.append({
+        'Metric': 'Best Challenge',
+        'Value': f"{_best['challenge']} ({_best['rate']:.1f}%)",
+        'Detail': f"{int(_best['hits']):,} hits from {int(_best['total']):,} mailings",
+    })
+
+# Deposit gap (responder vs non)
+if 'challenge_cohort_df' in dir() and 'balance' in challenge_cohort_df.columns:
+    _h_bal = challenge_cohort_df[challenge_cohort_df['outcome'] == 'Hit']['balance'].mean()
+    _n_bal = challenge_cohort_df[challenge_cohort_df['outcome'] == 'No Response']['balance'].mean()
+    _insights.append({
+        'Metric': 'Deposit Balance Gap',
+        'Value': f"${_h_bal - _n_bal:+,.0f}",
+        'Detail': f"Responders ${_h_bal:,.0f} vs non-responders ${_n_bal:,.0f}",
+    })
+
+# Spend lift
+if 'challenge_cohort_df' in dir() and 'spend_delta' in challenge_cohort_df.columns:
+    _h_delta = challenge_cohort_df[challenge_cohort_df['outcome'] == 'Hit']['spend_delta'].mean()
+    _n_delta = challenge_cohort_df[challenge_cohort_df['outcome'] == 'No Response']['spend_delta'].mean()
+    _insights.append({
+        'Metric': 'Avg Spend Lift (Hit)',
+        'Value': f"${_h_delta:+,.0f}/mo",
+        'Detail': f"vs ${_n_delta:+,.0f}/mo for non-responders (same challenge)",
+    })
+
+# Repeat responders
+if 'response_journey_df' in dir() and len(response_journey_df) > 0:
+    _any_resp = (response_journey_df['times_responded'] > 0).sum()
+    _repeat = response_journey_df['is_repeat_responder'].sum()
+    _pct = _repeat / _any_resp * 100 if _any_resp > 0 else 0
+    _insights.append({
+        'Metric': 'Repeat Responders',
+        'Value': f"{_pct:.1f}%",
+        'Detail': f"{_repeat:,} of {_any_resp:,} responders hit in multiple waves",
+    })
+
+# DD predictor
+if 'challenge_cohort_df' in dir() and 'has_direct_deposit' in challenge_cohort_df.columns:
+    _dd = challenge_cohort_df[challenge_cohort_df['has_direct_deposit'] == True]
+    _no_dd = challenge_cohort_df[challenge_cohort_df['has_direct_deposit'] == False]
+    _dd_r = (_dd['outcome'] == 'Hit').mean() * 100 if len(_dd) > 0 else 0
+    _no_dd_r = (_no_dd['outcome'] == 'Hit').mean() * 100 if len(_no_dd) > 0 else 0
+    _mult = _dd_r / _no_dd_r if _no_dd_r > 0 else 0
+    _insights.append({
+        'Metric': 'DD Response Multiplier',
+        'Value': f"{_mult:.2f}x",
+        'Detail': f"DD members: {_dd_r:.1f}% vs non-DD: {_no_dd_r:.1f}%",
+    })
+
+# ---------------------------------------------------------------------------
+# 2. Strategic actions
+# ---------------------------------------------------------------------------
+_actions = [
+    {
+        'Action': 'Prioritize DD members in mailer targeting',
+        'Rationale': 'Direct deposit is a strong predictor of ARS response',
+        'Timeline': 'Next wave',
+        'Impact': 'High',
+    },
+    {
+        'Action': 'Create NU 1-4 re-engagement track',
+        'Rationale': 'Near-miss accounts showed activity; a follow-up nudge may convert them',
+        'Timeline': '1-2 waves',
+        'Impact': 'Medium',
+    },
+    {
+        'Action': 'Segment mailers by account tenure',
+        'Rationale': 'Response rates vary significantly by account age band',
+        'Timeline': 'Next quarter',
+        'Impact': 'Medium',
+    },
+    {
+        'Action': 'Monitor deposit trajectory of responders',
+        'Rationale': 'Confirm that spend lift translates to sustained deposit growth',
+        'Timeline': 'Ongoing',
+        'Impact': 'High',
+    },
+    {
+        'Action': 'Test higher challenge levels for top responders',
+        'Rationale': 'Repeat responders may benefit from escalated thresholds',
+        'Timeline': '2-3 waves',
+        'Impact': 'Medium',
+    },
+    {
+        'Action': 'Investigate closed account demographics',
+        'Rationale': 'Understand if ARS can improve retention for at-risk segments',
+        'Timeline': 'Next quarter',
+        'Impact': 'Medium',
+    },
+    {
+        'Action': 'Share findings with lending and deposits teams',
+        'Rationale': 'Cross-sell opportunities: active card users are better loan candidates',
+        'Timeline': 'Immediate',
+        'Impact': 'High',
+    },
+    {
+        'Action': 'Benchmark against NCUA peers quarterly',
+        'Rationale': 'Track institutional performance relative to market',
+        'Timeline': 'Quarterly',
+        'Impact': 'Low',
+    },
+]
+
+_primary = GEN_COLORS.get('primary', '#264653')
+_success = GEN_COLORS.get('success', '#2a9d8f')
+_dark = GEN_COLORS.get('dark_text', '#2d3436')
+_muted = GEN_COLORS.get('muted', '#adb5bd')
+
+_impact_colors = {
+    'High': '#e76f51',
+    'Medium': '#e9c46a',
+    'Low': '#457b9d',
+}
+
+# Build HTML
+_html = f"""
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 1200px;">
+    <h2 style="color: {_dark}; font-size: 26px; margin-bottom: 4px;">
+        Strategic Findings & Recommended Actions
+    </h2>
+    <p style="color: {_muted}; font-style: italic; font-size: 14px; margin-top: 0;">
+        Data-driven insights and next steps for ARS program optimization
+    </p>
+"""
+
+# Insights table
+if _insights:
+    _html += f"""
+    <h3 style="color: {_primary}; font-size: 18px; margin-top: 20px; margin-bottom: 8px;">
+        Key Findings
+    </h3>
+    <table style="border-collapse: collapse; width: 100%; font-size: 13px; margin-bottom: 30px;">
+        <thead>
+            <tr style="background-color: {_primary}; color: white;">
+                <th style="padding: 10px 12px; text-align: left; width: 20%;">Metric</th>
+                <th style="padding: 10px 12px; text-align: center; width: 15%;">Value</th>
+                <th style="padding: 10px 12px; text-align: left; width: 65%;">Detail</th>
+            </tr>
+        </thead>
+        <tbody>
+    """
+    for i, ins in enumerate(_insights):
+        _bg = '#f8f9fa' if i % 2 == 0 else 'white'
+        _html += f"""
+            <tr style="background-color: {_bg};">
+                <td style="padding: 10px 12px; font-weight: bold; border-bottom: 1px solid #e0e0e0;">{ins['Metric']}</td>
+                <td style="padding: 10px 12px; text-align: center; font-weight: bold; font-size: 15px; color: {_success}; border-bottom: 1px solid #e0e0e0;">{ins['Value']}</td>
+                <td style="padding: 10px 12px; color: #555; border-bottom: 1px solid #e0e0e0;">{ins['Detail']}</td>
+            </tr>
+        """
+    _html += '</tbody></table>'
+
+# Actions table
+_html += f"""
+    <h3 style="color: {_primary}; font-size: 18px; margin-top: 10px; margin-bottom: 8px;">
+        Recommended Actions
+    </h3>
+    <table style="border-collapse: collapse; width: 100%; font-size: 13px;">
+        <thead>
+            <tr style="background-color: {_primary}; color: white;">
+                <th style="padding: 10px 12px; text-align: left; width: 5%;">#</th>
+                <th style="padding: 10px 12px; text-align: left; width: 30%;">Action</th>
+                <th style="padding: 10px 12px; text-align: left; width: 40%;">Rationale</th>
+                <th style="padding: 10px 12px; text-align: center; width: 13%;">Timeline</th>
+                <th style="padding: 10px 12px; text-align: center; width: 12%;">Impact</th>
+            </tr>
+        </thead>
+        <tbody>
+"""
+
+for i, act in enumerate(_actions):
+    _bg = '#f8f9fa' if i % 2 == 0 else 'white'
+    _ic = _impact_colors.get(act['Impact'], _dark)
+    _html += f"""
+        <tr style="background-color: {_bg};">
+            <td style="padding: 10px 12px; font-weight: bold; border-bottom: 1px solid #e0e0e0;">{i + 1}</td>
+            <td style="padding: 10px 12px; font-weight: bold; border-bottom: 1px solid #e0e0e0;">{act['Action']}</td>
+            <td style="padding: 10px 12px; color: #555; border-bottom: 1px solid #e0e0e0;">{act['Rationale']}</td>
+            <td style="padding: 10px 12px; text-align: center; border-bottom: 1px solid #e0e0e0;">{act['Timeline']}</td>
+            <td style="padding: 10px 12px; text-align: center; font-weight: bold; color: {_ic}; border-bottom: 1px solid #e0e0e0;">{act['Impact']}</td>
+        </tr>
+    """
+
+_html += '</tbody></table></div>'
+
+from IPython.display import display, HTML
+display(HTML(_html))
+
+print(f"\n  {len(_insights)} findings + {len(_actions)} recommended actions generated.")

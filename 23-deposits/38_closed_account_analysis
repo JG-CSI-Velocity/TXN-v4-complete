@@ -1,0 +1,123 @@
+# ===========================================================================
+# CLOSED ACCOUNT ANALYSIS: Deposit Profile of Closed vs Open (Conference Ed.)
+# ===========================================================================
+# Finds accounts in first snapshot but not in last (or with closed status).
+# Compares first-snapshot balance/depAmt365 between Closed and Open.
+#
+# Depends on: snapshots_raw_all (cell 01), SNAPSHOT_ORDER, GEN_COLORS,
+#             gen_clean_axes
+
+if 'snapshots_raw_all' not in dir() or len(snapshots_raw_all) == 0:
+    print("    No snapshots_raw_all data. Run cell 01 first.")
+elif len(snapshots_raw_all) < 2:
+    print("    Need at least 2 snapshots for closed account analysis.")
+else:
+    _snap_keys = [sk for sk in SNAPSHOT_ORDER if sk in snapshots_raw_all]
+
+    if len(_snap_keys) < 2:
+        print("    Need at least 2 snapshots loaded.")
+    else:
+        _first_key = _snap_keys[0]
+        _last_key = _snap_keys[-1]
+
+        _first = snapshots_raw_all[_first_key].copy()
+        _last = snapshots_raw_all[_last_key].copy()
+
+        # Normalize account IDs
+        _id_col = 'HASHED_ACCOUNT' if 'HASHED_ACCOUNT' in _first.columns else 'acctid'
+        _first['_id'] = _first[_id_col].astype(str).str.strip()
+        _last['_id'] = _last[_id_col].astype(str).str.strip()
+
+        _first_ids = set(_first['_id'])
+        _last_ids = set(_last['_id'])
+
+        # Accounts in first but not in last = likely closed
+        _closed_ids = _first_ids - _last_ids
+
+        # Also check for closed status in last snapshot
+        if 'acctstatus' in _last.columns:
+            _closed_status = _last[
+                _last['acctstatus'].astype(str).str.strip().str.lower().isin(
+                    ['closed', 'inactive', 'charged off', 'chargeoff', 'c', 'i', 'x', '0']
+                )
+            ]['_id']
+            _closed_ids |= set(_closed_status)
+
+        _open_ids = _first_ids - _closed_ids
+
+        _first_closed = _first[_first['_id'].isin(_closed_ids)].copy()
+        _first_open = _first[_first['_id'].isin(_open_ids)].copy()
+
+        if len(_first_closed) == 0:
+            print("    No closed accounts identified between snapshots.")
+        else:
+            _metrics = []
+            for col, label in [('balance', 'Balance'), ('depAmt365', 'Deposit Amt (365d)')]:
+                if col in _first.columns:
+                    _first[col] = pd.to_numeric(
+                        _first[col].astype(str).str.replace(r'[,$]', '', regex=True),
+                        errors='coerce'
+                    ).fillna(0)
+                    _closed_val = _first[_first['_id'].isin(_closed_ids)][col].mean()
+                    _open_val = _first[_first['_id'].isin(_open_ids)][col].mean()
+                    _metrics.append((label, _closed_val, _open_val))
+
+            if len(_metrics) == 0:
+                print("    No balance or depAmt365 columns available.")
+            else:
+                fig, ax = plt.subplots(figsize=(14, 7))
+
+                _n_metrics = len(_metrics)
+                _x = np.arange(_n_metrics)
+                _w = 0.3
+
+                _closed_vals = [m[1] for m in _metrics]
+                _open_vals = [m[2] for m in _metrics]
+                _labels = [m[0] for m in _metrics]
+
+                bars1 = ax.bar(_x - _w / 2, _closed_vals, width=_w,
+                                color=GEN_COLORS.get('danger', '#e76f51'),
+                                edgecolor='white', linewidth=1.5,
+                                label=f'Closed/Left (n={len(_closed_ids):,})', zorder=3)
+                bars2 = ax.bar(_x + _w / 2, _open_vals, width=_w,
+                                color=GEN_COLORS.get('success', '#2a9d8f'),
+                                edgecolor='white', linewidth=1.5,
+                                label=f'Stayed Open (n={len(_open_ids):,})', zorder=3)
+
+                for bar in list(bars1) + list(bars2):
+                    val = bar.get_height()
+                    ax.text(bar.get_x() + bar.get_width() / 2,
+                             val + max(max(_closed_vals), max(_open_vals)) * 0.01,
+                             f"${val:,.0f}",
+                             ha='center', va='bottom', fontsize=14, fontweight='bold',
+                             color=GEN_COLORS.get('dark_text', '#2d3436'))
+
+                ax.set_xticks(_x)
+                ax.set_xticklabels(_labels, fontsize=14, fontweight='bold')
+                ax.set_ylabel("Average ($)", fontsize=16, fontweight='bold', labelpad=10)
+                ax.yaxis.set_major_formatter(
+                    mticker.FuncFormatter(lambda x, p: f"${x:,.0f}")
+                )
+
+                gen_clean_axes(ax)
+                ax.yaxis.grid(True, color=GEN_COLORS.get('grid', '#e0e0e0'),
+                               linewidth=0.5, alpha=0.7)
+                ax.set_axisbelow(True)
+                ax.legend(fontsize=13, loc='upper right', frameon=True,
+                          facecolor='white', edgecolor=GEN_COLORS.get('grid', '#e0e0e0'))
+
+                ax.set_title("Closed Accounts: Were Deposits Declining?",
+                              fontsize=26, fontweight='bold',
+                              color=GEN_COLORS.get('dark_text', '#2d3436'),
+                              pad=35, loc='left')
+                ax.text(0.0, 1.02,
+                        "Deposit profile of accounts that closed vs those that stayed open",
+                        transform=ax.transAxes, fontsize=14,
+                        color=GEN_COLORS.get('muted', '#adb5bd'), style='italic')
+
+                plt.tight_layout()
+                plt.show()
+
+                print(f"\n  Snapshot range: {_first_key} to {_last_key}")
+                print(f"  Closed/left: {len(_closed_ids):,} accounts")
+                print(f"  Stayed open: {len(_open_ids):,} accounts")

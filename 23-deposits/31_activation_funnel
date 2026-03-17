@@ -1,0 +1,117 @@
+# ===========================================================================
+# ACTIVATION FUNNEL: Non-User Dormant to Depositing (Conference Edition)
+# ===========================================================================
+# Horizontal funnel bars from Total NU Mailed down to Active Depositor.
+#
+# Depends on: challenge_cohort_df (cell 11), deposit_df (cell 01),
+#             GEN_COLORS, gen_clean_axes
+
+if 'challenge_cohort_df' not in dir() or len(challenge_cohort_df) == 0:
+    print("    No challenge cohort data. Run cell 11 first.")
+elif 'challenge' not in challenge_cohort_df.columns:
+    print("    challenge column missing from challenge_cohort_df.")
+else:
+    _nu = challenge_cohort_df[challenge_cohort_df['challenge'] == 'NU'].copy()
+
+    if len(_nu) == 0:
+        print("    No NU accounts found in challenge_cohort_df.")
+    else:
+        # Deduplicate to unique accounts (use best outcome across waves)
+        _outcome_rank = {'Hit': 3, 'Near Miss': 2, 'No Response': 1}
+        _nu['_rank'] = _nu['outcome'].map(_outcome_rank).fillna(0)
+        _nu_best = _nu.sort_values('_rank', ascending=False).drop_duplicates(
+            subset='acct_number', keep='first'
+        )
+
+        _total_mailed = len(_nu_best)
+        _nu14 = _nu_best[_nu_best['outcome'].isin(['Hit', 'Near Miss'])]
+        _n_nu14 = len(_nu14)
+        _nu5_plus = _nu_best[_nu_best['outcome'] == 'Hit']
+        _n_nu5 = len(_nu5_plus)
+
+        # Sustained spender: post_spend_3mo > 0
+        _n_sustained = 0
+        if 'post_spend_3mo' in _nu5_plus.columns:
+            _n_sustained = (_nu5_plus['post_spend_3mo'] > 0).sum()
+
+        # Active depositor: check if account has balance > 0 in deposit_df
+        _n_depositor = 0
+        if 'deposit_df' in dir() and len(deposit_df) > 0 and '_dep_key' in _nu5_plus.columns:
+            _dep_keys_with_bal = set()
+            if 'balance' in deposit_df.columns and '_join_key' in deposit_df.columns:
+                _dep_keys_with_bal = set(
+                    deposit_df[deposit_df['balance'] > 0]['_join_key'].astype(str).str.strip()
+                )
+            elif 'balance' in deposit_df.columns and DEPOSIT_JOIN_KEY_DEPOSIT in deposit_df.columns:
+                _dep_keys_with_bal = set(
+                    deposit_df[deposit_df['balance'] > 0][DEPOSIT_JOIN_KEY_DEPOSIT].astype(str).str.strip()
+                )
+            if _dep_keys_with_bal:
+                _n_depositor = _nu5_plus['_dep_key'].astype(str).str.strip().isin(
+                    _dep_keys_with_bal
+                ).sum()
+
+        _stages = [
+            ('Total NU Mailed', _total_mailed),
+            ('NU 1-4 (Showed Activity)', _n_nu14),
+            ('NU 5+ (Activated)', _n_nu5),
+            ('Sustained Spender', _n_sustained),
+            ('Active Depositor', _n_depositor),
+        ]
+
+        # Color gradient from muted to success
+        _muted = GEN_COLORS.get('muted', '#adb5bd')
+        _success = GEN_COLORS.get('success', '#2a9d8f')
+
+        def _lerp_color(c1, c2, t):
+            """Linear interpolate between two hex colors."""
+            from matplotlib.colors import to_rgb
+            r1, g1, b1 = to_rgb(c1)
+            r2, g2, b2 = to_rgb(c2)
+            r = r1 + (r2 - r1) * t
+            g = g1 + (g2 - g1) * t
+            b = b1 + (b2 - b1) * t
+            return (r, g, b)
+
+        _n_stages = len(_stages)
+        _colors = [_lerp_color(_muted, _success, i / max(1, _n_stages - 1))
+                   for i in range(_n_stages)]
+
+        fig, ax = plt.subplots(figsize=(14, 7))
+
+        _y = np.arange(_n_stages)[::-1]
+        _values = [v for _, v in _stages]
+        _labels = [s for s, _ in _stages]
+
+        bars = ax.barh(_y, _values, height=0.6,
+                        color=_colors, edgecolor='white', linewidth=1.5,
+                        zorder=3)
+
+        for bar, (label, val) in zip(bars, _stages):
+            _pct = val / _total_mailed * 100 if _total_mailed > 0 else 0
+            ax.text(bar.get_width() + _total_mailed * 0.01,
+                    bar.get_y() + bar.get_height() / 2,
+                    f"{val:,}  ({_pct:.1f}%)",
+                    ha='left', va='center', fontsize=14, fontweight='bold',
+                    color=GEN_COLORS.get('dark_text', '#2d3436'))
+
+        ax.set_yticks(_y)
+        ax.set_yticklabels(_labels, fontsize=14, fontweight='bold')
+
+        gen_clean_axes(ax)
+        ax.xaxis.grid(True, color=GEN_COLORS.get('grid', '#e0e0e0'),
+                       linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+        ax.set_xlabel("Number of Accounts", fontsize=14, fontweight='bold')
+
+        ax.set_title("Non-User Activation Funnel",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS.get('dark_text', '#2d3436'),
+                      pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                "From dormant to depositing member",
+                transform=ax.transAxes, fontsize=14,
+                color=GEN_COLORS.get('muted', '#adb5bd'), style='italic')
+
+        plt.tight_layout()
+        plt.show()
