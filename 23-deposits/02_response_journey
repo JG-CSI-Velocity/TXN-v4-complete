@@ -62,11 +62,25 @@ RESPONSE_GROUP_PALETTE = {
 # ---------------------------------------------------------------------------
 # Build per-account journey across all waves
 # ---------------------------------------------------------------------------
-if 'rewards_df' not in dir() or 'mail_cols' not in dir():
-    print("    rewards_df or mail_cols not available. Run 00-setup and 09-ars-campaign first.")
+# Discover mail/resp columns directly from rewards_df -- does NOT require
+# section 09 or combined_df. The ODDD has all the Mail/Resp columns we need.
+if 'rewards_df' not in dir():
+    print("    rewards_df not available. Run 00-setup cells first.")
     response_journey_df = pd.DataFrame()
 else:
     _rewards_cols = [c.strip() for c in rewards_df.columns]
+
+    # Auto-discover Mail and Resp columns if not already defined by section 09
+    if 'mail_cols' not in dir():
+        mail_cols = sorted([c for c in _rewards_cols if c.endswith(' Mail')])
+    if 'resp_cols' not in dir():
+        resp_cols = sorted([c for c in _rewards_cols if c.endswith(' Resp')])
+
+    if len(mail_cols) == 0 and len(resp_cols) == 0:
+        print("    No Mail/Resp columns found in rewards_df. Skipping response journey.")
+        response_journey_df = pd.DataFrame()
+
+if 'rewards_df' in dir() and len(mail_cols) > 0:
 
     def _classify_response(mail_val, resp_val):
         """Classify a single wave's mail/resp values into a tier."""

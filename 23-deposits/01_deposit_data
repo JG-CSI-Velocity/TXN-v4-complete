@@ -382,11 +382,16 @@ else:
             print("\n  WARNING: rewards_df not available. Run 00-setup cells first.")
 
         # -------------------------------------------------------------------
-        # 8. Merge campaign status from camp_acct if available
+        # 8. Merge campaign status -- works with or without section 09
         # -------------------------------------------------------------------
+        # Strategy: if camp_acct exists (section 09 ran), use it.
+        # Otherwise, build a lightweight camp_status directly from
+        # rewards_df Mail/Resp columns. No combined_df dependency.
+
+        _camp_merged = False
+
         if 'camp_acct' in dir() and len(camp_acct) > 0 and _joined:
-            # camp_acct uses primary_account_num; we need to bridge via rewards_df
-            # Build a lookup: HASHED_ACCOUNT -> camp_status fields
+            # Section 09 ran -- use its camp_acct (has detailed fields)
             _acct_hash_lookup = rewards_df[['Acct Number', 'HASHED_ACCOUNT']].copy()
             _acct_hash_lookup['Acct Number'] = (
                 _acct_hash_lookup['Acct Number'].astype(str).str.strip()
@@ -404,7 +409,6 @@ else:
                 _camp_sub['primary_account_num'].astype(str).str.strip()
             )
 
-            # Bridge: camp_acct.primary_account_num -> rewards_df.Acct Number -> HASHED_ACCOUNT
             _camp_hash = _camp_sub.merge(
                 _acct_hash_lookup,
                 left_on='primary_account_num',
@@ -418,19 +422,58 @@ else:
             deposit_df = deposit_df.merge(_camp_hash_sub, on='HASHED_ACCOUNT', how='left')
             deposit_df['camp_status'] = deposit_df['camp_status'].fillna('Never Mailed')
 
-            # Also merge onto deposit_long for trajectory analysis
             deposit_long = deposit_long.merge(
                 _camp_hash_sub, on='HASHED_ACCOUNT', how='left'
             )
             deposit_long['camp_status'] = deposit_long['camp_status'].fillna('Never Mailed')
+            _camp_merged = True
+            print(f"\n  Campaign status merged from section 09 camp_acct.")
 
+        elif _joined and 'rewards_df' in dir() and 'HASHED_ACCOUNT' in rewards_df.columns:
+            # Section 09 did NOT run -- build camp_status directly from ODDD
+            _rw_cols = [c.strip() for c in rewards_df.columns]
+            _mail_cols_local = sorted([c for c in _rw_cols if c.endswith(' Mail')])
+            _resp_cols_local = sorted([c for c in _rw_cols if c.endswith(' Resp')])
+
+            if len(_mail_cols_local) > 0:
+                _was_mailed = rewards_df[_mail_cols_local].notna().any(axis=1)
+
+                def _any_success(row):
+                    for rc in _resp_cols_local:
+                        rc_s = rc.strip()
+                        if rc_s not in _rw_cols:
+                            continue
+                        val = row.get(rc_s)
+                        if pd.isna(val):
+                            continue
+                        v = str(val).strip().upper()
+                        if v.startswith('TH') or v in ('NU 5+','NU5+','NU 5'):
+                            return True
+                    return False
+
+                _responded = rewards_df.apply(_any_success, axis=1)
+
+                _camp_lite = pd.DataFrame()
+                _camp_lite['HASHED_ACCOUNT'] = rewards_df['HASHED_ACCOUNT'].astype(str).str.strip()
+                _camp_lite['camp_status'] = 'Never Mailed'
+                _camp_lite.loc[_was_mailed, 'camp_status'] = 'Non-Responder'
+                _camp_lite.loc[_responded, 'camp_status'] = 'Responder'
+
+                deposit_df = deposit_df.merge(_camp_lite, on='HASHED_ACCOUNT', how='left')
+                deposit_df['camp_status'] = deposit_df['camp_status'].fillna('Never Mailed')
+
+                deposit_long = deposit_long.merge(_camp_lite, on='HASHED_ACCOUNT', how='left')
+                deposit_long['camp_status'] = deposit_long['camp_status'].fillna('Never Mailed')
+                _camp_merged = True
+                print(f"\n  Campaign status built directly from ODDD Mail/Resp columns (no section 09 needed).")
+
+        if _camp_merged:
             _camp_dist = deposit_df['camp_status'].value_counts()
-            print(f"\n  Campaign status distribution in deposit data:")
+            print(f"  Campaign status distribution in deposit data:")
             for status, count in _camp_dist.items():
                 print(f"    {status:<20s}: {count:>8,} ({count / len(deposit_df) * 100:>5.1f}%)")
-
-        elif 'camp_acct' not in dir() or len(camp_acct) == 0:
-            print("\n  Campaign data not available. Run section 09 first for ARS overlay.")
+        else:
+            print("\n  Campaign data not available (no ODDD Mail/Resp columns found).")
             deposit_df['camp_status'] = 'Unknown'
             deposit_long['camp_status'] = 'Unknown'
 
