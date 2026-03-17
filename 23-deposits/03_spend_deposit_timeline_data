@@ -49,17 +49,12 @@ else:
         # ---------------------------------------------------------------
         # 1. Build per-account monthly spend/swipe matrix
         # ---------------------------------------------------------------
-        # Flexible HASHED_ACCOUNT lookup
-        _hash_col = None
-        for _candidate in rewards_df.columns:
-            _clean = _candidate.strip().upper().replace(' ', '_')
-            if _clean == 'HASHED_ACCOUNT':
-                _hash_col = _candidate
-                break
+        # Acct Number in ODDD = HASHED_ACCOUNT in zaccounts
+        _hash_col = 'Acct Number' if 'Acct Number' in rewards_df.columns else None
         if _hash_col is None:
-            for _candidate in rewards_df.columns:
-                if 'hash' in _candidate.lower():
-                    _hash_col = _candidate
+            for _c in rewards_df.columns:
+                if _c.strip().lower() in ('acct number', 'acctnumber', 'acct_number'):
+                    _hash_col = _c
                     break
         _has_hash = _hash_col is not None
 
@@ -76,12 +71,11 @@ else:
         _hashes = rewards_df[_hash_col].astype(str).str.strip() if _has_hash else None
 
         if _has_hash:
-            print(f"  Using hash column: '{_hash_col}' ({_hashes.nunique():,} unique)")
-            print(f"  Response journey accounts with hash: "
-                  f"{response_journey_df['HASHED_ACCOUNT'].nunique() if 'HASHED_ACCOUNT' in response_journey_df.columns else 0:,}")
+            print(f"  Using join column: '{_hash_col}' ({_hashes.nunique():,} unique)")
+            print(f"  Response journey accounts mapped: {len(_acct_groups):,}")
         else:
-            print("  WARNING: No HASHED_ACCOUNT column found in rewards_df.")
-            print(f"  Columns with 'hash' or 'acct': {[c for c in rewards_df.columns if 'hash' in c.lower() or 'acct' in c.lower()]}")
+            print("  WARNING: No Acct Number column found in rewards_df.")
+            print(f"  Available: {[c for c in rewards_df.columns if 'acct' in c.lower()]}")
             print("  Spend data will aggregate as 'All' without response group breakdown.")
 
         # If no groups mapped, use 'All' as a single group

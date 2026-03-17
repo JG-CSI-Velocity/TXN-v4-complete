@@ -353,103 +353,107 @@ else:
             print(f"  Delta columns: {_earliest_key} -> {_latest_key}")
 
         # -------------------------------------------------------------------
-        # 7. Join to rewards_df on HASHED_ACCOUNT for ARS campaign data
+        # 7. Join deposit_df to rewards_df
         # -------------------------------------------------------------------
-        # Flexible column name lookup for HASHED_ACCOUNT in rewards_df
-        _oddd_hash_col = None
-        if 'rewards_df' in dir():
-            for _candidate in rewards_df.columns:
-                _clean = _candidate.strip().upper().replace(' ', '_')
-                if _clean == 'HASHED_ACCOUNT':
-                    _oddd_hash_col = _candidate
-                    break
-            if _oddd_hash_col is None:
-                for _candidate in rewards_df.columns:
-                    if 'hash' in _candidate.lower():
-                        _oddd_hash_col = _candidate
-                        break
+        # Tries multiple join strategies in order:
+        #   1. HASHED_ACCOUNT = HASHED_ACCOUNT (if both files have it)
+        #   2. acctid (zaccounts) = Acct Number (ODDD) -- direct account ID match
+        #   3. acctid (zaccounts) = Acct ID (ODDD)
+        # Picks the first strategy with a reasonable match rate.
 
         _joined = False
-        if 'rewards_df' in dir() and _oddd_hash_col is not None:
-            _rewards_hash = rewards_df[_oddd_hash_col].astype(str).str.strip()
-            _deposit_hash = deposit_df['HASHED_ACCOUNT']
+        _join_key_deposit = None  # column name in deposit_df used for join
+        _join_key_oddd = None     # column name in rewards_df used for join
 
-            if _oddd_hash_col != 'HASHED_ACCOUNT':
-                print(f"    Note: using ODDD column '{_oddd_hash_col}' as HASHED_ACCOUNT")
-
-            _match_count = _deposit_hash.isin(_rewards_hash).sum()
-            _match_pct = _match_count / len(deposit_df) * 100 if len(deposit_df) > 0 else 0
-
-            print(f"\n  HASHED_ACCOUNT join diagnostic:")
-            print(f"    deposit_df accounts:  {len(deposit_df):,}")
-            print(f"    rewards_df accounts:  {len(rewards_df):,}")
-            print(f"    Matched:              {_match_count:,} ({_match_pct:.1f}%)")
-
-            if _match_pct < 10:
-                print(f"    WARNING: Very low match rate ({_match_pct:.1f}%). "
-                      f"Check that HASHED_ACCOUNT values align between files.")
-                print(f"    Sample deposit hashes: {deposit_df['HASHED_ACCOUNT'].head(3).tolist()}")
-                print(f"    Sample ODDD hashes:    {_rewards_hash.head(3).tolist()}")
-            else:
-                _joined = True
-        elif 'rewards_df' in dir():
-            print("\n  WARNING: HASHED_ACCOUNT column not found in rewards_df.")
-            print(f"    Available columns: {[c for c in rewards_df.columns if 'hash' in c.lower() or 'acct' in c.lower()]}")
-        else:
+        if 'rewards_df' not in dir():
             print("\n  WARNING: rewards_df not available. Run 00-setup cells first.")
+        else:
+            _rw_cols = [c.strip() for c in rewards_df.columns]
+
+            # Build list of join strategies to try
+            _strategies = []
+
+            # Strategy 1: HASHED_ACCOUNT on both sides
+            _oddd_hash = None
+            for _c in rewards_df.columns:
+                if _c.strip().upper().replace(' ', '_') == 'HASHED_ACCOUNT':
+                    _oddd_hash = _c
+                    break
+            if _oddd_hash is None:
+                for _c in rewards_df.columns:
+                    if 'hash' in _c.lower():
+                        _oddd_hash = _c
+                        break
+            if _oddd_hash and 'HASHED_ACCOUNT' in deposit_df.columns:
+                _strategies.append(('HASHED_ACCOUNT', _oddd_hash, 'HASHED_ACCOUNT match'))
+
+            # Strategy 2: acctid (zaccounts) = Acct Number (ODDD)
+            if 'acctid' in deposit_df.columns and 'Acct Number' in rewards_df.columns:
+                _strategies.append(('acctid', 'Acct Number', 'acctid = Acct Number'))
+
+            # Strategy 3: acctid (zaccounts) = Acct ID (ODDD)
+            _oddd_acct_id = None
+            for _c in rewards_df.columns:
+                if _c.strip().lower() in ('acct id', 'acctid', 'acct_id'):
+                    _oddd_acct_id = _c
+                    break
+            if _oddd_acct_id and 'acctid' in deposit_df.columns:
+                _strategies.append(('acctid', _oddd_acct_id, f'acctid = {_oddd_acct_id}'))
+
+            # Strategy 4: HASHED_ACCOUNT (zaccounts) = any hash col in ODDD
+            # (already covered by strategy 1)
+
+            print(f"\n  Join strategies to try: {len(_strategies)}")
+            for dep_col, oddd_col, desc in _strategies:
+                _dep_vals = deposit_df[dep_col].astype(str).str.strip()
+                _oddd_vals = rewards_df[oddd_col].astype(str).str.strip()
+
+                _match_count = _dep_vals.isin(_oddd_vals).sum()
+                _match_pct = _match_count / len(deposit_df) * 100 if len(deposit_df) > 0 else 0
+
+                print(f"    {desc}: {_match_count:,} matches ({_match_pct:.1f}%)")
+
+                if _match_pct >= 10 and not _joined:
+                    _join_key_deposit = dep_col
+                    _join_key_oddd = oddd_col
+                    _joined = True
+                    print(f"    -> SELECTED as join key")
+
+                    if _match_pct < 50:
+                        print(f"    Sample deposit values: {_dep_vals.head(3).tolist()}")
+                        print(f"    Sample ODDD values:    {_oddd_vals.head(3).tolist()}")
+
+            if not _joined:
+                print(f"\n  WARNING: No join strategy achieved >= 10% match rate.")
+                print(f"    deposit_df columns: {[c for c in deposit_df.columns if 'acct' in c.lower() or 'hash' in c.lower() or 'id' in c.lower()]}")
+                print(f"    rewards_df columns: {[c for c in rewards_df.columns if 'acct' in c.lower() or 'hash' in c.lower() or 'id' in c.lower()]}")
+                print(f"    Sample deposit acctid: {deposit_df['acctid'].head(3).tolist() if 'acctid' in deposit_df.columns else 'N/A'}")
+                print(f"    Sample ODDD Acct Number: {rewards_df['Acct Number'].head(3).tolist() if 'Acct Number' in rewards_df.columns else 'N/A'}")
+
+        # Build a unified join column for downstream use
+        if _joined:
+            # Normalize both sides into a common '_join_key' column
+            deposit_df['_join_key'] = deposit_df[_join_key_deposit].astype(str).str.strip()
+            deposit_long['_join_key'] = deposit_long[_join_key_deposit].astype(str).str.strip() if _join_key_deposit in deposit_long.columns else ''
+
+            _rewards_join = rewards_df[[_join_key_oddd]].copy()
+            _rewards_join['_join_key'] = _rewards_join[_join_key_oddd].astype(str).str.strip()
+            _rewards_join = _rewards_join.drop(columns=[_join_key_oddd])
+
+            # Store for use by other cells
+            DEPOSIT_JOIN_KEY_DEPOSIT = _join_key_deposit
+            DEPOSIT_JOIN_KEY_ODDD = _join_key_oddd
+            print(f"\n  Join established: deposit_df.{_join_key_deposit} = rewards_df.{_join_key_oddd}")
 
         # -------------------------------------------------------------------
-        # 8. Merge campaign status -- works with or without section 09
+        # 8. Merge campaign status -- uses the join key from step 7
         # -------------------------------------------------------------------
-        # Strategy: if camp_acct exists (section 09 ran), use it.
-        # Otherwise, build a lightweight camp_status directly from
-        # rewards_df Mail/Resp columns. No combined_df dependency.
+        # Build camp_status directly from ODDD Mail/Resp columns.
+        # No combined_df or section 09 dependency.
 
         _camp_merged = False
 
-        if 'camp_acct' in dir() and len(camp_acct) > 0 and _joined:
-            # Section 09 ran -- use its camp_acct (has detailed fields)
-            _acct_hash_lookup = rewards_df[['Acct Number', _oddd_hash_col]].copy()
-            if _oddd_hash_col != 'HASHED_ACCOUNT':
-                _acct_hash_lookup = _acct_hash_lookup.rename(columns={_oddd_hash_col: 'HASHED_ACCOUNT'})
-            _acct_hash_lookup['Acct Number'] = (
-                _acct_hash_lookup['Acct Number'].astype(str).str.strip()
-            )
-            _acct_hash_lookup['HASHED_ACCOUNT'] = (
-                _acct_hash_lookup['HASHED_ACCOUNT'].astype(str).str.strip()
-            )
-
-            _camp_fields = ['primary_account_num', 'camp_status', 'times_mailed',
-                            'times_responded', 'times_near_use', 'total_offers',
-                            'total_responses']
-            _camp_avail = [c for c in _camp_fields if c in camp_acct.columns]
-            _camp_sub = camp_acct[_camp_avail].copy()
-            _camp_sub['primary_account_num'] = (
-                _camp_sub['primary_account_num'].astype(str).str.strip()
-            )
-
-            _camp_hash = _camp_sub.merge(
-                _acct_hash_lookup,
-                left_on='primary_account_num',
-                right_on='Acct Number',
-                how='inner'
-            )
-
-            _merge_cols = [c for c in _camp_avail if c != 'primary_account_num'] + ['HASHED_ACCOUNT']
-            _camp_hash_sub = _camp_hash[[c for c in _merge_cols if c in _camp_hash.columns]].copy()
-
-            deposit_df = deposit_df.merge(_camp_hash_sub, on='HASHED_ACCOUNT', how='left')
-            deposit_df['camp_status'] = deposit_df['camp_status'].fillna('Never Mailed')
-
-            deposit_long = deposit_long.merge(
-                _camp_hash_sub, on='HASHED_ACCOUNT', how='left'
-            )
-            deposit_long['camp_status'] = deposit_long['camp_status'].fillna('Never Mailed')
-            _camp_merged = True
-            print(f"\n  Campaign status merged from section 09 camp_acct.")
-
-        elif _joined and 'rewards_df' in dir() and _oddd_hash_col is not None:
-            # Section 09 did NOT run -- build camp_status directly from ODDD
+        if _joined and 'rewards_df' in dir():
             _rw_cols = [c.strip() for c in rewards_df.columns]
             _mail_cols_local = sorted([c for c in _rw_cols if c.endswith(' Mail')])
             _resp_cols_local = sorted([c for c in _rw_cols if c.endswith(' Resp')])
@@ -457,34 +461,34 @@ else:
             if len(_mail_cols_local) > 0:
                 _was_mailed = rewards_df[_mail_cols_local].notna().any(axis=1)
 
-                def _any_success(row):
-                    for rc in _resp_cols_local:
-                        rc_s = rc.strip()
-                        if rc_s not in _rw_cols:
-                            continue
-                        val = row.get(rc_s)
-                        if pd.isna(val):
-                            continue
-                        v = str(val).strip().upper()
-                        if v.startswith('TH') or v in ('NU 5+','NU5+','NU 5'):
-                            return True
-                    return False
+                # Vectorized success check
+                _success_mask = pd.Series(False, index=rewards_df.index)
+                for rc in _resp_cols_local:
+                    rc_s = rc.strip()
+                    if rc_s not in _rw_cols:
+                        continue
+                    _vals = rewards_df[rc_s].astype(str).str.strip().str.upper()
+                    _is_success = (
+                        _vals.str.startswith('TH', na=False) |
+                        _vals.isin(['NU 5+', 'NU5+', 'NU 5'])
+                    ) & rewards_df[rc_s].notna()
+                    _success_mask = _success_mask | _is_success
 
-                _responded = rewards_df.apply(_any_success, axis=1)
-
+                # Build camp_status keyed on the ODDD join column
                 _camp_lite = pd.DataFrame()
-                _camp_lite['HASHED_ACCOUNT'] = rewards_df[_oddd_hash_col].astype(str).str.strip()
+                _camp_lite['_join_key'] = rewards_df[_join_key_oddd].astype(str).str.strip()
                 _camp_lite['camp_status'] = 'Never Mailed'
                 _camp_lite.loc[_was_mailed, 'camp_status'] = 'Non-Responder'
-                _camp_lite.loc[_responded, 'camp_status'] = 'Responder'
+                _camp_lite.loc[_success_mask, 'camp_status'] = 'Responder'
 
-                deposit_df = deposit_df.merge(_camp_lite, on='HASHED_ACCOUNT', how='left')
+                # Merge via _join_key (already on deposit_df from step 7)
+                deposit_df = deposit_df.merge(_camp_lite, on='_join_key', how='left')
                 deposit_df['camp_status'] = deposit_df['camp_status'].fillna('Never Mailed')
 
-                deposit_long = deposit_long.merge(_camp_lite, on='HASHED_ACCOUNT', how='left')
+                deposit_long = deposit_long.merge(_camp_lite, on='_join_key', how='left')
                 deposit_long['camp_status'] = deposit_long['camp_status'].fillna('Never Mailed')
                 _camp_merged = True
-                print(f"\n  Campaign status built directly from ODDD Mail/Resp columns (no section 09 needed).")
+                print(f"\n  Campaign status built from ODDD Mail/Resp columns.")
 
         if _camp_merged:
             _camp_dist = deposit_df['camp_status'].value_counts()
@@ -492,7 +496,7 @@ else:
             for status, count in _camp_dist.items():
                 print(f"    {status:<20s}: {count:>8,} ({count / len(deposit_df) * 100:>5.1f}%)")
         else:
-            print("\n  Campaign data not available (no ODDD Mail/Resp columns found).")
+            print("\n  Campaign data not available.")
             deposit_df['camp_status'] = 'Unknown'
             deposit_long['camp_status'] = 'Unknown'
 
