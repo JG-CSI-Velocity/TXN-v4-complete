@@ -1,0 +1,113 @@
+# ===========================================================================
+# TIER DEPOSIT HEATMAP: Full 8-Tier x Deposit Metric Grid (Conference Ed.)
+# ===========================================================================
+# Heatmap showing mean deposit metrics across all 8 response tiers.
+# Rows = tiers (ordered by ladder), Columns = deposit metrics.
+#
+# Depends on: deposit_df (23/01), RESPONSE_TIER_* (23/02), GEN_COLORS
+
+if 'deposit_df' not in dir() or len(deposit_df) == 0 or 'best_tier' not in deposit_df.columns:
+    print("    No deposit data with best_tier. Run cells 01-02 first.")
+else:
+    _tiers = [t for t in RESPONSE_TIER_ORDER if t in deposit_df['best_tier'].values]
+
+    if len(_tiers) < 2:
+        print("    Not enough tiers represented in data.")
+    else:
+        _metrics = []
+        _metric_labels = []
+
+        # Build metric columns dynamically based on availability
+        _metric_defs = [
+            ('balance', 'Balance', 'mean'),
+            ('depAmt365', 'Dep Amt\n(365d)', 'mean'),
+            ('depCount365', 'Dep Count\n(365d)', 'mean'),
+            ('avgdaysbetweendeposits', 'Days Btwn\nDeposits', 'median'),
+            ('CollectedFees365', 'Fees\n(365d)', 'mean'),
+            ('avgrepaymentrate', 'Repayment\nRate', 'mean'),
+            ('fdicoccasionsrolling12months', 'FDIC\nOccasions', 'mean'),
+        ]
+
+        _avail_metrics = [(col, label, agg) for col, label, agg
+                          in _metric_defs if col in deposit_df.columns]
+
+        if len(_avail_metrics) < 2:
+            print("    Not enough deposit metrics for heatmap.")
+        else:
+            _heat_data = []
+            for tier in _tiers:
+                _sub = deposit_df[deposit_df['best_tier'] == tier]
+                _row = {}
+                for col, label, agg in _avail_metrics:
+                    _valid = _sub[col].replace(0, np.nan).dropna() if agg == 'median' else _sub[col]
+                    if agg == 'median':
+                        _row[label] = _valid.median() if len(_valid) > 0 else 0
+                    else:
+                        _row[label] = _valid.mean() if len(_valid) > 0 else 0
+                _row['Accounts'] = len(_sub)
+                _heat_data.append(_row)
+
+            _heat_df = pd.DataFrame(_heat_data, index=_tiers)
+
+            # Normalize each column to 0-1 for color mapping
+            _display_df = _heat_df.drop(columns='Accounts')
+            _norm_df = _display_df.copy()
+            for col in _norm_df.columns:
+                _min = _norm_df[col].min()
+                _max = _norm_df[col].max()
+                if _max > _min:
+                    # For "days between deposits" and "FDIC occasions", lower is better -- invert
+                    if 'Days' in col or 'FDIC' in col or 'Fees' in col:
+                        _norm_df[col] = 1 - (_norm_df[col] - _min) / (_max - _min)
+                    else:
+                        _norm_df[col] = (_norm_df[col] - _min) / (_max - _min)
+                else:
+                    _norm_df[col] = 0.5
+
+            fig, ax = plt.subplots(figsize=(14, 8))
+
+            _cmap = LinearSegmentedColormap.from_list('deposit_health',
+                ['#FDECEA', '#FFF8E1', '#E8F5E9', '#2EC4B6'], N=256)
+
+            im = ax.imshow(_norm_df.values, cmap=_cmap, aspect='auto', vmin=0, vmax=1)
+
+            # Annotate cells with actual values
+            for i in range(len(_tiers)):
+                for j, col in enumerate(_display_df.columns):
+                    val = _display_df.iloc[i, j]
+                    if 'Balance' in col or 'Amt' in col or 'Fees' in col:
+                        _txt = gen_fmt_dollar(val, None)
+                    elif 'Rate' in col:
+                        _txt = f"{val * 100:.1f}%"
+                    elif 'Days' in col:
+                        _txt = f"{val:.0f}d"
+                    else:
+                        _txt = f"{val:.1f}"
+                    ax.text(j, i, _txt, ha='center', va='center',
+                            fontsize=12, fontweight='bold',
+                            color=GEN_COLORS['dark_text'])
+
+                # Account count on the right
+                ax.text(len(_display_df.columns) - 0.3, i,
+                        f"  n={_heat_df.iloc[i]['Accounts']:,.0f}",
+                        ha='left', va='center', fontsize=10,
+                        color=GEN_COLORS['muted'])
+
+            ax.set_xticks(range(len(_display_df.columns)))
+            ax.set_xticklabels(_display_df.columns, fontsize=12, fontweight='bold')
+            ax.set_yticks(range(len(_tiers)))
+            ax.set_yticklabels(_tiers, fontsize=13, fontweight='bold')
+
+            ax.spines[:].set_visible(False)
+            ax.tick_params(top=False, bottom=False, left=False, right=False)
+
+            ax.set_title("Deposit Health Heatmap by Response Tier",
+                          fontsize=26, fontweight='bold',
+                          color=GEN_COLORS['dark_text'], pad=35, loc='left')
+            ax.text(0.0, 1.02,
+                    "Green = healthier metric | Red = weaker | Ordered by response ladder",
+                    transform=ax.transAxes, fontsize=14,
+                    color=GEN_COLORS['muted'], style='italic')
+
+            plt.tight_layout()
+            plt.show()

@@ -1,0 +1,108 @@
+# ===========================================================================
+# RESPONSE CONSISTENCY: Always/Sometimes/Once Responders (Conference Edition)
+# ===========================================================================
+# Bar chart: accounts grouped by response consistency pattern, with deposit
+# balance comparison. "Every wave" vs "most waves" vs "once" vs "never".
+#
+# Depends on: response_journey_df (23/02), deposit_df (23/01), GEN_COLORS
+
+if 'response_journey_df' not in dir() or len(response_journey_df) == 0:
+    print("    No response journey data. Run cell 02 first.")
+else:
+    _mailed = response_journey_df[response_journey_df['times_mailed'] > 0].copy()
+
+    if len(_mailed) == 0:
+        print("    No mailed accounts.")
+    else:
+        # Consistency = times_responded / times_mailed
+        _mailed['response_ratio'] = np.where(
+            _mailed['times_mailed'] > 0,
+            _mailed['times_responded'] / _mailed['times_mailed'],
+            0
+        )
+
+        def _consistency_label(ratio, times_resp):
+            if times_resp == 0:
+                return 'Never Responded'
+            if ratio >= 0.8:
+                return 'Consistent (80%+)'
+            if ratio >= 0.4:
+                return 'Frequent (40-79%)'
+            if times_resp > 1:
+                return 'Occasional (2+ times)'
+            return 'One-Time Only'
+
+        _mailed['consistency'] = [
+            _consistency_label(r, t) for r, t
+            in zip(_mailed['response_ratio'], _mailed['times_responded'])
+        ]
+
+        _con_order = ['Consistent (80%+)', 'Frequent (40-79%)',
+                      'Occasional (2+ times)', 'One-Time Only', 'Never Responded']
+        _con_colors = {
+            'Consistent (80%+)':    GEN_COLORS['success'],
+            'Frequent (40-79%)':    GEN_COLORS['info'],
+            'Occasional (2+ times)': GEN_COLORS['warning'],
+            'One-Time Only':        '#F4A261',
+            'Never Responded':      GEN_COLORS['muted'],
+        }
+
+        _con_counts = _mailed['consistency'].value_counts().reindex(_con_order).fillna(0).astype(int)
+
+        fig, ax = plt.subplots(figsize=(14, 7))
+
+        _colors = [_con_colors.get(c, GEN_COLORS['muted']) for c in _con_order]
+        bars = ax.bar(range(len(_con_order)), _con_counts.values,
+                      color=_colors, edgecolor='white', linewidth=1.5, width=0.6, zorder=3)
+
+        # Merge with deposit data for balance annotation
+        _has_deposits = ('deposit_df' in dir() and len(deposit_df) > 0
+                         and 'HASHED_ACCOUNT' in _mailed.columns
+                         and 'HASHED_ACCOUNT' in deposit_df.columns)
+
+        if _has_deposits:
+            _con_bal = _mailed.merge(
+                deposit_df[['HASHED_ACCOUNT', 'balance']],
+                on='HASHED_ACCOUNT', how='inner'
+            )
+        else:
+            _con_bal = pd.DataFrame()
+
+        _total = _con_counts.sum()
+        for j, (bar, con, count) in enumerate(zip(bars, _con_order, _con_counts.values)):
+            pct = count / _total * 100 if _total > 0 else 0
+
+            _bal_str = ''
+            if len(_con_bal) > 0:
+                _sub = _con_bal[_con_bal['consistency'] == con]
+                if len(_sub) > 0:
+                    _mean_b = _sub['balance'].mean()
+                    _med_b = _sub['balance'].median()
+                    _bal_str = f"\nMean: {gen_fmt_dollar(_mean_b, None)}\nMedian: {gen_fmt_dollar(_med_b, None)}"
+
+            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() * 1.02,
+                    f"{count:,} ({pct:.0f}%){_bal_str}",
+                    ha='center', va='bottom', fontsize=11, fontweight='bold',
+                    color=GEN_COLORS['dark_text'], linespacing=1.3)
+
+        ax.set_xticks(range(len(_con_order)))
+        ax.set_xticklabels([c.replace(' (', '\n(') for c in _con_order],
+                           fontsize=12, fontweight='bold')
+        ax.set_ylabel("Accounts", fontsize=16, fontweight='bold', labelpad=10)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
+
+        gen_clean_axes(ax)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+
+        _snap_label = SNAPSHOT_CONFIG[_latest_key]['label'] if 'SNAPSHOT_CONFIG' in dir() else ''
+        ax.set_title("Response Consistency: How Often Do Members Respond?",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                f"Mailed accounts grouped by response frequency  ({_snap_label})",
+                transform=ax.transAxes, fontsize=14,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()

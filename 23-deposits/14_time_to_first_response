@@ -1,0 +1,123 @@
+# ===========================================================================
+# TIME TO FIRST RESPONSE: Waves Until First Success (Conference Edition)
+# ===========================================================================
+# Bar chart: distribution of how many waves it took for accounts to first
+# respond (NU 5+ or TH). Accounts that never responded excluded.
+# Overlay: avg deposit balance by time-to-respond bucket.
+#
+# Depends on: response_journey_df (23/02), deposit_df (23/01), GEN_COLORS
+
+if 'response_journey_df' not in dir() or len(response_journey_df) == 0:
+    print("    No response journey data. Run cell 02 first.")
+else:
+    # Only accounts that responded at least once
+    _responded = response_journey_df[response_journey_df['times_responded'] > 0].copy()
+
+    if len(_responded) == 0:
+        print("    No responded accounts.")
+    else:
+        # Compute waves until first response
+        # first_response_wave is the wave label; we need the wave index
+        _wave_labels = []
+        for mc, rc in zip(mail_cols, resp_cols):
+            _wave_labels.append(mc.replace(' Mail', ''))
+
+        _wave_idx_map = {w: i for i, w in enumerate(_wave_labels)}
+
+        _responded['first_wave_idx'] = _responded['first_response_wave'].map(_wave_idx_map)
+
+        # For each account, find the first wave they were mailed
+        # We need to go back to rewards_df for this
+        _first_mailed_idx = []
+        _acct_col = 'Acct Number' if 'Acct Number' in rewards_df.columns else ' Acct Number'
+        _acct_nums = rewards_df[_acct_col].astype(str).str.strip()
+        _rewards_cols = [c.strip() for c in rewards_df.columns]
+
+        for _, row in _responded.iterrows():
+            _acct = row['acct_number']
+            _acct_mask = _acct_nums == _acct
+            if _acct_mask.sum() == 0:
+                _first_mailed_idx.append(np.nan)
+                continue
+            _ridx = _acct_mask.idxmax()
+            _first_mail = None
+            for j, (mc, rc) in enumerate(zip(mail_cols, resp_cols)):
+                mc_s = mc.strip()
+                if mc_s in _rewards_cols and pd.notna(rewards_df.at[_ridx, mc_s]):
+                    _first_mail = j
+                    break
+            _first_mailed_idx.append(_first_mail)
+
+        _responded['first_mailed_idx'] = _first_mailed_idx
+        _responded['waves_to_respond'] = _responded['first_wave_idx'] - _responded['first_mailed_idx']
+        _responded['waves_to_respond'] = _responded['waves_to_respond'].clip(lower=0)
+
+        # Bucket: 0 = responded on first wave mailed, 1 = second wave, etc.
+        _valid = _responded.dropna(subset=['waves_to_respond'])
+        _valid['waves_to_respond'] = _valid['waves_to_respond'].astype(int)
+
+        _max_waves = min(int(_valid['waves_to_respond'].max()), 10) if len(_valid) > 0 else 5
+        _wave_counts = _valid['waves_to_respond'].value_counts().sort_index()
+
+        fig, ax = plt.subplots(figsize=(14, 7))
+
+        _x_vals = sorted(_wave_counts.index)
+        _y_vals = [_wave_counts.get(x, 0) for x in _x_vals]
+        _x_labels = [f"Wave {x + 1}" if x < 10 else f"Wave {x + 1}+" for x in _x_vals]
+
+        bars = ax.bar(range(len(_x_vals)), _y_vals,
+                      color=GEN_COLORS['success'], edgecolor='white',
+                      linewidth=1.5, width=0.6, zorder=3)
+
+        _total_resp = sum(_y_vals)
+        for j, (bar, count) in enumerate(zip(bars, _y_vals)):
+            pct = count / _total_resp * 100 if _total_resp > 0 else 0
+            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() * 1.02,
+                    f"{count:,}\n({pct:.0f}%)",
+                    ha='center', va='bottom', fontsize=13, fontweight='bold',
+                    color=GEN_COLORS['dark_text'])
+
+        # Overlay: avg balance by waves-to-respond (if deposit data available)
+        if 'deposit_df' in dir() and len(deposit_df) > 0 and 'HASHED_ACCOUNT' in _valid.columns:
+            _hash_col = 'HASHED_ACCOUNT'
+            if _hash_col in deposit_df.columns:
+                _bal_merge = _valid[[_hash_col, 'waves_to_respond']].merge(
+                    deposit_df[[_hash_col, 'balance']], on=_hash_col, how='inner'
+                )
+                if len(_bal_merge) > 0:
+                    _bal_by_wave = _bal_merge.groupby('waves_to_respond')['balance'].mean()
+                    ax2 = ax.twinx()
+                    _bx = [i for i, x in enumerate(_x_vals) if x in _bal_by_wave.index]
+                    _by = [_bal_by_wave[_x_vals[i]] for i in _bx]
+                    ax2.plot(_bx, _by,
+                             color=GEN_COLORS['accent'], linewidth=2.5, marker='D',
+                             markersize=8, markeredgecolor='white', markeredgewidth=1.5,
+                             label='Avg Balance', zorder=5)
+                    ax2.set_ylabel("Avg Balance", fontsize=14, fontweight='bold',
+                                    color=GEN_COLORS['accent'], labelpad=10)
+                    ax2.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+                    ax2.spines['top'].set_visible(False)
+                    ax2.spines['left'].set_visible(False)
+                    ax2.grid(False)
+                    ax2.legend(fontsize=12, loc='upper right')
+
+        ax.set_xticks(range(len(_x_vals)))
+        ax.set_xticklabels(_x_labels, fontsize=13, fontweight='bold')
+        ax.set_ylabel("Accounts", fontsize=16, fontweight='bold', labelpad=10)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
+
+        gen_clean_axes(ax)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+
+        ax.set_title("Time to First Response: Waves Until Success",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                "How many mailer waves before an account first responds?  |  "
+                "Red line = avg deposit balance",
+                transform=ax.transAxes, fontsize=13,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()

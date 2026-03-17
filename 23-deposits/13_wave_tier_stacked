@@ -1,0 +1,112 @@
+# ===========================================================================
+# WAVE TIER STACKED: Response Composition per Wave (Conference Edition)
+# ===========================================================================
+# Stacked bar chart: for each wave, shows the breakdown of mailed accounts
+# into TH (by level), NU 5+, NU 1-4, and No Response.
+#
+# Depends on: rewards_df, mail_cols, resp_cols, RESPONSE_TIER_PALETTE, GEN_COLORS
+
+if 'rewards_df' not in dir() or 'mail_cols' not in dir():
+    print("    No campaign data. Run 00-setup and 09-ars-campaign first.")
+else:
+    _wave_pairs = list(zip(mail_cols, resp_cols))
+    _rewards_cols = [c.strip() for c in rewards_df.columns]
+
+    _tier_labels = ['No Response', 'NU 1-4', 'NU 5+', 'TH-10', 'TH-15', 'TH-20', 'TH-25']
+    _tier_colors = {
+        'No Response': '#A8DADC',
+        'NU 1-4':      GEN_COLORS['warning'],
+        'NU 5+':       GEN_COLORS['info'],
+        'TH-10':       '#2EC4B6',
+        'TH-15':       '#20A39E',
+        'TH-20':       '#1B8A7A',
+        'TH-25':       GEN_COLORS['primary'],
+    }
+
+    _wave_tiers = []
+    for mc, rc in _wave_pairs:
+        _label = mc.replace(' Mail', '')
+        mc_s, rc_s = mc.strip(), rc.strip()
+        if mc_s not in _rewards_cols:
+            continue
+
+        _mailed_mask = rewards_df[mc_s].notna()
+        _mailed_count = _mailed_mask.sum()
+        if _mailed_count == 0:
+            continue
+
+        _resp = rewards_df.loc[_mailed_mask, rc_s] if rc_s in _rewards_cols else pd.Series(dtype=str)
+
+        _counts = {t: 0 for t in _tier_labels}
+        for val in _resp:
+            if pd.isna(val):
+                _counts['No Response'] += 1
+                continue
+            v = str(val).strip().upper()
+            if v.startswith('TH-25') or v == 'TH 25' or v == 'TH25':
+                _counts['TH-25'] += 1
+            elif v.startswith('TH-20') or v == 'TH 20' or v == 'TH20':
+                _counts['TH-20'] += 1
+            elif v.startswith('TH-15') or v == 'TH 15' or v == 'TH15':
+                _counts['TH-15'] += 1
+            elif v.startswith('TH-10') or v == 'TH 10' or v == 'TH10':
+                _counts['TH-10'] += 1
+            elif v in ('NU 5+', 'NU5+', 'NU 5', 'NU 6', 'NU 7', 'NU 8', 'NU 9', 'NU 10'):
+                _counts['NU 5+'] += 1
+            elif v in ('NU 1-4', 'NU1-4'):
+                _counts['NU 1-4'] += 1
+            else:
+                _counts['No Response'] += 1
+
+        # Account for mailed but no resp column data
+        _total_classified = sum(_counts.values())
+        _counts['No Response'] += max(0, _mailed_count - _total_classified)
+
+        _row = {'wave': _label, 'mailed': _mailed_count}
+        _row.update(_counts)
+        _wave_tiers.append(_row)
+
+    _wt_df = pd.DataFrame(_wave_tiers)
+
+    if len(_wt_df) == 0:
+        print("    No wave tier data.")
+    else:
+        fig, ax = plt.subplots(figsize=(14, 7))
+
+        _x = np.arange(len(_wt_df))
+        _bottom = np.zeros(len(_wt_df))
+
+        # Stack from bottom: No Response first (biggest), then up the ladder
+        for tier in _tier_labels:
+            _vals = _wt_df[tier].values.astype(float)
+            ax.bar(_x, _vals, bottom=_bottom,
+                   color=_tier_colors[tier], edgecolor='white', linewidth=0.5,
+                   width=0.7, label=tier, zorder=3)
+            _bottom += _vals
+
+        ax.set_xticks(_x)
+        ax.set_xticklabels(_wt_df['wave'], fontsize=12, fontweight='bold',
+                           rotation=45, ha='right')
+        ax.set_ylabel("Mailed Accounts", fontsize=16, fontweight='bold', labelpad=10)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
+
+        gen_clean_axes(ax)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+
+        # Legend in reverse order so it matches visual top-to-bottom
+        _handles, _labels = ax.get_legend_handles_labels()
+        ax.legend(_handles[::-1], _labels[::-1],
+                  fontsize=11, loc='upper right', frameon=True, ncol=2,
+                  facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+        ax.set_title("Response Tier Composition by Mailing Wave",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                "Full tier breakdown per wave -- how is the response mix shifting?",
+                transform=ax.transAxes, fontsize=14,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()

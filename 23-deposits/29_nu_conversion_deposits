@@ -1,0 +1,82 @@
+# ===========================================================================
+# NU CONVERSION DEPOSITS: NU 1-4 vs NU 5+ Trajectory (Conference Edition)
+# ===========================================================================
+# Line chart: balance trajectory for accounts whose best tier was NU 1-4
+# vs those who reached NU 5+. Matched cohort, mean + median.
+#
+# Depends on: deposit_long (23/01), RESPONSE_GROUP_* (23/02), GEN_COLORS
+
+if 'deposit_long' not in dir() or len(deposit_long) == 0:
+    print("    No longitudinal deposit data. Run cells 01-02 first.")
+elif deposit_long['snapshot'].nunique() < 2:
+    print("    Need at least 2 snapshots for trajectory analysis.")
+elif 'best_tier' not in deposit_long.columns:
+    print("    No best_tier field. Run cell 02 first.")
+else:
+    _cohort = deposit_long[deposit_long['in_matched_cohort']].copy()
+    _snap_order = [s for s in SNAPSHOT_ORDER if s in _cohort['snapshot'].unique()]
+    _snap_labels = [SNAPSHOT_CONFIG[s]['label'] for s in _snap_order]
+
+    _nu14 = _cohort[_cohort['best_tier'] == 'NU 1-4']
+    _nu5 = _cohort[_cohort['best_tier'] == 'NU 5+']
+
+    if _nu14['HASHED_ACCOUNT'].nunique() == 0 and _nu5['HASHED_ACCOUNT'].nunique() == 0:
+        print("    No NU accounts in matched cohort.")
+    else:
+        fig, ax = plt.subplots(figsize=(14, 7))
+
+        _segments = {
+            'NU 1-4 (Best Ever)': (_nu14, GEN_COLORS['warning']),
+            'NU 5+ (Best Ever)': (_nu5, GEN_COLORS['info']),
+        }
+
+        for label, (data, color) in _segments.items():
+            if data['HASHED_ACCOUNT'].nunique() == 0:
+                continue
+            _n = data['HASHED_ACCOUNT'].nunique()
+
+            _means = []
+            _medians = []
+            for snap in _snap_order:
+                _vals = data[data['snapshot'] == snap]['balance']
+                _means.append(_vals.mean() if len(_vals) > 0 else np.nan)
+                _medians.append(_vals.median() if len(_vals) > 0 else np.nan)
+
+            ax.plot(range(len(_snap_order)), _means,
+                    color=color, linewidth=3, marker='o', markersize=10,
+                    markeredgecolor='white', markeredgewidth=2,
+                    label=f"{label} mean ({_n:,})", zorder=5)
+
+            ax.plot(range(len(_snap_order)), _medians,
+                    color=color, linewidth=2, marker='s', markersize=7,
+                    markeredgecolor='white', markeredgewidth=1.5,
+                    linestyle='--', alpha=0.7,
+                    label=f"{label} median", zorder=4)
+
+            if not np.isnan(_means[-1]):
+                ax.text(len(_snap_order) - 1 + 0.12, _means[-1],
+                        gen_fmt_dollar(_means[-1], None),
+                        fontsize=11, fontweight='bold', va='center', color=color)
+
+        ax.set_xticks(range(len(_snap_order)))
+        ax.set_xticklabels(_snap_labels, fontsize=16, fontweight='bold')
+        ax.set_ylabel("Balance", fontsize=16, fontweight='bold', labelpad=10)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+
+        gen_clean_axes(ax)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+        ax.legend(fontsize=12, loc='upper left', frameon=True,
+                  facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+        ax.set_title("NU 1-4 vs NU 5+: Deposit Balance Trajectory",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                "Does crossing the 5-swipe threshold correlate with deposit growth?  |  "
+                "Solid = mean, dashed = median",
+                transform=ax.transAxes, fontsize=13,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()

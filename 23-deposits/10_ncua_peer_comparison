@@ -1,0 +1,101 @@
+# ===========================================================================
+# NCUA PEER COMPARISON: USF FCU vs FL Peer Group (Conference Edition)
+# ===========================================================================
+# Grouped bar chart: USF FCU deposit growth rate vs FL peer median/mean.
+# Shows whether USF FCU is outperforming or underperforming peers.
+#
+# Depends on: ncua_df, ncua_peer_df, ncua_peer_summary (23/23), GEN_COLORS
+
+if 'ncua_df' not in dir() or len(ncua_df) < 2:
+    print("    Need at least 2 quarters of NCUA data for comparison.")
+elif 'ncua_peer_summary' not in dir() or len(ncua_peer_summary) == 0:
+    print("    No peer summary data. Run cell 23 first.")
+else:
+    # Calculate growth rates for USF FCU
+    _quarters = ncua_df['quarter_label'].tolist()
+
+    # For peers, calculate deposit growth per quarter
+    _peer_growth = []
+    _peer_q_list = ncua_peer_summary['quarter_label'].tolist()
+    _peer_deps = ncua_peer_summary['peer_median_deposits'].tolist()
+    for i in range(1, len(_peer_q_list)):
+        if _peer_deps[i - 1] > 0:
+            _g = (_peer_deps[i] - _peer_deps[i - 1]) / _peer_deps[i - 1] * 100
+        else:
+            _g = 0
+        _peer_growth.append({'quarter': _peer_q_list[i], 'peer_growth': _g})
+
+    _peer_growth_df = pd.DataFrame(_peer_growth)
+
+    # USF FCU growth
+    _usf_growth = ncua_df[['quarter_label', 'deposit_growth_pct']].dropna().copy()
+    _usf_growth = _usf_growth.rename(columns={'quarter_label': 'quarter', 'deposit_growth_pct': 'usf_growth'})
+
+    # Merge
+    _compare = _usf_growth.merge(_peer_growth_df, on='quarter', how='inner')
+
+    if len(_compare) == 0:
+        print("    No overlapping quarters for comparison.")
+    else:
+        fig, ax = plt.subplots(figsize=(14, 7))
+
+        _x = np.arange(len(_compare))
+        _w = 0.35
+
+        bars1 = ax.bar(_x - _w / 2, _compare['usf_growth'],
+                        _w, color=GEN_COLORS['primary'], edgecolor='white',
+                        linewidth=1.5, label=CU_NAME, zorder=3)
+        bars2 = ax.bar(_x + _w / 2, _compare['peer_growth'],
+                        _w, color=GEN_COLORS['warning'], edgecolor='white',
+                        linewidth=1.5, label='FL Peer Median', zorder=3)
+
+        for bar in bars1:
+            val = bar.get_height()
+            _sign = '+' if val >= 0 else ''
+            ax.text(bar.get_x() + bar.get_width() / 2,
+                    val + (0.1 if val >= 0 else -0.3),
+                    f"{_sign}{val:.1f}%",
+                    ha='center', va='bottom' if val >= 0 else 'top',
+                    fontsize=13, fontweight='bold', color=GEN_COLORS['dark_text'])
+
+        for bar in bars2:
+            val = bar.get_height()
+            _sign = '+' if val >= 0 else ''
+            ax.text(bar.get_x() + bar.get_width() / 2,
+                    val + (0.1 if val >= 0 else -0.3),
+                    f"{_sign}{val:.1f}%",
+                    ha='center', va='bottom' if val >= 0 else 'top',
+                    fontsize=13, fontweight='bold', color=GEN_COLORS['dark_text'])
+
+        ax.set_xticks(_x)
+        ax.set_xticklabels(_compare['quarter'], fontsize=14, fontweight='bold')
+        ax.set_ylabel("Deposit Growth (%)", fontsize=16, fontweight='bold', labelpad=10)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_pct))
+        ax.axhline(y=0, color=GEN_COLORS['dark_text'], linewidth=0.8, alpha=0.5)
+
+        gen_clean_axes(ax)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+        ax.legend(fontsize=13, loc='upper left', frameon=True,
+                  facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+        ax.set_title(f"{CU_NAME} vs Florida Peers: Deposit Growth",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                f"QoQ deposit growth -- peers: FL CUs with $500M-$2B assets",
+                transform=ax.transAxes, fontsize=14,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()
+
+        # Summary
+        _usf_avg = _compare['usf_growth'].mean()
+        _peer_avg = _compare['peer_growth'].mean()
+        _diff = _usf_avg - _peer_avg
+        print(f"\n  Avg quarterly deposit growth:")
+        print(f"    {CU_NAME}: {'+' if _usf_avg >= 0 else ''}{_usf_avg:.2f}%")
+        print(f"    FL Peer Median:    {'+' if _peer_avg >= 0 else ''}{_peer_avg:.2f}%")
+        print(f"    Difference:        {'+' if _diff >= 0 else ''}{_diff:.2f}pp "
+              f"({'outperforming' if _diff > 0 else 'underperforming'} peers)")

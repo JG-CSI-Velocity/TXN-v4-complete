@@ -1,0 +1,58 @@
+# ===========================================================================
+# NCUA NET WORTH: Capital Adequacy Trend (Conference Edition)
+# ===========================================================================
+# Line chart: USF FCU net worth ratio over time with well-capitalized threshold.
+#
+# Depends on: ncua_df (23/23), GEN_COLORS
+
+if 'ncua_df' not in dir() or len(ncua_df) == 0:
+    print("    No NCUA data. Run cell 23 first.")
+elif 'net_worth_pct' not in ncua_df.columns:
+    print("    No net_worth_pct in NCUA data.")
+else:
+    fig, ax = plt.subplots(figsize=(14, 7))
+
+    _quarters = ncua_df['quarter_label'].tolist()
+    _nw = ncua_df['net_worth_pct'].values
+    _x = range(len(_quarters))
+
+    ax.plot(list(_x), _nw,
+            color=GEN_COLORS['primary'], linewidth=3, marker='o',
+            markersize=10, markeredgecolor='white', markeredgewidth=2,
+            label=CU_NAME, zorder=5)
+
+    for i, val in enumerate(_nw):
+        if pd.notna(val):
+            ax.text(i, val + 0.15, f"{val:.2f}%",
+                    ha='center', va='bottom', fontsize=14, fontweight='bold',
+                    color=GEN_COLORS['dark_text'])
+
+    # Well-capitalized threshold (7%)
+    ax.axhline(y=7.0, color=GEN_COLORS['success'], linewidth=2,
+               linestyle='--', alpha=0.8, label='Well-Capitalized (7%)', zorder=2)
+
+    # Adequately capitalized (6%)
+    ax.axhline(y=6.0, color=GEN_COLORS['warning'], linewidth=2,
+               linestyle=':', alpha=0.6, label='Adequately Capitalized (6%)', zorder=2)
+
+    ax.set_xticks(list(_x))
+    ax.set_xticklabels(_quarters, fontsize=14, fontweight='bold')
+    ax.set_ylabel("Net Worth Ratio (%)", fontsize=16, fontweight='bold', labelpad=10)
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_pct))
+
+    gen_clean_axes(ax)
+    ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax.set_axisbelow(True)
+    ax.legend(fontsize=13, loc='lower left', frameon=True,
+              facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+    ax.set_title(f"{CU_NAME}: Net Worth Ratio",
+                  fontsize=26, fontweight='bold',
+                  color=GEN_COLORS['dark_text'], pad=35, loc='left')
+    ax.text(0.0, 1.02,
+            "NCUA 5300 -- capital adequacy backdrop for deposit analysis",
+            transform=ax.transAxes, fontsize=14,
+            color=GEN_COLORS['muted'], style='italic')
+
+    plt.tight_layout()
+    plt.show()

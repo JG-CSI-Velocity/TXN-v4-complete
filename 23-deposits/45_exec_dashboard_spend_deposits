@@ -1,0 +1,124 @@
+# ===========================================================================
+# EXECUTIVE DASHBOARD: Spend + Deposits Unified (Conference Edition)
+# ===========================================================================
+# Single figure, 4-quadrant: monthly spend timeline, card activation rate,
+# spend-deposit aligned dual axis, and spend vs deposit growth comparison.
+#
+# Depends on: monthly_by_group, spend_deposit_aligned (cell 03), GEN_COLORS
+
+if 'monthly_by_group' not in dir() or len(monthly_by_group) == 0:
+    print("    No monthly spend data. Run cell 03 first.")
+else:
+    fig = plt.figure(figsize=(20, 12))
+    gs = fig.add_gridspec(2, 2, hspace=0.4, wspace=0.3)
+    _DARK = GEN_COLORS['dark_text']
+
+    # --- Q1: Monthly Spend Timeline ---
+    ax1 = fig.add_subplot(gs[0, 0])
+    for grp in RESPONSE_GROUP_ORDER:
+        _data = monthly_by_group[monthly_by_group['response_group'] == grp].sort_values('month_date')
+        if len(_data) == 0:
+            continue
+        ax1.plot(_data['month_date'], _data['mean_spend'],
+                 color=RESPONSE_GROUP_PALETTE.get(grp, GEN_COLORS['muted']),
+                 linewidth=2, label=grp, zorder=4)
+    ax1.set_title("Monthly Avg Spend", fontsize=20, fontweight='bold', color=_DARK, loc='left')
+    gen_clean_axes(ax1)
+    ax1.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+    ax1.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax1.set_axisbelow(True)
+    ax1.legend(fontsize=8, loc='upper left', frameon=True, ncol=2,
+               facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+    # --- Q2: Card Activation Rate ---
+    ax2 = fig.add_subplot(gs[0, 1])
+    if 'active_pct' in monthly_by_group.columns:
+        for grp in RESPONSE_GROUP_ORDER:
+            _data = monthly_by_group[monthly_by_group['response_group'] == grp].sort_values('month_date')
+            if len(_data) == 0:
+                continue
+            ax2.plot(_data['month_date'], _data['active_pct'],
+                     color=RESPONSE_GROUP_PALETTE.get(grp, GEN_COLORS['muted']),
+                     linewidth=2, label=grp, zorder=4)
+    ax2.set_title("Card Activation Rate (%)", fontsize=20, fontweight='bold',
+                   color=_DARK, loc='left')
+    gen_clean_axes(ax2)
+    ax2.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_pct))
+    ax2.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax2.set_axisbelow(True)
+
+    # --- Q3: Spend-Deposit Aligned ---
+    ax3 = fig.add_subplot(gs[1, 0])
+    ax3b = ax3.twinx()
+    if 'spend_deposit_aligned' in dir() and len(spend_deposit_aligned) > 0:
+        _snap_order = [s for s in SNAPSHOT_ORDER if s in spend_deposit_aligned['snapshot'].values]
+        _snap_labels = [SNAPSHOT_CONFIG[s]['label'] for s in _snap_order]
+
+        for grp in RESPONSE_GROUP_ORDER:
+            _data = spend_deposit_aligned[
+                spend_deposit_aligned['response_group'] == grp
+            ].set_index('snapshot').reindex(_snap_order)
+            if _data['mean_balance'].isna().all():
+                continue
+            _color = RESPONSE_GROUP_PALETTE.get(grp, GEN_COLORS['muted'])
+            ax3.plot(range(len(_snap_order)), _data['mean_balance'],
+                     color=_color, linewidth=2.5, marker='o', markersize=7,
+                     markeredgecolor='white', markeredgewidth=1.5, zorder=5)
+            ax3b.plot(range(len(_snap_order)), _data['mean_spend_12m'],
+                      color=_color, linewidth=1.5, marker='s', markersize=5,
+                      linestyle='--', alpha=0.6, zorder=4)
+
+        ax3.set_xticks(range(len(_snap_order)))
+        ax3.set_xticklabels(_snap_labels, fontsize=12, fontweight='bold')
+    ax3.set_title("Balance (solid) vs Spend (dashed)", fontsize=20,
+                   fontweight='bold', color=_DARK, loc='left')
+    gen_clean_axes(ax3)
+    ax3.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+    ax3b.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+    ax3b.spines['top'].set_visible(False)
+    ax3b.grid(False)
+    ax3.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax3.set_axisbelow(True)
+
+    # --- Q4: Growth Comparison ---
+    ax4 = fig.add_subplot(gs[1, 1])
+    if 'spend_deposit_aligned' in dir() and len(spend_deposit_aligned) > 0:
+        _snap_order = [s for s in SNAPSHOT_ORDER if s in spend_deposit_aligned['snapshot'].values]
+        if len(_snap_order) >= 2:
+            _gdata = []
+            for grp in RESPONSE_GROUP_ORDER:
+                _d = spend_deposit_aligned[spend_deposit_aligned['response_group'] == grp]
+                _f = _d[_d['snapshot'] == _snap_order[0]]
+                _l = _d[_d['snapshot'] == _snap_order[-1]]
+                if len(_f) == 0 or len(_l) == 0:
+                    continue
+                _bg = (_l['mean_balance'].iloc[0] - _f['mean_balance'].iloc[0]) / _f['mean_balance'].iloc[0] * 100 if _f['mean_balance'].iloc[0] > 0 else 0
+                _sg = (_l['mean_spend_12m'].iloc[0] - _f['mean_spend_12m'].iloc[0]) / _f['mean_spend_12m'].iloc[0] * 100 if _f['mean_spend_12m'].iloc[0] > 0 else 0
+                _gdata.append({'grp': grp, 'bal': _bg, 'spend': _sg})
+
+            if _gdata:
+                _gdf = pd.DataFrame(_gdata)
+                _x = np.arange(len(_gdf))
+                _w = 0.35
+                ax4.bar(_x - _w / 2, _gdf['bal'], _w, color=GEN_COLORS['primary'],
+                        edgecolor='white', linewidth=1, label='Deposit')
+                ax4.bar(_x + _w / 2, _gdf['spend'], _w, color=GEN_COLORS['success'],
+                        edgecolor='white', linewidth=1, label='Spend')
+                ax4.axhline(y=0, color=_DARK, linewidth=0.8, alpha=0.5)
+                ax4.set_xticks(_x)
+                ax4.set_xticklabels([g.replace(' ', '\n')[:12] for g in _gdf['grp']],
+                                    fontsize=9, fontweight='bold')
+                ax4.legend(fontsize=11, loc='upper left')
+
+    ax4.set_title("Deposit vs Spend Growth %", fontsize=20, fontweight='bold',
+                   color=_DARK, loc='left')
+    gen_clean_axes(ax4)
+    ax4.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_pct))
+    ax4.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax4.set_axisbelow(True)
+
+    fig.suptitle("Spend + Deposits: The Unified Story",
+                 fontsize=28, fontweight='bold', color=_DARK, y=1.02)
+
+    plt.tight_layout()
+    plt.show()

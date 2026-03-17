@@ -1,0 +1,159 @@
+# ===========================================================================
+# BENCHMARK SUMMARY: External Data Findings (Conference Edition)
+# ===========================================================================
+# Styled findings table connecting NCUA/FRED data to the deposit-ARS story.
+#
+# Depends on: ncua_df, ncua_peer_summary, fred_df (23/23), GEN_COLORS
+
+if 'ncua_df' not in dir() or len(ncua_df) == 0:
+    print("    No NCUA data. Run cell 23 first.")
+else:
+    findings = []
+
+    # ---------------------------------------------------------------------------
+    # 1. Overall deposit growth
+    # ---------------------------------------------------------------------------
+    if 'total_deposits' in ncua_df.columns and len(ncua_df) >= 2:
+        _first_dep = ncua_df.iloc[0]['total_deposits']
+        _last_dep = ncua_df.iloc[-1]['total_deposits']
+        _dep_growth = (_last_dep - _first_dep) / _first_dep * 100 if _first_dep > 0 else 0
+        _period = f"{ncua_df.iloc[0]['quarter_label']} to {ncua_df.iloc[-1]['quarter_label']}"
+
+        findings.append({
+            'Category': 'Institutional Deposit Growth',
+            'Finding': (f"{CU_NAME} total deposits {'grew' if _dep_growth > 0 else 'declined'} "
+                        f"{abs(_dep_growth):.1f}% ({_period}): "
+                        f"${_first_dep / 1000:,.0f}M -> ${_last_dep / 1000:,.0f}M"),
+            'Connection to ARS': ('If account-level responder deposit growth exceeds this rate, '
+                                  'the campaign is driving growth beyond the institutional baseline'),
+            'Priority': 'High',
+        })
+
+    # ---------------------------------------------------------------------------
+    # 2. Peer comparison
+    # ---------------------------------------------------------------------------
+    if 'ncua_peer_summary' in dir() and len(ncua_peer_summary) >= 2:
+        _peer_first = ncua_peer_summary.iloc[0]['peer_median_deposits']
+        _peer_last = ncua_peer_summary.iloc[-1]['peer_median_deposits']
+        _peer_growth = (_peer_last - _peer_first) / _peer_first * 100 if _peer_first > 0 else 0
+
+        findings.append({
+            'Category': 'Peer Benchmark',
+            'Finding': (f"FL peer median deposit growth: {'+' if _peer_growth > 0 else ''}{_peer_growth:.1f}% "
+                        f"({ncua_peer_summary.iloc[-1]['peer_count']:.0f} CUs, $500M-$2B assets)"),
+            'Connection to ARS': (f"{'Outperforming' if _dep_growth > _peer_growth else 'Underperforming'} "
+                                  f"peers by {abs(_dep_growth - _peer_growth):.1f}pp -- "
+                                  f"ARS campaign may be a differentiator"
+                                  if 'total_deposits' in ncua_df.columns else 'Compare to account-level data'),
+            'Priority': 'High',
+        })
+
+    # ---------------------------------------------------------------------------
+    # 3. Membership trend
+    # ---------------------------------------------------------------------------
+    if 'member_count' in ncua_df.columns and len(ncua_df) >= 2:
+        _first_mem = ncua_df.iloc[0]['member_count']
+        _last_mem = ncua_df.iloc[-1]['member_count']
+        _mem_growth = (_last_mem - _first_mem) / _first_mem * 100 if _first_mem > 0 else 0
+
+        _dep_per_member_first = _first_dep / _first_mem if _first_mem > 0 else 0
+        _dep_per_member_last = _last_dep / _last_mem if _last_mem > 0 else 0
+        _dpm_growth = (_dep_per_member_last - _dep_per_member_first) / _dep_per_member_first * 100 if _dep_per_member_first > 0 else 0
+
+        findings.append({
+            'Category': 'Membership vs Deposits',
+            'Finding': (f"Members {'grew' if _mem_growth > 0 else 'declined'} {abs(_mem_growth):.1f}% "
+                        f"({_first_mem:,.0f} -> {_last_mem:,.0f}). "
+                        f"Deposits per member {'grew' if _dpm_growth > 0 else 'declined'} {abs(_dpm_growth):.1f}%"),
+            'Connection to ARS': ('Deposit growth is from deepening, not just new members -- '
+                                  'ARS campaign strengthens per-member deposit relationship'
+                                  if _dpm_growth > 0 and _dep_growth > _mem_growth else
+                                  'Growth is driven by new members -- per-member deposits need attention'),
+            'Priority': 'High' if _dpm_growth > 0 else 'Medium',
+        })
+
+    # ---------------------------------------------------------------------------
+    # 4. Fee income trend
+    # ---------------------------------------------------------------------------
+    if 'fee_income' in ncua_df.columns and len(ncua_df) >= 2:
+        _first_fee = ncua_df.iloc[0]['fee_income']
+        _last_fee = ncua_df.iloc[-1]['fee_income']
+        _fee_growth = (_last_fee - _first_fee) / _first_fee * 100 if _first_fee > 0 else 0
+
+        findings.append({
+            'Category': 'Fee Income',
+            'Finding': (f"Institutional fee income: ${_first_fee / 1000:,.1f}M -> "
+                        f"${_last_fee / 1000:,.1f}M "
+                        f"({'+' if _fee_growth > 0 else ''}{_fee_growth:.1f}%)"),
+            'Connection to ARS': ('Cross-reference with per-account OD/NSF data to see if '
+                                  'responders contribute disproportionately to fee revenue'),
+            'Priority': 'Medium',
+        })
+
+    # ---------------------------------------------------------------------------
+    # 5. Economic context
+    # ---------------------------------------------------------------------------
+    if 'fred_df' in dir() and len(fred_df) > 0:
+        # FL unemployment
+        _fl_ur = fred_df[fred_df['series_id'] == 'FLUR'].sort_values('date')
+        if len(_fl_ur) >= 2:
+            _ur_latest = _fl_ur.iloc[-1]['value']
+            _ur_earliest = _fl_ur.iloc[0]['value']
+            _ur_delta = _ur_latest - _ur_earliest
+
+            findings.append({
+                'Category': 'Economic Context',
+                'Finding': (f"FL unemployment: {_ur_earliest:.1f}% -> {_ur_latest:.1f}% "
+                            f"({'+' if _ur_delta > 0 else ''}{_ur_delta:.1f}pp). "
+                            f"Fed Funds Rate: {fred_df[fred_df['series_id'] == 'FEDFUNDS'].iloc[-1]['value']:.2f}%"
+                            if len(fred_df[fred_df['series_id'] == 'FEDFUNDS']) > 0 else ''),
+                'Connection to ARS': ('Rising unemployment could explain deposit stress -- '
+                                      'campaign impact should be evaluated net of macro headwinds'
+                                      if _ur_delta > 0.5 else
+                                      'Stable/declining unemployment -- deposit changes more likely '
+                                      'driven by behavior, not economic distress'),
+                'Priority': 'Medium',
+            })
+
+    # ---------------------------------------------------------------------------
+    # Styled table
+    # ---------------------------------------------------------------------------
+    if len(findings) == 0:
+        print("    No benchmark findings generated.")
+    else:
+        findings_df = pd.DataFrame(findings)
+
+        priority_colors = {
+            'High': 'background-color: #FDECEA; color: #E63946; font-weight: bold',
+            'Medium': 'background-color: #FFF8E1; color: #FF9F1C; font-weight: bold',
+        }
+
+        styled = (
+            findings_df.style
+            .hide(axis='index')
+            .applymap(lambda v: priority_colors.get(v, ''), subset=['Priority'])
+            .set_properties(**{
+                'font-size': '13px', 'text-align': 'left',
+                'border': '1px solid #E9ECEF', 'padding': '8px 12px',
+            })
+            .set_properties(subset=['Category'], **{
+                'font-weight': 'bold', 'color': GEN_COLORS['primary'],
+            })
+            .set_table_styles([
+                {'selector': 'th', 'props': [
+                    ('background-color', GEN_COLORS['primary']),
+                    ('color', 'white'), ('font-size', '14px'),
+                    ('font-weight', 'bold'), ('text-align', 'center'),
+                    ('padding', '8px 12px'),
+                ]},
+                {'selector': 'caption', 'props': [
+                    ('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                    ('padding-bottom', '12px'),
+                ]},
+            ])
+            .set_caption(f"External Benchmark: {CU_NAME} in Context")
+        )
+        display(styled)
+
+        print(f"\n    {len(findings)} benchmark findings connecting external data to ARS analysis.")

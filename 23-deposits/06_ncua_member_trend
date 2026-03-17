@@ -1,0 +1,49 @@
+# ===========================================================================
+# NCUA MEMBER TREND: Membership Growth Over Time (Conference Edition)
+# ===========================================================================
+# Bar chart: USF FCU member count by quarter with growth % annotation.
+#
+# Depends on: ncua_df (23/23), GEN_COLORS
+
+if 'ncua_df' not in dir() or len(ncua_df) == 0:
+    print("    No NCUA data. Run cell 23 first.")
+elif 'member_count' not in ncua_df.columns:
+    print("    No member_count in NCUA data.")
+else:
+    fig, ax = plt.subplots(figsize=(14, 7))
+
+    _quarters = ncua_df['quarter_label'].tolist()
+    _members = ncua_df['member_count'].values
+    _growth = ncua_df['member_growth_pct'].values if 'member_growth_pct' in ncua_df.columns else [np.nan] * len(_quarters)
+    _x = range(len(_quarters))
+
+    bars = ax.bar(_x, _members,
+                  color=GEN_COLORS['info'], edgecolor='white',
+                  linewidth=1.5, width=0.5, zorder=3)
+
+    for j, (bar, val, g) in enumerate(zip(bars, _members, _growth)):
+        _growth_str = f"\n({'+' if g > 0 else ''}{g:.1f}% QoQ)" if pd.notna(g) else ''
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() * 1.01,
+                f"{val:,.0f}{_growth_str}",
+                ha='center', va='bottom', fontsize=13, fontweight='bold',
+                color=GEN_COLORS['dark_text'], linespacing=1.3)
+
+    ax.set_xticks(list(_x))
+    ax.set_xticklabels(_quarters, fontsize=14, fontweight='bold')
+    ax.set_ylabel("Member Count", fontsize=16, fontweight='bold', labelpad=10)
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
+
+    gen_clean_axes(ax)
+    ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax.set_axisbelow(True)
+
+    ax.set_title(f"{CU_NAME}: Membership Growth",
+                  fontsize=26, fontweight='bold',
+                  color=GEN_COLORS['dark_text'], pad=35, loc='left')
+    ax.text(0.0, 1.02,
+            "NCUA 5300 Call Report -- is deposit growth from new members or deepening?",
+            transform=ax.transAxes, fontsize=14,
+            color=GEN_COLORS['muted'], style='italic')
+
+    plt.tight_layout()
+    plt.show()

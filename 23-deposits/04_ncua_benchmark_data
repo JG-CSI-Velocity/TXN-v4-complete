@@ -1,0 +1,284 @@
+# ===========================================================================
+# NCUA BENCHMARK DATA: Institution-Level Financials + FRED Macro Context
+# ===========================================================================
+# Downloads NCUA 5300 Call Report ZIP, extracts USF FCU quarterly financials,
+# pulls FRED economic indicators, and builds benchmark DataFrames.
+#
+# Outputs: ncua_df (quarterly institution financials), fred_df (macro series),
+#          ncua_peer_df (Florida peer group for comparison).
+#
+# Depends on: None (standalone data cell). Uses FRED_API_KEY from env.
+
+import io
+import os
+import csv
+import json
+import zipfile
+import time as _time
+from pathlib import Path
+
+import requests
+
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
+# USF Federal Credit Union
+CU_NUMBER = '24223'
+CU_NAME = 'USF Federal Credit Union'
+
+# FRED API key (from feeschedule-hub .env.local)
+FRED_API_KEY = '55481e6d2a6e9720e9dbb11059874252'
+FRED_BASE = 'https://api.stlouisfed.org/fred'
+
+# NCUA quarterly ZIP URL pattern
+NCUA_ZIP_URL = 'https://ncua.gov/files/publications/analysis/call-report-data-{year}-{month:02d}.zip'
+
+# Quarters to download (most recent available + historical for trend)
+NCUA_QUARTERS = [
+    (2023, 12),
+    (2024, 6),
+    (2024, 12),
+    (2025, 6),
+    (2025, 12),
+]
+
+# Florida peer group: CUs with $500M-$2B in assets in FL
+# We'll filter from the NCUA data dynamically
+PEER_STATE = 'FL'
+PEER_ASSET_MIN = 500_000  # in thousands (= $500M)
+PEER_ASSET_MAX = 2_000_000  # in thousands (= $2B)
+
+# FRED series to pull
+FRED_SERIES = {
+    'FLUR':          'Florida Unemployment Rate',
+    'FEDFUNDS':      'Fed Funds Rate',
+    'CPIAUCSL':      'Consumer Price Index (Urban)',
+    'DPSACBM027NBOG': 'Total Deposits, All Commercial Banks',
+}
+
+# ---------------------------------------------------------------------------
+# 1. NCUA 5300 Call Report Download & Parse
+# ---------------------------------------------------------------------------
+# Fields from FS220.txt (balance sheet)
+FS220_FIELDS = {
+    'ACCT_010': 'total_assets',
+    'ACCT_018': 'total_deposits',
+    'ACCT_025B': 'total_loans',
+    'ACCT_083': 'member_count',
+    'ACCT_602': 'net_income',
+}
+
+# Fields from FS220A.txt (income statement)
+FS220A_FIELDS = {
+    'ACCT_115': 'interest_income',
+    'ACCT_117': 'noninterest_income',
+    'ACCT_131': 'fee_income',
+    'Acct_997': 'net_worth',
+    'Acct_998': 'net_worth_ratio_bps',
+}
+
+def _safe_num(val):
+    if not val or not str(val).strip():
+        return None
+    try:
+        return float(str(val).strip())
+    except (ValueError, TypeError):
+        return None
+
+def _parse_cycle_date(raw):
+    if not raw or not str(raw).strip():
+        return None
+    parts = str(raw).strip().split(' ')[0].split('/')
+    if len(parts) != 3:
+        return None
+    month, day, year = parts
+    return f"{year}-{int(month):02d}-{int(day):02d}"
+
+_ncua_rows = []
+_peer_rows = []
+_download_errors = []
+
+for q_year, q_month in NCUA_QUARTERS:
+    zip_url = NCUA_ZIP_URL.format(year=q_year, month=q_month)
+    print(f"  Downloading NCUA {q_year}-{q_month:02d}...", end=' ')
+
+    try:
+        resp = requests.get(zip_url, timeout=120)
+        resp.raise_for_status()
+        zf = zipfile.ZipFile(io.BytesIO(resp.content))
+        print(f"{len(resp.content) / 1024 / 1024:.1f}MB")
+    except Exception as e:
+        print(f"FAILED: {e}")
+        _download_errors.append(f"{q_year}-{q_month:02d}: {e}")
+        continue
+
+    # Parse FS220 (balance sheet)
+    _fs220 = {}
+    try:
+        fs220_raw = zf.read('FS220.txt').decode('utf-8', errors='replace')
+        for row in csv.DictReader(io.StringIO(fs220_raw)):
+            cu_num = row.get('CU_NUMBER', '').strip()
+            cycle = _parse_cycle_date(row.get('CYCLE_DATE', ''))
+            state = row.get('STATE', '').strip() if 'STATE' in row else ''
+            if not cu_num or not cycle:
+                continue
+            rec = {'cu_number': cu_num, 'report_date': cycle, 'state': state}
+            for acct, field in FS220_FIELDS.items():
+                rec[field] = _safe_num(row.get(acct))
+            _fs220[cu_num] = rec
+    except Exception as e:
+        print(f"    FS220 parse error: {e}")
+
+    # Parse FS220A (income statement)
+    try:
+        fs220a_raw = zf.read('FS220A.txt').decode('utf-8', errors='replace')
+        for row in csv.DictReader(io.StringIO(fs220a_raw)):
+            cu_num = row.get('CU_NUMBER', '').strip()
+            if cu_num in _fs220:
+                for acct, field in FS220A_FIELDS.items():
+                    _fs220[cu_num][field] = _safe_num(row.get(acct))
+    except Exception as e:
+        print(f"    FS220A parse error: {e}")
+
+    # Extract USF FCU
+    if CU_NUMBER in _fs220:
+        rec = _fs220[CU_NUMBER]
+        rec['quarter_label'] = f"Q{(q_month - 1) // 3 + 1} {q_year}"
+        _ncua_rows.append(rec)
+        print(f"    USF FCU: assets={rec.get('total_assets', 0):,.0f} "
+              f"deposits={rec.get('total_deposits', 0):,.0f} "
+              f"members={rec.get('member_count', 0):,.0f}")
+    else:
+        print(f"    USF FCU (CU #{CU_NUMBER}) not found in this quarter")
+
+    # Extract Florida peer group
+    _peer_count = 0
+    for cu_num, rec in _fs220.items():
+        _assets = rec.get('total_assets') or 0
+        _state = rec.get('state', '')
+        if (_state.upper() == PEER_STATE
+                and PEER_ASSET_MIN <= _assets <= PEER_ASSET_MAX
+                and cu_num != CU_NUMBER):
+            rec['quarter_label'] = f"Q{(q_month - 1) // 3 + 1} {q_year}"
+            _peer_rows.append(rec)
+            _peer_count += 1
+    print(f"    FL peers ($500M-$2B): {_peer_count}")
+
+    zf.close()
+
+ncua_df = pd.DataFrame(_ncua_rows) if _ncua_rows else pd.DataFrame()
+ncua_peer_df = pd.DataFrame(_peer_rows) if _peer_rows else pd.DataFrame()
+
+if len(ncua_df) > 0:
+    # Convert to proper types
+    for col in ['total_assets', 'total_deposits', 'total_loans', 'member_count',
+                'net_income', 'interest_income', 'noninterest_income', 'fee_income',
+                'net_worth', 'net_worth_ratio_bps']:
+        if col in ncua_df.columns:
+            ncua_df[col] = pd.to_numeric(ncua_df[col], errors='coerce')
+
+    # Derived metrics
+    if 'net_worth_ratio_bps' in ncua_df.columns:
+        ncua_df['net_worth_pct'] = ncua_df['net_worth_ratio_bps'] / 100
+
+    if 'total_deposits' in ncua_df.columns:
+        ncua_df['deposit_growth_pct'] = ncua_df['total_deposits'].pct_change() * 100
+
+    if 'member_count' in ncua_df.columns:
+        ncua_df['member_growth_pct'] = ncua_df['member_count'].pct_change() * 100
+
+    if 'fee_income' in ncua_df.columns and 'total_assets' in ncua_df.columns:
+        ncua_df['fee_to_assets_bps'] = np.where(
+            ncua_df['total_assets'] > 0,
+            ncua_df['fee_income'] / ncua_df['total_assets'] * 10000,
+            0
+        )
+
+    print(f"\n  NCUA data: {len(ncua_df)} quarters for {CU_NAME}")
+
+if len(ncua_peer_df) > 0:
+    for col in ['total_assets', 'total_deposits', 'total_loans', 'member_count', 'fee_income']:
+        if col in ncua_peer_df.columns:
+            ncua_peer_df[col] = pd.to_numeric(ncua_peer_df[col], errors='coerce')
+
+    # Peer median by quarter
+    ncua_peer_summary = ncua_peer_df.groupby('quarter_label').agg(
+        peer_count=('cu_number', 'nunique'),
+        peer_median_deposits=('total_deposits', 'median'),
+        peer_mean_deposits=('total_deposits', 'mean'),
+        peer_median_members=('member_count', 'median'),
+        peer_median_fee_income=('fee_income', 'median'),
+    ).reset_index()
+
+    print(f"  Peer data: {ncua_peer_df['cu_number'].nunique()} FL CUs across "
+          f"{ncua_peer_summary['quarter_label'].nunique()} quarters")
+else:
+    ncua_peer_summary = pd.DataFrame()
+
+if _download_errors:
+    print(f"\n  Download errors:")
+    for err in _download_errors:
+        print(f"    {err}")
+
+# ---------------------------------------------------------------------------
+# 2. FRED Economic Data
+# ---------------------------------------------------------------------------
+print(f"\n  Fetching FRED economic data...")
+
+_fred_rows = []
+_fred_errors = []
+
+for series_id, series_name in FRED_SERIES.items():
+    url = f"{FRED_BASE}/series/observations"
+    params = {
+        'series_id': series_id,
+        'api_key': FRED_API_KEY,
+        'file_type': 'json',
+        'observation_start': '2023-01-01',
+        'observation_end': '2025-12-31',
+        'frequency': 'm',  # monthly
+    }
+
+    try:
+        resp = requests.get(url, params=params, timeout=30)
+        resp.raise_for_status()
+        data = resp.json()
+
+        obs = data.get('observations', [])
+        for o in obs:
+            val = o.get('value', '.')
+            if val == '.':
+                continue
+            _fred_rows.append({
+                'series_id': series_id,
+                'series_name': series_name,
+                'date': o['date'],
+                'value': float(val),
+            })
+        print(f"    {series_id} ({series_name}): {len(obs)} observations")
+        _time.sleep(0.5)  # FRED rate limit
+    except Exception as e:
+        _fred_errors.append(f"{series_id}: {e}")
+        print(f"    {series_id}: FAILED -- {e}")
+
+fred_df = pd.DataFrame(_fred_rows) if _fred_rows else pd.DataFrame()
+
+if len(fred_df) > 0:
+    fred_df['date'] = pd.to_datetime(fred_df['date'])
+    fred_df['value'] = pd.to_numeric(fred_df['value'], errors='coerce')
+    print(f"\n  FRED data: {len(fred_df)} observations across "
+          f"{fred_df['series_id'].nunique()} series")
+
+if _fred_errors:
+    print(f"\n  FRED errors:")
+    for err in _fred_errors:
+        print(f"    {err}")
+
+# ---------------------------------------------------------------------------
+# 3. Summary
+# ---------------------------------------------------------------------------
+print(f"\n  Benchmark data pipeline complete.")
+print(f"    ncua_df:          {len(ncua_df)} quarters ({CU_NAME})")
+print(f"    ncua_peer_df:     {len(ncua_peer_df)} peer-quarter rows")
+print(f"    ncua_peer_summary:{len(ncua_peer_summary)} quarter summaries")
+print(f"    fred_df:          {len(fred_df)} economic observations")

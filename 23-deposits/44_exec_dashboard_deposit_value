@@ -1,0 +1,133 @@
+# ===========================================================================
+# EXECUTIVE DASHBOARD: Deposit Value by Response (Conference Edition)
+# ===========================================================================
+# Single figure, 4-quadrant: balance by group, direct deposit rate,
+# deposit trajectory, and deposit growth rate. The deposit proof.
+#
+# Depends on: deposit_df, deposit_long (cell 01), RESPONSE_GROUP_* (cell 02)
+
+if 'deposit_df' not in dir() or len(deposit_df) == 0 or 'response_group' not in deposit_df.columns:
+    print("    No deposit data with response groups. Run cells 01-02 first.")
+else:
+    fig = plt.figure(figsize=(20, 12))
+    gs = fig.add_gridspec(2, 2, hspace=0.4, wspace=0.3)
+    _DARK = GEN_COLORS['dark_text']
+    _groups = RESPONSE_GROUP_ORDER
+    _colors = [RESPONSE_GROUP_PALETTE.get(g, GEN_COLORS['muted']) for g in _groups]
+
+    # --- Q1: Avg Balance by Group ---
+    ax1 = fig.add_subplot(gs[0, 0])
+    _bals = [deposit_df[deposit_df['response_group'] == g]['balance'].mean()
+             for g in _groups]
+    ax1.bar(range(len(_groups)), _bals, color=_colors, edgecolor='white',
+            linewidth=1, width=0.6, zorder=3)
+    for i, val in enumerate(_bals):
+        ax1.text(i, val * 1.02, gen_fmt_dollar(val, None),
+                 ha='center', va='bottom', fontsize=12, fontweight='bold', color=_DARK)
+    ax1.set_xticks(range(len(_groups)))
+    ax1.set_xticklabels([g.replace(' ', '\n') for g in _groups], fontsize=10, fontweight='bold')
+    ax1.set_title("Avg Balance by Group", fontsize=20, fontweight='bold', color=_DARK, loc='left')
+    gen_clean_axes(ax1)
+    ax1.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+    ax1.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax1.set_axisbelow(True)
+
+    # --- Q2: Direct Deposit Rate ---
+    ax2 = fig.add_subplot(gs[0, 1])
+    if 'has_direct_deposit' in deposit_df.columns:
+        _dd = [deposit_df[deposit_df['response_group'] == g]['has_direct_deposit'].mean() * 100
+               for g in _groups]
+        ax2.bar(range(len(_groups)), _dd, color=_colors, edgecolor='white',
+                linewidth=1, width=0.6, zorder=3)
+        for i, val in enumerate(_dd):
+            ax2.text(i, val + 0.5, f"{val:.1f}%",
+                     ha='center', va='bottom', fontsize=12, fontweight='bold', color=_DARK)
+    ax2.set_xticks(range(len(_groups)))
+    ax2.set_xticklabels([g.replace(' ', '\n') for g in _groups], fontsize=10, fontweight='bold')
+    ax2.set_title("Direct Deposit Rate", fontsize=20, fontweight='bold', color=_DARK, loc='left')
+    gen_clean_axes(ax2)
+    ax2.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_pct))
+    ax2.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax2.set_axisbelow(True)
+
+    # --- Q3: Balance Trajectory (matched cohort) ---
+    ax3 = fig.add_subplot(gs[1, 0])
+    if 'deposit_long' in dir() and len(deposit_long) > 0 and deposit_long['snapshot'].nunique() >= 2:
+        _cohort = deposit_long[deposit_long['in_matched_cohort']]
+        _snap_order = [s for s in SNAPSHOT_ORDER if s in _cohort['snapshot'].unique()]
+        _snap_labels = [SNAPSHOT_CONFIG[s]['label'] for s in _snap_order]
+
+        for grp in RESPONSE_GROUP_ORDER:
+            _gd = _cohort[_cohort['response_group'] == grp]
+            if _gd['HASHED_ACCOUNT'].nunique() == 0:
+                continue
+            _means = [_gd[_gd['snapshot'] == s]['balance'].mean() for s in _snap_order]
+            ax3.plot(range(len(_snap_order)), _means,
+                     color=RESPONSE_GROUP_PALETTE.get(grp, GEN_COLORS['muted']),
+                     linewidth=2.5, marker='o', markersize=8,
+                     markeredgecolor='white', markeredgewidth=1.5,
+                     label=grp, zorder=4)
+        ax3.set_xticks(range(len(_snap_order)))
+        ax3.set_xticklabels(_snap_labels, fontsize=12, fontweight='bold')
+        ax3.legend(fontsize=9, loc='upper left', frameon=True, ncol=2,
+                   facecolor='white', edgecolor=GEN_COLORS['grid'])
+    ax3.set_title("Balance Trajectory (Matched Cohort)", fontsize=20,
+                   fontweight='bold', color=_DARK, loc='left')
+    gen_clean_axes(ax3)
+    ax3.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+    ax3.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax3.set_axisbelow(True)
+
+    # --- Q4: Deposit Growth % ---
+    ax4 = fig.add_subplot(gs[1, 1])
+    if 'deposit_long' in dir() and len(deposit_long) > 0 and deposit_long['snapshot'].nunique() >= 2:
+        _cohort = deposit_long[deposit_long['in_matched_cohort']]
+        _snap_order = [s for s in SNAPSHOT_ORDER if s in _cohort['snapshot'].unique()]
+        _responded_mask = _cohort['times_responded'] > 0 if 'times_responded' in _cohort.columns else pd.Series(False, index=_cohort.index)
+
+        _segs = {
+            'Never Resp': (~_responded_mask, GEN_COLORS['muted']),
+            'First-Time': (_responded_mask & ~_cohort['is_repeat_responder'], GEN_COLORS['info']),
+            'Repeat': (_responded_mask & _cohort['is_repeat_responder'], GEN_COLORS['success']),
+        }
+
+        _growth_vals = []
+        _growth_labels = []
+        _growth_colors = []
+        for label, (mask, color) in _segs.items():
+            _sub = _cohort[mask]
+            _f = _sub[_sub['snapshot'] == _snap_order[0]].set_index('HASHED_ACCOUNT')['balance']
+            _l = _sub[_sub['snapshot'] == _snap_order[-1]].set_index('HASHED_ACCOUNT')['balance']
+            _j = pd.DataFrame({'first': _f, 'last': _l}).dropna()
+            if len(_j) > 0 and _j['first'].mean() > 0:
+                _g = (_j['last'].mean() - _j['first'].mean()) / _j['first'].mean() * 100
+            else:
+                _g = 0
+            _growth_vals.append(_g)
+            _growth_labels.append(label)
+            _growth_colors.append(color)
+
+        bars4 = ax4.bar(range(len(_growth_labels)), _growth_vals,
+                        color=_growth_colors, edgecolor='white', linewidth=1.5,
+                        width=0.5, zorder=3)
+        for bar, val in zip(bars4, _growth_vals):
+            _s = '+' if val >= 0 else ''
+            ax4.text(bar.get_x() + bar.get_width() / 2,
+                     val + (0.3 if val >= 0 else -0.5),
+                     f"{_s}{val:.1f}%",
+                     ha='center', va='bottom' if val >= 0 else 'top',
+                     fontsize=14, fontweight='bold', color=_DARK)
+        ax4.axhline(y=0, color=_DARK, linewidth=0.8, alpha=0.5)
+        ax4.set_xticks(range(len(_growth_labels)))
+        ax4.set_xticklabels(_growth_labels, fontsize=14, fontweight='bold')
+    ax4.set_title("Deposit Growth %", fontsize=20, fontweight='bold', color=_DARK, loc='left')
+    gen_clean_axes(ax4)
+    ax4.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_pct))
+    ax4.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax4.set_axisbelow(True)
+
+    fig.suptitle("Deposit Value: ARS Responders vs Non-Responders",
+                 fontsize=28, fontweight='bold', color=_DARK, y=1.02)
+
+    plt.tight_layout()
+    plt.show()

@@ -1,0 +1,91 @@
+# ===========================================================================
+# BEST vs LATEST TIER: Where Did Responders Land? (Conference Edition)
+# ===========================================================================
+# Horizontal grouped bar: for each best_tier, show how many are still at
+# that tier vs how many slipped to a lower tier. Shows the "leakage" at
+# each level of the ladder.
+#
+# Depends on: response_journey_df (23/02), RESPONSE_TIER_* (23/02), GEN_COLORS
+
+if 'response_journey_df' not in dir() or len(response_journey_df) == 0:
+    print("    No response journey data. Run cell 02 first.")
+else:
+    # Only accounts that responded at least once (best_tier >= NU 1-4)
+    _resp = response_journey_df[response_journey_df['best_tier_rank'] >= 2].copy()
+
+    if len(_resp) == 0:
+        print("    No responded accounts.")
+    else:
+        _tiers = [t for t in RESPONSE_TIER_ORDER if RESPONSE_TIER_MAP[t] >= 2]
+
+        _data = []
+        for tier in _tiers:
+            _sub = _resp[_resp['best_tier'] == tier]
+            _at_best = (_sub['latest_tier'] == tier).sum()
+            _below = (_sub['latest_tier_rank'] < _sub['best_tier_rank']).sum()
+            _data.append({
+                'Best Tier': tier,
+                'Still at Best': _at_best,
+                'Slipped Below': _below,
+                'Total': len(_sub),
+                'Retention %': _at_best / len(_sub) * 100 if len(_sub) > 0 else 0,
+            })
+
+        _tier_df = pd.DataFrame(_data)
+        _tier_df = _tier_df[_tier_df['Total'] > 0]
+
+        if len(_tier_df) == 0:
+            print("    No tiers with data.")
+        else:
+            fig, ax = plt.subplots(figsize=(14, 7))
+
+            _y = np.arange(len(_tier_df))
+            _h = 0.35
+
+            bars1 = ax.barh(_y - _h / 2, _tier_df['Still at Best'],
+                            _h, color=GEN_COLORS['success'], edgecolor='white',
+                            linewidth=1.5, label='Still at Best Tier', zorder=3)
+            bars2 = ax.barh(_y + _h / 2, _tier_df['Slipped Below'],
+                            _h, color=GEN_COLORS['accent'], edgecolor='white',
+                            linewidth=1.5, label='Slipped Below', zorder=3)
+
+            _max_val = max(_tier_df['Still at Best'].max(), _tier_df['Slipped Below'].max())
+
+            for j, (_, row) in enumerate(_tier_df.iterrows()):
+                ax.text(row['Still at Best'] + _max_val * 0.02, j - _h / 2,
+                        f"{int(row['Still at Best']):,}",
+                        va='center', fontsize=12, fontweight='bold',
+                        color=GEN_COLORS['dark_text'])
+                ax.text(row['Slipped Below'] + _max_val * 0.02, j + _h / 2,
+                        f"{int(row['Slipped Below']):,}",
+                        va='center', fontsize=12, fontweight='bold',
+                        color=GEN_COLORS['dark_text'])
+                # Retention % on far right
+                ax.text(_max_val * 1.3, j,
+                        f"{row['Retention %']:.0f}% retain",
+                        va='center', fontsize=13, fontweight='bold',
+                        color=GEN_COLORS['success'] if row['Retention %'] >= 50
+                        else GEN_COLORS['accent'])
+
+            ax.set_yticks(_y)
+            ax.set_yticklabels(_tier_df['Best Tier'], fontsize=14, fontweight='bold')
+            ax.set_xlabel("Accounts", fontsize=16, fontweight='bold', labelpad=10)
+            ax.xaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
+            ax.set_xlim(0, _max_val * 1.5)
+
+            gen_clean_axes(ax)
+            ax.xaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+            ax.legend(fontsize=13, loc='lower right', frameon=True,
+                      facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+            ax.set_title("Best Tier vs Latest Tier: Ladder Retention",
+                          fontsize=26, fontweight='bold',
+                          color=GEN_COLORS['dark_text'], pad=35, loc='left')
+            ax.text(0.0, 1.02,
+                    "For each best-ever tier, how many are still there vs slipped?",
+                    transform=ax.transAxes, fontsize=14,
+                    color=GEN_COLORS['muted'], style='italic')
+
+            plt.tight_layout()
+            plt.show()

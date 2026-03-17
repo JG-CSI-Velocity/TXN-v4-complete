@@ -1,0 +1,66 @@
+# ===========================================================================
+# LADDER DIRECTION & BALANCE: Improving vs Stable vs Declining (Conf. Ed.)
+# ===========================================================================
+# Single bar chart: avg + median balance by ladder direction (mailed only).
+#
+# Depends on: deposit_df (23/01), GEN_COLORS
+
+if 'deposit_df' not in dir() or len(deposit_df) == 0 or 'direction' not in deposit_df.columns:
+    print("    No deposit data with journey direction. Run cells 01-02 first.")
+else:
+    _mailed = deposit_df[deposit_df['times_mailed'] > 0].copy() if 'times_mailed' in deposit_df.columns else deposit_df[deposit_df['response_group'] != 'Never Mailed'].copy()
+
+    if len(_mailed) == 0:
+        print("    No mailed accounts in deposit data.")
+    else:
+        _dir_order = ['Improving', 'Stable', 'Declining']
+        _dir_colors = {
+            'Improving': GEN_COLORS['success'],
+            'Stable':    GEN_COLORS['info'],
+            'Declining': GEN_COLORS['accent'],
+        }
+        _snap_label = SNAPSHOT_CONFIG[_latest_key]['label'] if 'SNAPSHOT_CONFIG' in dir() else ''
+
+        fig, ax = plt.subplots(figsize=(14, 7))
+
+        _means = []
+        _medians = []
+        _counts = []
+        for d in _dir_order:
+            _sub = _mailed[_mailed['direction'] == d]
+            _means.append(_sub['balance'].mean() if len(_sub) > 0 else 0)
+            _medians.append(_sub['balance'].median() if len(_sub) > 0 else 0)
+            _counts.append(len(_sub))
+
+        _colors = [_dir_colors[d] for d in _dir_order]
+        bars = ax.bar(range(len(_dir_order)), _means,
+                      color=_colors, edgecolor='white', linewidth=1.5, width=0.5)
+
+        for j, (bar, mean_v, med_v, count) in enumerate(zip(bars, _means, _medians, _counts)):
+            if count > 0:
+                ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() * 1.02,
+                        f"Mean: {gen_fmt_dollar(mean_v, None)}\n"
+                        f"Median: {gen_fmt_dollar(med_v, None)}\n"
+                        f"({count:,} accts)",
+                        ha='center', va='bottom', fontsize=12, fontweight='bold',
+                        color=GEN_COLORS['dark_text'], linespacing=1.3)
+
+        ax.set_xticks(range(len(_dir_order)))
+        ax.set_xticklabels(_dir_order, fontsize=16, fontweight='bold')
+        ax.set_ylabel("Average Balance", fontsize=16, fontweight='bold', labelpad=10)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+
+        gen_clean_axes(ax)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+
+        ax.set_title("Deposit Balance by Response Ladder Direction",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                f"Mailed accounts only -- improving/stable/declining on the response ladder  ({_snap_label})",
+                transform=ax.transAxes, fontsize=14,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()

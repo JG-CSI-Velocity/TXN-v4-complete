@@ -1,0 +1,100 @@
+# ===========================================================================
+# EXECUTIVE DASHBOARD: Institutional Context (Conference Edition)
+# ===========================================================================
+# Single figure, 4-quadrant dashboard: total deposits, member growth,
+# net worth ratio, and peer comparison. Sets the macro stage.
+#
+# Depends on: ncua_df, ncua_peer_summary, fred_df (cell 04), GEN_COLORS
+
+if 'ncua_df' not in dir() or len(ncua_df) == 0:
+    print("    No NCUA data. Run cell 04 first.")
+else:
+    fig = plt.figure(figsize=(20, 12))
+    gs = fig.add_gridspec(2, 2, hspace=0.35, wspace=0.3)
+
+    _quarters = ncua_df['quarter_label'].tolist()
+    _x = range(len(_quarters))
+    _DARK = GEN_COLORS['dark_text']
+
+    # --- Q1: Total Deposits ---
+    ax1 = fig.add_subplot(gs[0, 0])
+    if 'total_deposits' in ncua_df.columns:
+        _deps = ncua_df['total_deposits'].values / 1000
+        ax1.bar(_x, _deps, color=GEN_COLORS['primary'], edgecolor='white',
+                linewidth=1, width=0.5, zorder=3)
+        for i, val in enumerate(_deps):
+            ax1.text(i, val * 1.01, f"${val:,.0f}M",
+                     ha='center', va='bottom', fontsize=12, fontweight='bold', color=_DARK)
+    ax1.set_xticks(list(_x))
+    ax1.set_xticklabels(_quarters, fontsize=11, fontweight='bold')
+    ax1.set_title("Total Deposits", fontsize=20, fontweight='bold', color=_DARK, loc='left')
+    gen_clean_axes(ax1)
+    ax1.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+    ax1.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax1.set_axisbelow(True)
+
+    # --- Q2: Member Count ---
+    ax2 = fig.add_subplot(gs[0, 1])
+    if 'member_count' in ncua_df.columns:
+        _mems = ncua_df['member_count'].values
+        ax2.bar(_x, _mems, color=GEN_COLORS['info'], edgecolor='white',
+                linewidth=1, width=0.5, zorder=3)
+        for i, val in enumerate(_mems):
+            ax2.text(i, val * 1.01, f"{val:,.0f}",
+                     ha='center', va='bottom', fontsize=12, fontweight='bold', color=_DARK)
+    ax2.set_xticks(list(_x))
+    ax2.set_xticklabels(_quarters, fontsize=11, fontweight='bold')
+    ax2.set_title("Members", fontsize=20, fontweight='bold', color=_DARK, loc='left')
+    gen_clean_axes(ax2)
+    ax2.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
+    ax2.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax2.set_axisbelow(True)
+
+    # --- Q3: Net Worth Ratio ---
+    ax3 = fig.add_subplot(gs[1, 0])
+    if 'net_worth_pct' in ncua_df.columns:
+        _nw = ncua_df['net_worth_pct'].values
+        ax3.plot(list(_x), _nw, color=GEN_COLORS['primary'], linewidth=3,
+                 marker='o', markersize=10, markeredgecolor='white',
+                 markeredgewidth=2, zorder=5)
+        ax3.axhline(y=7.0, color=GEN_COLORS['success'], linewidth=1.5,
+                     linestyle='--', alpha=0.7, label='Well-Capitalized')
+        for i, val in enumerate(_nw):
+            if pd.notna(val):
+                ax3.text(i, val + 0.1, f"{val:.1f}%",
+                         ha='center', va='bottom', fontsize=12, fontweight='bold', color=_DARK)
+    ax3.set_xticks(list(_x))
+    ax3.set_xticklabels(_quarters, fontsize=11, fontweight='bold')
+    ax3.set_title("Net Worth Ratio", fontsize=20, fontweight='bold', color=_DARK, loc='left')
+    gen_clean_axes(ax3)
+    ax3.legend(fontsize=11, loc='lower left')
+    ax3.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax3.set_axisbelow(True)
+
+    # --- Q4: FL Unemployment Context ---
+    ax4 = fig.add_subplot(gs[1, 1])
+    if 'fred_df' in dir() and len(fred_df) > 0:
+        _fl = fred_df[fred_df['series_id'] == 'FLUR'].sort_values('date')
+        if len(_fl) > 0:
+            ax4.plot(_fl['date'], _fl['value'], color=GEN_COLORS['accent'],
+                     linewidth=2.5, zorder=3)
+            ax4.fill_between(_fl['date'], _fl['value'],
+                             alpha=0.1, color=GEN_COLORS['accent'])
+            _snap_dates = [pd.Timestamp('2024-11-01'), pd.Timestamp('2025-06-01'),
+                           pd.Timestamp('2025-12-01')]
+            for sd in _snap_dates:
+                ax4.axvline(x=sd, color=GEN_COLORS['muted'], linewidth=1,
+                            linestyle=':', alpha=0.5)
+    ax4.set_title("FL Unemployment Rate", fontsize=20, fontweight='bold', color=_DARK, loc='left')
+    gen_clean_axes(ax4)
+    ax4.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_pct))
+    ax4.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax4.set_axisbelow(True)
+
+    fig.suptitle(f"{CU_NAME}: Institutional Snapshot",
+                 fontsize=28, fontweight='bold', color=_DARK, y=1.02)
+    fig.text(0.5, 0.99, "NCUA 5300 Call Report + FRED Economic Data",
+             ha='center', fontsize=14, color=GEN_COLORS['muted'], style='italic')
+
+    plt.tight_layout()
+    plt.show()

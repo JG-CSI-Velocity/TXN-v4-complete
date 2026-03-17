@@ -1,0 +1,85 @@
+# ===========================================================================
+# FRED MACRO CONTEXT: Economic Backdrop for Deposits (Conference Edition)
+# ===========================================================================
+# Multi-panel (2x2) economic context: FL unemployment, Fed Funds rate,
+# CPI, and total US deposits. Each is its own subplot but in one figure
+# since these are context, not the main analysis.
+#
+# Depends on: fred_df (23/23), GEN_COLORS
+
+if 'fred_df' not in dir() or len(fred_df) == 0:
+    print("    No FRED data. Run cell 23 first.")
+else:
+    _series_map = {
+        'FLUR':          {'title': 'Florida Unemployment Rate', 'fmt': gen_fmt_pct, 'color': GEN_COLORS['accent']},
+        'FEDFUNDS':      {'title': 'Fed Funds Rate', 'fmt': gen_fmt_pct, 'color': GEN_COLORS['primary']},
+        'CPIAUCSL':      {'title': 'Consumer Price Index (Urban)', 'fmt': gen_fmt_index, 'color': GEN_COLORS['info']},
+        'DPSACBM027NBOG': {'title': 'US Total Bank Deposits ($B)', 'fmt': gen_fmt_dollar, 'color': GEN_COLORS['success']},
+    }
+
+    _available = [s for s in _series_map if s in fred_df['series_id'].values]
+    _n = len(_available)
+
+    if _n == 0:
+        print("    No recognized FRED series in data.")
+    else:
+        # One chart per series
+        for series_id in _available:
+            cfg = _series_map[series_id]
+            _data = fred_df[fred_df['series_id'] == series_id].sort_values('date')
+
+            if len(_data) == 0:
+                continue
+
+            fig, ax = plt.subplots(figsize=(14, 7))
+
+            ax.plot(_data['date'], _data['value'],
+                    color=cfg['color'], linewidth=2.5, zorder=3)
+            ax.fill_between(_data['date'], _data['value'],
+                            alpha=0.1, color=cfg['color'], zorder=2)
+
+            # Annotate latest value
+            _latest = _data.iloc[-1]
+            if series_id == 'DPSACBM027NBOG':
+                _label = f"${_latest['value'] / 1000:.1f}T"
+            elif series_id in ('FLUR', 'FEDFUNDS'):
+                _label = f"{_latest['value']:.2f}%"
+            else:
+                _label = f"{_latest['value']:.1f}"
+
+            ax.text(_latest['date'], _latest['value'] * 1.01,
+                    _label, fontsize=14, fontweight='bold',
+                    color=cfg['color'], ha='right')
+
+            # Mark the 3 snapshot dates
+            _snap_dates = {
+                'Nov 2024': pd.Timestamp('2024-11-01'),
+                'Jun 2025': pd.Timestamp('2025-06-01'),
+                'Dec 2025': pd.Timestamp('2025-12-01'),
+            }
+            _ymin, _ymax = ax.get_ylim()
+            for snap_label, snap_date in _snap_dates.items():
+                if _data['date'].min() <= snap_date <= _data['date'].max():
+                    ax.axvline(x=snap_date, color=GEN_COLORS['muted'],
+                               linewidth=1, linestyle=':', alpha=0.6, zorder=1)
+                    ax.text(snap_date, _ymax * 0.98, snap_label,
+                            fontsize=10, color=GEN_COLORS['muted'],
+                            ha='center', va='top', rotation=90, alpha=0.7)
+
+            ax.set_ylabel(cfg['title'], fontsize=16, fontweight='bold', labelpad=10)
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(cfg['fmt']))
+
+            gen_clean_axes(ax)
+            ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+
+            ax.set_title(cfg['title'],
+                          fontsize=26, fontweight='bold',
+                          color=GEN_COLORS['dark_text'], pad=35, loc='left')
+            ax.text(0.0, 1.02,
+                    "FRED economic data -- vertical lines mark deposit snapshot dates",
+                    transform=ax.transAxes, fontsize=14,
+                    color=GEN_COLORS['muted'], style='italic')
+
+            plt.tight_layout()
+            plt.show()

@@ -1,0 +1,72 @@
+# ===========================================================================
+# DEPOSIT PROFILE TABLE: Summary by Response Group (Conference Edition)
+# ===========================================================================
+# Styled HTML table with mean AND median for key deposit metrics.
+#
+# Depends on: deposit_df (23/01), RESPONSE_GROUP_* (23/02), GEN_COLORS
+
+if 'deposit_df' not in dir() or len(deposit_df) == 0 or 'response_group' not in deposit_df.columns:
+    print("    No deposit data with response groups. Run cells 01-02 first.")
+else:
+    _groups = RESPONSE_GROUP_ORDER
+    _snap_label = SNAPSHOT_CONFIG[_latest_key]['label'] if 'SNAPSHOT_CONFIG' in dir() else ''
+
+    _rows = []
+    for grp in _groups:
+        _sub = deposit_df[deposit_df['response_group'] == grp]
+        if len(_sub) == 0:
+            continue
+
+        _valid_days = _sub['avgdaysbetweendeposits'].replace(0, np.nan).dropna() if 'avgdaysbetweendeposits' in _sub.columns else pd.Series(dtype=float)
+        _valid_repay = _sub['avgrepaymentrate'].replace(0, np.nan).dropna() if 'avgrepaymentrate' in _sub.columns else pd.Series(dtype=float)
+
+        _rows.append({
+            'Group': grp,
+            'Accounts': len(_sub),
+            'Mean Balance': _sub['balance'].mean() if 'balance' in _sub.columns else 0,
+            'Median Balance': _sub['balance'].median() if 'balance' in _sub.columns else 0,
+            'DD %': _sub['has_direct_deposit'].mean() * 100 if 'has_direct_deposit' in _sub.columns else 0,
+            'Mean Dep Amt (365d)': _sub['depAmt365'].mean() if 'depAmt365' in _sub.columns else 0,
+            'Median Dep Amt (365d)': _sub['depAmt365'].median() if 'depAmt365' in _sub.columns else 0,
+            'Mean Dep Count (365d)': _sub['depCount365'].mean() if 'depCount365' in _sub.columns else 0,
+            'Median Days Btwn': _valid_days.median() if len(_valid_days) > 0 else 0,
+            'Mean Repay Rate': _valid_repay.mean() * 100 if len(_valid_repay) > 0 else 0,
+        })
+
+    _summary_df = pd.DataFrame(_rows)
+
+    styled = (
+        _summary_df.style
+        .hide(axis='index')
+        .format({
+            'Accounts': '{:,.0f}',
+            'Mean Balance': '${:,.0f}',
+            'Median Balance': '${:,.0f}',
+            'DD %': '{:.1f}%',
+            'Mean Dep Amt (365d)': '${:,.0f}',
+            'Median Dep Amt (365d)': '${:,.0f}',
+            'Mean Dep Count (365d)': '{:.1f}',
+            'Median Days Btwn': '{:.0f}',
+            'Mean Repay Rate': '{:.1f}%',
+        })
+        .set_properties(**{
+            'font-size': '13px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF',
+            'padding': '7px 10px',
+        })
+        .set_table_styles([
+            {'selector': 'th', 'props': [
+                ('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '13px'),
+                ('font-weight', 'bold'), ('text-align', 'center'),
+                ('padding', '8px 10px'),
+            ]},
+            {'selector': 'caption', 'props': [
+                ('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                ('padding-bottom', '12px'),
+            ]},
+        ])
+        .set_caption(f"Deposit Profile by ARS Response Group  ({_snap_label})")
+    )
+    display(styled)

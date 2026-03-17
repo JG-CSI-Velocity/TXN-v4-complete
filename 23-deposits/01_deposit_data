@@ -1,0 +1,356 @@
+# ===========================================================================
+# DEPOSIT DATA: Longitudinal Snapshot Pipeline (Conference Edition)
+# ===========================================================================
+# Loads 3 zaccounts snapshot files (Nov24, Jun25, Dec25), filters to open
+# accounts, joins to rewards_df on HASHED_ACCOUNT, and merges ARS campaign
+# status + response journey data.
+#
+# Outputs: deposit_df (one row per account with columns from latest snapshot
+#          plus snapshot comparison columns), deposit_long (one row per
+#          account-snapshot for trajectory analysis), response_journey_df
+#          (per-account response ladder history across all waves).
+#
+# Depends on: rewards_df (00-setup/08), camp_acct (09-ars-campaign/01),
+#             combined_df (optional -- graceful fallback if absent).
+
+import warnings
+warnings.filterwarnings('ignore')
+
+# ---------------------------------------------------------------------------
+# 1. Snapshot file configuration
+# ---------------------------------------------------------------------------
+# Three zaccounts snapshots in the same directory as the ODDD file.
+# Adjust filenames to match actual files for each client.
+
+if 'odd_file' not in dir():
+    print("    WARNING: odd_file not defined. Run 00-setup cells first.")
+    print("    Skipping deposit data pipeline.")
+else:
+    _data_dir = odd_file.parent if hasattr(odd_file, 'parent') else Path(odd_file).parent
+
+    # CONFIGURE: map snapshot labels to filenames
+    # The user sets these filenames per client; the directory is auto-detected.
+    SNAPSHOT_CONFIG = {
+        'Nov24': {'filename': 'zaccounts_nov24.csv', 'label': 'Nov 2024'},
+        'Jun25': {'filename': 'zaccounts_jun25.csv', 'label': 'Jun 2025'},
+        'Dec25': {'filename': 'zaccounts_dec25.csv', 'label': 'Dec 2025'},
+    }
+    SNAPSHOT_ORDER = ['Nov24', 'Jun25', 'Dec25']
+
+    # ---------------------------------------------------------------------------
+    # 2. Load and validate each snapshot
+    # ---------------------------------------------------------------------------
+    _snapshots_raw = {}
+    _load_errors = []
+
+    for snap_key in SNAPSHOT_ORDER:
+        cfg = SNAPSHOT_CONFIG[snap_key]
+        fpath = _data_dir / cfg['filename']
+        if not fpath.exists():
+            _load_errors.append(f"  {snap_key}: file not found -- {fpath}")
+            continue
+        try:
+            _df = pd.read_csv(fpath, low_memory=False)
+            _df.columns = _df.columns.str.strip()
+            _snapshots_raw[snap_key] = _df
+            print(f"  {snap_key}: loaded {len(_df):,} rows, {len(_df.columns)} columns")
+        except Exception as e:
+            _load_errors.append(f"  {snap_key}: load error -- {e}")
+
+    if _load_errors:
+        print("\n  Snapshot load issues:")
+        for err in _load_errors:
+            print(err)
+
+    if len(_snapshots_raw) == 0:
+        print("\n    No snapshot files loaded. Cannot proceed with deposit analysis.")
+        deposit_df = pd.DataFrame()
+        deposit_long = pd.DataFrame()
+    else:
+        # -------------------------------------------------------------------
+        # 3. Filter to open accounts only (exclude closed/charged-off)
+        # -------------------------------------------------------------------
+        _snapshots = {}
+        for snap_key, raw_df in _snapshots_raw.items():
+            if 'acctstatus' in raw_df.columns:
+                _before = len(raw_df)
+                # Keep only open/active accounts
+                _open_mask = raw_df['acctstatus'].astype(str).str.strip().str.lower().isin(
+                    ['open', 'active', 'o', 'a', '1']
+                )
+                # If the mask catches nothing, the values may be numeric or different
+                # Fall back to excluding known closed statuses
+                if _open_mask.sum() == 0:
+                    _closed_vals = ['closed', 'inactive', 'charged off', 'chargeoff',
+                                    'c', 'i', 'x', '0']
+                    _closed_mask = raw_df['acctstatus'].astype(str).str.strip().str.lower().isin(
+                        _closed_vals
+                    )
+                    _open_mask = ~_closed_mask
+                _df = raw_df[_open_mask].copy()
+                print(f"  {snap_key}: {_before:,} total -> {len(_df):,} open accounts "
+                      f"({_before - len(_df):,} excluded)")
+            else:
+                _df = raw_df.copy()
+                print(f"  {snap_key}: no acctstatus column, keeping all {len(_df):,} rows")
+
+            _snapshots[snap_key] = _df
+
+        # -------------------------------------------------------------------
+        # 4. Standardize numeric columns across snapshots
+        # -------------------------------------------------------------------
+        NUMERIC_DEPOSIT_COLS = [
+            'balance', 'AvgCollectedBalance',
+            'DepCount33', 'DepAmt33', 'DepCount66', 'DepAmt66',
+            'DepCount99', 'DepAmt99', 'depCount365', 'depAmt365',
+            'avgdaysbetweendeposits', 'avgrepaymentrate',
+            'nsfodfeestodepositsratio90days', 'fdicoccasionsrolling12months',
+            'PossibleFees365', 'CollectedFees365',
+            'ODLimit', 'AvgODLimit',
+            'items365', 'SIG_365', 'PIN_365',
+            'declines_365', 'declines_amt_365',
+            'Mobile_Deposits_90',
+            'RepaymentTrendCount33', 'DepositTrendCount33',
+            'WindfallTrendCount33', 'CashFlowTrendCount33',
+            'sixty_od',
+        ]
+
+        for snap_key, df in _snapshots.items():
+            for col in NUMERIC_DEPOSIT_COLS:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(
+                        df[col].astype(str).str.replace(r'[,$]', '', regex=True),
+                        errors='coerce'
+                    ).fillna(0)
+
+        # -------------------------------------------------------------------
+        # 5. Build deposit_long: one row per account-snapshot
+        # -------------------------------------------------------------------
+        _long_rows = []
+        _keep_cols = [
+            'HASHED_ACCOUNT', 'acctid', 'balance', 'AvgCollectedBalance',
+            'autodeposit', 'avgdaysbetweendeposits', 'avgrepaymentrate',
+            'DepCount33', 'DepAmt33', 'DepCount66', 'DepAmt66',
+            'DepCount99', 'DepAmt99', 'depCount365', 'depAmt365',
+            'nsfodfeestodepositsratio90days', 'fdicoccasionsrolling12months',
+            'PossibleFees365', 'CollectedFees365',
+            'ODLimit', 'AvgODLimit',
+            'items365', 'SIG_365', 'PIN_365',
+            'declines_365', 'declines_amt_365',
+            'Mobile_Deposits_90',
+            'RepaymentTrendCount33', 'DepositTrendCount33',
+            'WindfallTrendCount33', 'CashFlowTrendCount33',
+            'sixty_od', 'acctstatus', 'prodcode', 'accttype',
+            'IsPersonal', 'branch', 'branchname',
+        ]
+
+        for snap_key, df in _snapshots.items():
+            avail = [c for c in _keep_cols if c in df.columns]
+            chunk = df[avail].copy()
+            chunk['snapshot'] = snap_key
+            chunk['snapshot_label'] = SNAPSHOT_CONFIG[snap_key]['label']
+            _long_rows.append(chunk)
+
+        deposit_long = pd.concat(_long_rows, ignore_index=True)
+
+        # Normalize HASHED_ACCOUNT for joining
+        deposit_long['HASHED_ACCOUNT'] = (
+            deposit_long['HASHED_ACCOUNT'].astype(str).str.strip()
+        )
+
+        # Normalize autodeposit to boolean
+        if 'autodeposit' in deposit_long.columns:
+            _ad = deposit_long['autodeposit'].astype(str).str.strip().str.lower()
+            deposit_long['has_direct_deposit'] = _ad.isin(
+                ['true', '1', 'yes', 'y', 't']
+            )
+
+        print(f"\n  deposit_long: {len(deposit_long):,} rows "
+              f"({deposit_long['HASHED_ACCOUNT'].nunique():,} unique accounts "
+              f"across {deposit_long['snapshot'].nunique()} snapshots)")
+
+        # -------------------------------------------------------------------
+        # 6. Build deposit_df: latest snapshot as primary, with delta columns
+        # -------------------------------------------------------------------
+        # Use the most recent available snapshot as the base
+        _latest_key = [k for k in reversed(SNAPSHOT_ORDER) if k in _snapshots][0]
+        _earliest_key = [k for k in SNAPSHOT_ORDER if k in _snapshots][0]
+
+        deposit_df = _snapshots[_latest_key].copy()
+        deposit_df['HASHED_ACCOUNT'] = (
+            deposit_df['HASHED_ACCOUNT'].astype(str).str.strip()
+        )
+
+        # Normalize autodeposit on deposit_df too
+        if 'autodeposit' in deposit_df.columns:
+            _ad = deposit_df['autodeposit'].astype(str).str.strip().str.lower()
+            deposit_df['has_direct_deposit'] = _ad.isin(
+                ['true', '1', 'yes', 'y', 't']
+            )
+
+        # Add delta columns if we have more than one snapshot
+        if len(_snapshots) > 1 and _earliest_key != _latest_key:
+            _early = _snapshots[_earliest_key].copy()
+            _early['HASHED_ACCOUNT'] = (
+                _early['HASHED_ACCOUNT'].astype(str).str.strip()
+            )
+
+            _delta_cols = ['balance', 'AvgCollectedBalance', 'depCount365',
+                           'depAmt365', 'CollectedFees365', 'ODLimit']
+            _early_sub = _early[['HASHED_ACCOUNT'] +
+                                [c for c in _delta_cols if c in _early.columns]].copy()
+            _early_sub = _early_sub.rename(
+                columns={c: f'{c}_early' for c in _delta_cols if c in _early_sub.columns}
+            )
+
+            deposit_df = deposit_df.merge(_early_sub, on='HASHED_ACCOUNT', how='left')
+
+            for col in _delta_cols:
+                early_col = f'{col}_early'
+                delta_col = f'{col}_delta'
+                if col in deposit_df.columns and early_col in deposit_df.columns:
+                    deposit_df[delta_col] = (
+                        deposit_df[col].fillna(0) - deposit_df[early_col].fillna(0)
+                    )
+
+            print(f"  Delta columns: {_earliest_key} -> {_latest_key}")
+
+        # -------------------------------------------------------------------
+        # 7. Join to rewards_df on HASHED_ACCOUNT for ARS campaign data
+        # -------------------------------------------------------------------
+        _joined = False
+        if 'rewards_df' in dir() and 'HASHED_ACCOUNT' in rewards_df.columns:
+            _rewards_hash = rewards_df['HASHED_ACCOUNT'].astype(str).str.strip()
+            _deposit_hash = deposit_df['HASHED_ACCOUNT']
+
+            _match_count = _deposit_hash.isin(_rewards_hash).sum()
+            _match_pct = _match_count / len(deposit_df) * 100 if len(deposit_df) > 0 else 0
+
+            print(f"\n  HASHED_ACCOUNT join diagnostic:")
+            print(f"    deposit_df accounts:  {len(deposit_df):,}")
+            print(f"    rewards_df accounts:  {len(rewards_df):,}")
+            print(f"    Matched:              {_match_count:,} ({_match_pct:.1f}%)")
+
+            if _match_pct < 10:
+                print(f"    WARNING: Very low match rate ({_match_pct:.1f}%). "
+                      f"Check that HASHED_ACCOUNT values align between files.")
+                print(f"    Sample deposit hashes: {deposit_df['HASHED_ACCOUNT'].head(3).tolist()}")
+                print(f"    Sample ODDD hashes:    {_rewards_hash.head(3).tolist()}")
+            else:
+                _joined = True
+        elif 'rewards_df' in dir():
+            print("\n  WARNING: HASHED_ACCOUNT column not found in rewards_df.")
+            print(f"    Available columns: {[c for c in rewards_df.columns if 'hash' in c.lower() or 'acct' in c.lower()]}")
+        else:
+            print("\n  WARNING: rewards_df not available. Run 00-setup cells first.")
+
+        # -------------------------------------------------------------------
+        # 8. Merge campaign status from camp_acct if available
+        # -------------------------------------------------------------------
+        if 'camp_acct' in dir() and len(camp_acct) > 0 and _joined:
+            # camp_acct uses primary_account_num; we need to bridge via rewards_df
+            # Build a lookup: HASHED_ACCOUNT -> camp_status fields
+            _acct_hash_lookup = rewards_df[['Acct Number', 'HASHED_ACCOUNT']].copy()
+            _acct_hash_lookup['Acct Number'] = (
+                _acct_hash_lookup['Acct Number'].astype(str).str.strip()
+            )
+            _acct_hash_lookup['HASHED_ACCOUNT'] = (
+                _acct_hash_lookup['HASHED_ACCOUNT'].astype(str).str.strip()
+            )
+
+            _camp_fields = ['primary_account_num', 'camp_status', 'times_mailed',
+                            'times_responded', 'times_near_use', 'total_offers',
+                            'total_responses']
+            _camp_avail = [c for c in _camp_fields if c in camp_acct.columns]
+            _camp_sub = camp_acct[_camp_avail].copy()
+            _camp_sub['primary_account_num'] = (
+                _camp_sub['primary_account_num'].astype(str).str.strip()
+            )
+
+            # Bridge: camp_acct.primary_account_num -> rewards_df.Acct Number -> HASHED_ACCOUNT
+            _camp_hash = _camp_sub.merge(
+                _acct_hash_lookup,
+                left_on='primary_account_num',
+                right_on='Acct Number',
+                how='inner'
+            )
+
+            _merge_cols = [c for c in _camp_avail if c != 'primary_account_num'] + ['HASHED_ACCOUNT']
+            _camp_hash_sub = _camp_hash[[c for c in _merge_cols if c in _camp_hash.columns]].copy()
+
+            deposit_df = deposit_df.merge(_camp_hash_sub, on='HASHED_ACCOUNT', how='left')
+            deposit_df['camp_status'] = deposit_df['camp_status'].fillna('Never Mailed')
+
+            # Also merge onto deposit_long for trajectory analysis
+            deposit_long = deposit_long.merge(
+                _camp_hash_sub, on='HASHED_ACCOUNT', how='left'
+            )
+            deposit_long['camp_status'] = deposit_long['camp_status'].fillna('Never Mailed')
+
+            _camp_dist = deposit_df['camp_status'].value_counts()
+            print(f"\n  Campaign status distribution in deposit data:")
+            for status, count in _camp_dist.items():
+                print(f"    {status:<20s}: {count:>8,} ({count / len(deposit_df) * 100:>5.1f}%)")
+
+        elif 'camp_acct' not in dir() or len(camp_acct) == 0:
+            print("\n  Campaign data not available. Run section 09 first for ARS overlay.")
+            deposit_df['camp_status'] = 'Unknown'
+            deposit_long['camp_status'] = 'Unknown'
+
+        # -------------------------------------------------------------------
+        # 9. Build matched cohort: accounts present in ALL snapshots
+        # -------------------------------------------------------------------
+        # For trajectory analysis, we need the same accounts across all
+        # snapshots so we're comparing apples to apples.
+        _snap_keys_loaded = list(_snapshots.keys())
+        if len(_snap_keys_loaded) >= 2:
+            _hash_sets = [
+                set(deposit_long[deposit_long['snapshot'] == s]['HASHED_ACCOUNT'])
+                for s in _snap_keys_loaded
+            ]
+            matched_cohort_hashes = _hash_sets[0]
+            for hs in _hash_sets[1:]:
+                matched_cohort_hashes = matched_cohort_hashes & hs
+
+            deposit_long['in_matched_cohort'] = deposit_long['HASHED_ACCOUNT'].isin(
+                matched_cohort_hashes
+            )
+            deposit_df['in_matched_cohort'] = deposit_df['HASHED_ACCOUNT'].isin(
+                matched_cohort_hashes
+            )
+
+            _total_unique = deposit_long['HASHED_ACCOUNT'].nunique()
+            _matched_n = len(matched_cohort_hashes)
+            _matched_pct = _matched_n / _total_unique * 100 if _total_unique > 0 else 0
+            print(f"\n  Matched cohort (present in all {len(_snap_keys_loaded)} snapshots):")
+            print(f"    {_matched_n:,} of {_total_unique:,} accounts ({_matched_pct:.1f}%)")
+        else:
+            matched_cohort_hashes = set(deposit_df['HASHED_ACCOUNT'])
+            deposit_long['in_matched_cohort'] = True
+            deposit_df['in_matched_cohort'] = True
+            print(f"\n  Single snapshot -- all accounts in cohort.")
+
+        # -------------------------------------------------------------------
+        # 10. Summary statistics
+        # -------------------------------------------------------------------
+        print(f"\n  Deposit data pipeline complete.")
+        print(f"    deposit_df:   {len(deposit_df):,} accounts (latest snapshot: {_latest_key})")
+        print(f"    deposit_long: {len(deposit_long):,} account-snapshot rows")
+        print(f"    Snapshots loaded: {list(_snapshots.keys())}")
+
+        if 'balance' in deposit_df.columns:
+            _total_bal = deposit_df['balance'].sum()
+            _avg_bal = deposit_df['balance'].mean()
+            _median_bal = deposit_df['balance'].median()
+            print(f"    Total deposits:  ${_total_bal:,.0f}")
+            print(f"    Average balance: ${_avg_bal:,.0f}")
+            print(f"    Median balance:  ${_median_bal:,.0f}")
+
+        if 'has_direct_deposit' in deposit_df.columns:
+            _dd_pct = deposit_df['has_direct_deposit'].mean() * 100
+            print(f"    Direct deposit:  {_dd_pct:.1f}%")
+
+        if 'avgdaysbetweendeposits' in deposit_df.columns:
+            _avg_days = deposit_df['avgdaysbetweendeposits'].replace(0, np.nan).median()
+            if pd.notna(_avg_days):
+                print(f"    Median days between deposits: {_avg_days:.0f}")

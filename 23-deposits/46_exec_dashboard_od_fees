@@ -1,0 +1,73 @@
+# ===========================================================================
+# EXECUTIVE DASHBOARD: OD/Fee Impact (Conference Edition)
+# ===========================================================================
+# Single figure, 4-quadrant: collected fees, fee pressure ratio,
+# repayment rate, and FDIC occasions -- all by response group.
+#
+# Depends on: deposit_df (cell 01), RESPONSE_GROUP_* (cell 02), GEN_COLORS
+
+if 'deposit_df' not in dir() or len(deposit_df) == 0 or 'response_group' not in deposit_df.columns:
+    print("    No deposit data with response groups. Run cells 01-02 first.")
+else:
+    fig = plt.figure(figsize=(20, 12))
+    gs = fig.add_gridspec(2, 2, hspace=0.4, wspace=0.3)
+    _DARK = GEN_COLORS['dark_text']
+    _groups = RESPONSE_GROUP_ORDER
+    _colors = [RESPONSE_GROUP_PALETTE.get(g, GEN_COLORS['muted']) for g in _groups]
+
+    _metrics = [
+        ('CollectedFees365', 'Avg Collected Fees (365d)', gen_fmt_dollar),
+        ('nsfodfeestodepositsratio90days', 'NSF/OD Fee-to-Deposit Ratio (90d)', gen_fmt_pct),
+        ('avgrepaymentrate', 'Avg Repayment Rate', gen_fmt_pct),
+        ('fdicoccasionsrolling12months', 'Avg FDIC Occasions (12mo)', gen_fmt_index),
+    ]
+
+    for idx, (col, title, fmt) in enumerate(_metrics):
+        ax = fig.add_subplot(gs[idx // 2, idx % 2])
+
+        if col not in deposit_df.columns:
+            ax.text(0.5, 0.5, f"{title}\nnot available",
+                    transform=ax.transAxes, ha='center', va='center',
+                    fontsize=14, color=GEN_COLORS['muted'], style='italic')
+            ax.axis('off')
+            continue
+
+        _vals = []
+        for grp in _groups:
+            _sub = deposit_df[deposit_df['response_group'] == grp]
+            if col in ('nsfodfeestodepositsratio90days', 'avgrepaymentrate'):
+                _valid = _sub[col].replace(0, np.nan).dropna()
+                _mult = 100
+            else:
+                _valid = _sub[col]
+                _mult = 1
+            _vals.append(_valid.mean() * _mult if len(_valid) > 0 else 0)
+
+        ax.bar(range(len(_groups)), _vals, color=_colors, edgecolor='white',
+               linewidth=1, width=0.6, zorder=3)
+
+        for i, val in enumerate(_vals):
+            if fmt == gen_fmt_dollar:
+                _label = gen_fmt_dollar(val, None)
+            elif fmt == gen_fmt_pct:
+                _label = f"{val:.1f}%"
+            else:
+                _label = f"{val:.1f}"
+            ax.text(i, val * 1.02 if val > 0 else 0.1, _label,
+                    ha='center', va='bottom', fontsize=12, fontweight='bold', color=_DARK)
+
+        ax.set_xticks(range(len(_groups)))
+        ax.set_xticklabels([g.replace(' ', '\n') for g in _groups],
+                           fontsize=10, fontweight='bold')
+        ax.set_title(title, fontsize=18, fontweight='bold', color=_DARK, loc='left')
+        gen_clean_axes(ax)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(fmt))
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+
+    _snap_label = SNAPSHOT_CONFIG[_latest_key]['label'] if 'SNAPSHOT_CONFIG' in dir() else ''
+    fig.suptitle(f"OD/Fee Impact by Response Group  ({_snap_label})",
+                 fontsize=28, fontweight='bold', color=_DARK, y=1.02)
+
+    plt.tight_layout()
+    plt.show()
