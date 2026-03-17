@@ -167,6 +167,17 @@ if 'rewards_df' in dir() and len(mail_cols) > 0:
         latest_tier_rank = _ranks[-1] if _ranks else 0
         latest_tier = RESPONSE_TIER_ORDER[latest_tier_rank]
 
+        # First mailed tier (first time they appeared in ANY wave, regardless of outcome)
+        first_mailed_tier = None
+        first_mailed_tier_rank = 0
+        first_mailed_wave = None
+        for j, t in enumerate(journey):
+            if t != 'Never Mailed':
+                first_mailed_tier = t
+                first_mailed_tier_rank = RESPONSE_TIER_MAP[t]
+                first_mailed_wave = _wave_labels[j]
+                break
+
         # First response (NU 1-4 or above)
         first_response_wave = None
         first_response_tier = None
@@ -191,8 +202,14 @@ if 'rewards_df' in dir() and len(mail_cols) > 0:
         else:
             direction = 'Stable'
 
+        # Tier movement: how far did they move on the ladder?
+        _tier_movement = latest_tier_rank - first_mailed_tier_rank if first_mailed_tier_rank > 0 else 0
+
         row = {
             'acct_number': _acct_nums.iloc[i],
+            'first_mailed_tier': first_mailed_tier,
+            'first_mailed_tier_rank': first_mailed_tier_rank,
+            'first_mailed_wave': first_mailed_wave,
             'best_tier': best_tier,
             'best_tier_rank': best_tier_rank,
             'latest_tier': latest_tier,
@@ -203,6 +220,7 @@ if 'rewards_df' in dir() and len(mail_cols) > 0:
             'times_responded': len(_responded_waves),
             'is_repeat_responder': bool(len(_responded_waves) > 1),
             'direction': direction,
+            'tier_movement': _tier_movement,
             'response_group': RESPONSE_GROUP_MAP[best_tier],
         }
 
@@ -221,10 +239,11 @@ if 'rewards_df' in dir() and len(mail_cols) > 0:
     # ---------------------------------------------------------------------------
     if 'deposit_df' in dir() and len(deposit_df) > 0 and _hash_col_present:
         _journey_merge_cols = [
-            'HASHED_ACCOUNT', 'best_tier', 'best_tier_rank', 'latest_tier',
-            'latest_tier_rank', 'first_response_wave', 'first_response_tier',
+            'HASHED_ACCOUNT', 'first_mailed_tier', 'first_mailed_tier_rank',
+            'best_tier', 'best_tier_rank', 'latest_tier', 'latest_tier_rank',
+            'first_response_wave', 'first_response_tier',
             'times_mailed', 'times_responded', 'is_repeat_responder',
-            'direction', 'response_group',
+            'direction', 'tier_movement', 'response_group',
         ]
         _journey_sub = response_journey_df[_journey_merge_cols].copy()
 

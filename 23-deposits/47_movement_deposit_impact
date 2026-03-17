@@ -1,0 +1,133 @@
+# ===========================================================================
+# MOVEMENT & DEPOSIT IMPACT: Did Moving Up the Ladder Change Deposits?
+# ===========================================================================
+# Groups accounts by tier movement (improved/stable/declined) and shows
+# their deposit metrics. Ties ladder progression to deposit behavior.
+#
+# Uses deposit_df for latest snapshot data merged with response_journey_df.
+#
+# Depends on: response_journey_df (23/02), deposit_df (23/01),
+#             DEPOSIT_JOIN_KEY_*, GEN_COLORS
+
+if 'response_journey_df' not in dir() or len(response_journey_df) == 0:
+    print("    No response journey data. Run cell 02 first.")
+elif 'tier_movement' not in response_journey_df.columns:
+    print("    No tier_movement column. Re-run cell 02 (updated version).")
+elif 'deposit_df' not in dir() or len(deposit_df) == 0:
+    print("    No deposit data. Run cell 01 first.")
+else:
+    # Merge journey movement data with deposit data
+    _dep_join_oddd = DEPOSIT_JOIN_KEY_ODDD if 'DEPOSIT_JOIN_KEY_ODDD' in dir() else None
+    _dep_join_dep = DEPOSIT_JOIN_KEY_DEPOSIT if 'DEPOSIT_JOIN_KEY_DEPOSIT' in dir() else None
+
+    _journey = response_journey_df[
+        response_journey_df['first_mailed_tier'].notna() &
+        (response_journey_df['first_mailed_tier'] != 'Never Mailed')
+    ].copy()
+
+    if len(_journey) == 0:
+        print("    No mailed accounts with tier data.")
+    else:
+        # Classify movement
+        _journey['movement_group'] = 'Stable'
+        _journey.loc[_journey['tier_movement'] > 0, 'movement_group'] = 'Moved Up'
+        _journey.loc[_journey['tier_movement'] < 0, 'movement_group'] = 'Moved Down'
+
+        # Merge with deposits via join key
+        if 'HASHED_ACCOUNT' in _journey.columns and _dep_join_dep and _dep_join_dep in deposit_df.columns:
+            _dep_sub = deposit_df.copy()
+            _dep_sub['_jk'] = _dep_sub[_dep_join_dep].astype(str).str.strip()
+            _journey['_jk'] = _journey['HASHED_ACCOUNT'].astype(str).str.strip()
+
+            _merged = _journey.merge(
+                _dep_sub[['_jk', 'balance', 'depAmt365', 'depCount365',
+                           'CollectedFees365', 'avgdaysbetweendeposits']].drop_duplicates(subset='_jk'),
+                on='_jk', how='left'
+            )
+        else:
+            _merged = _journey.copy()
+
+        _movement_order = ['Moved Up', 'Stable', 'Moved Down']
+        _movement_colors = {
+            'Moved Up': GEN_COLORS['success'],
+            'Stable': GEN_COLORS['info'],
+            'Moved Down': GEN_COLORS['accent'],
+        }
+
+        # Choose which deposit metrics to show
+        _metrics = []
+        for col, label, fmt in [('balance', 'Avg Balance', 'dollar'),
+                                  ('depAmt365', 'Avg Annual Deposits', 'dollar'),
+                                  ('depCount365', 'Avg Deposit Count (365d)', 'number'),
+                                  ('CollectedFees365', 'Avg Fees (365d)', 'dollar')]:
+            if col in _merged.columns:
+                _metrics.append((col, label, fmt))
+
+        if len(_metrics) == 0:
+            print("    No deposit metrics merged. Check join keys.")
+        else:
+            fig, ax = plt.subplots(figsize=(14, 7))
+
+            _groups = [g for g in _movement_order if g in _merged['movement_group'].values]
+            _colors = [_movement_colors[g] for g in _groups]
+
+            # Use balance as the primary metric
+            _primary = 'balance' if 'balance' in _merged.columns else _metrics[0][0]
+            _primary_label = 'Avg Balance' if _primary == 'balance' else _metrics[0][1]
+
+            _means = []
+            _medians = []
+            _counts = []
+            _avg_movement = []
+            for grp in _groups:
+                _sub = _merged[_merged['movement_group'] == grp]
+                _means.append(_sub[_primary].mean() if len(_sub) > 0 and _primary in _sub.columns else 0)
+                _medians.append(_sub[_primary].median() if len(_sub) > 0 and _primary in _sub.columns else 0)
+                _counts.append(len(_sub))
+                _avg_movement.append(_sub['tier_movement'].mean() if len(_sub) > 0 else 0)
+
+            bars = ax.bar(range(len(_groups)), _means, color=_colors,
+                          edgecolor='white', linewidth=1.5, width=0.5, zorder=3)
+
+            for j, (bar, mean_v, med_v, count, avg_mv) in enumerate(
+                    zip(bars, _means, _medians, _counts, _avg_movement)):
+                ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() * 1.02,
+                        f"Mean: {gen_fmt_dollar(mean_v, None)}\n"
+                        f"Median: {gen_fmt_dollar(med_v, None)}\n"
+                        f"({count:,} accts, avg {avg_mv:+.1f} tiers)",
+                        ha='center', va='bottom', fontsize=12, fontweight='bold',
+                        color=GEN_COLORS['dark_text'], linespacing=1.3)
+
+            ax.set_xticks(range(len(_groups)))
+            ax.set_xticklabels(_groups, fontsize=16, fontweight='bold')
+            ax.set_ylabel(_primary_label, fontsize=16, fontweight='bold', labelpad=10)
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+
+            gen_clean_axes(ax)
+            ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+
+            ax.set_title("Ladder Movement & Deposit Balance",
+                          fontsize=26, fontweight='bold',
+                          color=GEN_COLORS['dark_text'], pad=35, loc='left')
+            ax.text(0.0, 1.02,
+                    "Accounts that moved UP the response ladder vs stayed flat vs moved down",
+                    transform=ax.transAxes, fontsize=14,
+                    color=GEN_COLORS['muted'], style='italic')
+
+            plt.tight_layout()
+            plt.show()
+
+            # Print all metrics
+            print(f"\n    Movement × Deposit Metrics:")
+            for grp in _groups:
+                _sub = _merged[_merged['movement_group'] == grp]
+                print(f"\n    {grp} ({len(_sub):,} accounts, avg movement {_sub['tier_movement'].mean():+.1f} tiers):")
+                for col, label, fmt in _metrics:
+                    if col in _sub.columns:
+                        _m = _sub[col].mean()
+                        _md = _sub[col].median()
+                        if fmt == 'dollar':
+                            print(f"      {label}: mean {gen_fmt_dollar(_m, None)}, median {gen_fmt_dollar(_md, None)}")
+                        else:
+                            print(f"      {label}: mean {_m:.1f}, median {_md:.1f}")

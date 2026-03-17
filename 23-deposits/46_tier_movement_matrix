@@ -1,0 +1,95 @@
+# ===========================================================================
+# TIER MOVEMENT MATRIX: First Mailed Tier → Latest Tier (Conference Ed.)
+# ===========================================================================
+# Heatmap showing how accounts moved on the response ladder. Rows = first
+# tier when mailed. Columns = latest/most recent tier. Diagonal = no
+# movement. Above diagonal = improved. Below diagonal = declined.
+#
+# Only mailed accounts (excludes Never Mailed).
+#
+# Depends on: response_journey_df (23/02), RESPONSE_TIER_ORDER, GEN_COLORS
+
+if 'response_journey_df' not in dir() or len(response_journey_df) == 0:
+    print("    No response journey data. Run cell 02 first.")
+elif 'first_mailed_tier' not in response_journey_df.columns:
+    print("    No first_mailed_tier column. Re-run cell 02 (updated version).")
+else:
+    # Only mailed accounts
+    _mailed = response_journey_df[
+        response_journey_df['first_mailed_tier'].notna() &
+        (response_journey_df['first_mailed_tier'] != 'Never Mailed')
+    ].copy()
+
+    if len(_mailed) == 0:
+        print("    No mailed accounts with tier data.")
+    else:
+        # Tiers to show (exclude Never Mailed)
+        _tiers = [t for t in RESPONSE_TIER_ORDER if t != 'Never Mailed']
+        _tier_labels = _tiers
+
+        # Build transition matrix
+        _matrix = np.zeros((len(_tiers), len(_tiers)))
+        _tier_idx = {t: i for i, t in enumerate(_tiers)}
+
+        for _, row in _mailed.iterrows():
+            _from = row['first_mailed_tier']
+            _to = row['latest_tier']
+            if _from in _tier_idx and _to in _tier_idx:
+                _matrix[_tier_idx[_from]][_tier_idx[_to]] += 1
+
+        # Count totals for annotations
+        _total = _matrix.sum()
+
+        fig, ax = plt.subplots(figsize=(12, 10))
+
+        _cmap = LinearSegmentedColormap.from_list('movement',
+            ['#FFFFFF', GEN_COLORS['info'], GEN_COLORS['primary']], N=256)
+
+        im = ax.imshow(_matrix, cmap=_cmap, aspect='auto')
+
+        # Annotate each cell
+        for i in range(len(_tiers)):
+            for j in range(len(_tiers)):
+                _val = int(_matrix[i][j])
+                if _val > 0:
+                    _pct = _val / _total * 100
+                    _color = 'white' if _val > _matrix.max() * 0.5 else GEN_COLORS['dark_text']
+                    ax.text(j, i, f"{_val:,}\n({_pct:.1f}%)",
+                            ha='center', va='center', fontsize=10, fontweight='bold',
+                            color=_color, linespacing=1.2)
+
+        # Draw diagonal line for "no movement"
+        for i in range(len(_tiers)):
+            ax.add_patch(plt.Rectangle((i - 0.5, i - 0.5), 1, 1,
+                         fill=False, edgecolor=GEN_COLORS['accent'],
+                         linewidth=2, linestyle='--'))
+
+        ax.set_xticks(range(len(_tiers)))
+        ax.set_xticklabels(_tier_labels, fontsize=11, fontweight='bold', rotation=45, ha='right')
+        ax.set_yticks(range(len(_tiers)))
+        ax.set_yticklabels(_tier_labels, fontsize=11, fontweight='bold')
+        ax.set_xlabel("Latest Tier (Most Recent Wave)", fontsize=14, fontweight='bold', labelpad=10)
+        ax.set_ylabel("First Mailed Tier", fontsize=14, fontweight='bold', labelpad=10)
+
+        # Summary stats
+        _improved = sum(_matrix[i][j] for i in range(len(_tiers)) for j in range(i + 1, len(_tiers)))
+        _declined = sum(_matrix[i][j] for i in range(len(_tiers)) for j in range(0, i))
+        _stayed = sum(_matrix[i][i] for i in range(len(_tiers)))
+
+        ax.set_title("Response Tier Movement: First Mailed → Latest",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                f"Above diagonal = improved ({_improved:,.0f})  |  "
+                f"Diagonal = no change ({_stayed:,.0f})  |  "
+                f"Below = declined ({_declined:,.0f})",
+                transform=ax.transAxes, fontsize=13,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()
+
+        print(f"\n    Movement summary ({len(_mailed):,} mailed accounts):")
+        print(f"      Improved (moved up ladder):  {_improved:,.0f} ({_improved/_total*100:.1f}%)")
+        print(f"      No change (stayed same):     {_stayed:,.0f} ({_stayed/_total*100:.1f}%)")
+        print(f"      Declined (moved down):       {_declined:,.0f} ({_declined/_total*100:.1f}%)")
