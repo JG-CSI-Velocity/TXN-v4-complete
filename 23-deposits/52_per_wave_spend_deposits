@@ -1,0 +1,91 @@
+# ===========================================================================
+# PER-WAVE RESPONDER PROFILE: Spend + Deposits by Wave (Conference Edition)
+# ===========================================================================
+# For each wave, shows responders' avg post-spend and avg deposit balance
+# side by side. Are recent wave responders different from earlier ones?
+# Only includes successful responders (NU 5+ and TH tiers).
+#
+# Depends on: wave_cohort_summary (23/50), GEN_COLORS
+
+if 'wave_cohort_summary' not in dir() or len(wave_cohort_summary) == 0:
+    print("    No wave cohort summary. Run cell 50 first.")
+else:
+    # Filter to success tiers only
+    _success_tiers = ['NU 5+', 'TH-10', 'TH-15', 'TH-20', 'TH-25']
+    _resp = wave_cohort_summary[wave_cohort_summary['tier'].isin(_success_tiers)]
+
+    if len(_resp) == 0:
+        print("    No successful responders in wave cohort summary.")
+    else:
+        # Aggregate across tiers per wave (all successes combined)
+        _wave_agg = _resp.groupby('wave').agg(
+            wave_date=('wave_date', 'first'),
+            n_responders=('n_accounts', 'sum'),
+            post_spend=('post_spend_3mo_mean', 'mean'),
+            spend_delta=('spend_delta', 'mean'),
+            mean_balance=('mean_balance', 'mean'),
+            mean_dep_amt=('mean_dep_amt', 'mean'),
+            mean_fees=('mean_fees', 'mean'),
+        ).sort_values('wave_date').reset_index()
+
+        _has_balance = 'mean_balance' in _wave_agg.columns and _wave_agg['mean_balance'].notna().any()
+        _has_spend = _wave_agg['post_spend'].notna().any()
+
+        if not _has_spend and not _has_balance:
+            print("    No spend or deposit data for responders.")
+        else:
+            fig, ax1 = plt.subplots(figsize=(16, 7))
+
+            _x = np.arange(len(_wave_agg))
+            _waves = _wave_agg['wave'].tolist()
+
+            # Spend bars
+            if _has_spend:
+                ax1.bar(_x, _wave_agg['post_spend'].fillna(0),
+                        color=GEN_COLORS['success'], edgecolor='white',
+                        linewidth=1.5, width=0.5, label='Avg Post Spend (3mo)', zorder=3)
+
+                for i, row in _wave_agg.iterrows():
+                    if pd.notna(row['post_spend']):
+                        ax1.text(i, row['post_spend'] * 1.02,
+                                f"{gen_fmt_dollar(row['post_spend'], None)}\n({int(row['n_responders']):,})",
+                                ha='center', va='bottom', fontsize=11, fontweight='bold',
+                                color=GEN_COLORS['dark_text'], linespacing=1.2)
+
+            ax1.set_ylabel("Avg Post-Wave Spend (3mo)", fontsize=16,
+                            fontweight='bold', labelpad=10)
+            ax1.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+
+            # Deposit balance overlay
+            if _has_balance:
+                ax2 = ax1.twinx()
+                ax2.plot(list(_x), _wave_agg['mean_balance'].values,
+                         color=GEN_COLORS['primary'], linewidth=3, marker='D',
+                         markersize=9, markeredgecolor='white', markeredgewidth=2,
+                         label='Avg Balance (Nearest Snapshot)', zorder=5)
+                ax2.set_ylabel("Avg Balance", fontsize=16, fontweight='bold',
+                                color=GEN_COLORS['primary'], labelpad=10)
+                ax2.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+                ax2.spines['top'].set_visible(False)
+                ax2.grid(False)
+                ax2.legend(fontsize=12, loc='upper right')
+
+            ax1.set_xticks(list(_x))
+            ax1.set_xticklabels(_waves, fontsize=12, fontweight='bold',
+                                rotation=45, ha='right')
+
+            gen_clean_axes(ax1)
+            ax1.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+            ax1.set_axisbelow(True)
+            ax1.legend(fontsize=12, loc='upper left')
+
+            ax1.set_title("Responder Profile by Mailing Wave",
+                          fontsize=26, fontweight='bold',
+                          color=GEN_COLORS['dark_text'], pad=35, loc='left')
+            ax1.text(0.0, 1.02,
+                    "Successful responders (NU 5+ & TH) -- are recent waves different from earlier?",
+                    transform=ax1.transAxes, fontsize=13,
+                    color=GEN_COLORS['muted'], style='italic')
+
+            plt.tight_layout()
+            plt.show()

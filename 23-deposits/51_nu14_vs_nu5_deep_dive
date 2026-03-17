@@ -1,0 +1,95 @@
+# ===========================================================================
+# NU 1-4 vs NU 5+: Same Target, Two Outcomes (Conference Edition)
+# ===========================================================================
+# Side-by-side comparison of NU 1-4 (failed to activate) vs NU 5+
+# (successfully activated) on every metric: spend, deposits, MTD items,
+# fees, balance. These are the SAME target group -- non-users who got
+# mailed. One crossed the threshold, one didn't. What's different?
+#
+# Depends on: wave_cohort_df (23/50), GEN_COLORS
+
+if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
+    print("    No wave cohort data. Run cell 50 first.")
+else:
+    _nu14 = wave_cohort_df[wave_cohort_df['tier'] == 'NU 1-4']
+    _nu5 = wave_cohort_df[wave_cohort_df['tier'] == 'NU 5+']
+
+    if len(_nu14) == 0 and len(_nu5) == 0:
+        print("    No NU accounts in wave cohort data.")
+    else:
+        _metrics = []
+
+        def _add_metric(label, col, nu14_data, nu5_data, fmt='dollar'):
+            if col in nu14_data.columns and col in nu5_data.columns:
+                _v14 = nu14_data[col].dropna()
+                _v5 = nu5_data[col].dropna()
+                if len(_v14) > 0 or len(_v5) > 0:
+                    _metrics.append({
+                        'metric': label,
+                        'nu14_mean': _v14.mean() if len(_v14) > 0 else 0,
+                        'nu5_mean': _v5.mean() if len(_v5) > 0 else 0,
+                        'nu14_median': _v14.median() if len(_v14) > 0 else 0,
+                        'nu5_median': _v5.median() if len(_v5) > 0 else 0,
+                        'fmt': fmt,
+                    })
+
+        _add_metric('Pre-Wave Spend (3mo avg)', 'pre_spend', _nu14, _nu5)
+        _add_metric('Post-Wave Spend (3mo avg)', 'post_spend_3mo', _nu14, _nu5)
+        _add_metric('Pre-Wave Swipes (3mo avg)', 'pre_swipes', _nu14, _nu5, fmt='number')
+        _add_metric('Post-Wave Swipes (3mo avg)', 'post_swipes_3mo', _nu14, _nu5, fmt='number')
+        _add_metric('Balance (Nearest Snapshot)', 'balance', _nu14, _nu5)
+        _add_metric('Deposits 365d', 'depAmt365', _nu14, _nu5)
+        _add_metric('Deposit Count 365d', 'depCount365', _nu14, _nu5, fmt='number')
+        _add_metric('Collected Fees 365d', 'CollectedFees365', _nu14, _nu5)
+        if 'pre_mtd' in _nu14.columns:
+            _add_metric('Pre-Wave MTD Items (3mo avg)', 'pre_mtd', _nu14, _nu5, fmt='number')
+            _add_metric('Post-Wave MTD Items (3mo avg)', 'post_mtd_3mo', _nu14, _nu5, fmt='number')
+
+        if len(_metrics) == 0:
+            print("    No metrics available for NU comparison.")
+        else:
+            _mdf = pd.DataFrame(_metrics)
+
+            fig, ax = plt.subplots(figsize=(16, max(7, len(_mdf) * 0.8)))
+
+            _y = np.arange(len(_mdf))
+            _h = 0.35
+
+            bars1 = ax.barh(_y - _h / 2, _mdf['nu14_mean'], _h,
+                            color=GEN_COLORS['warning'], edgecolor='white',
+                            linewidth=1, label=f"NU 1-4 ({len(_nu14):,} acct-waves)")
+            bars2 = ax.barh(_y + _h / 2, _mdf['nu5_mean'], _h,
+                            color=GEN_COLORS['info'], edgecolor='white',
+                            linewidth=1, label=f"NU 5+ ({len(_nu5):,} acct-waves)")
+
+            _max_val = max(_mdf['nu14_mean'].max(), _mdf['nu5_mean'].max())
+            for j, row in _mdf.iterrows():
+                for val, offset in [(row['nu14_mean'], -_h / 2), (row['nu5_mean'], _h / 2)]:
+                    if row['fmt'] == 'dollar':
+                        _lbl = gen_fmt_dollar(val, None)
+                    else:
+                        _lbl = f"{val:.1f}"
+                    ax.text(val + _max_val * 0.01, j + offset, _lbl,
+                            va='center', fontsize=11, fontweight='bold',
+                            color=GEN_COLORS['dark_text'])
+
+            ax.set_yticks(_y)
+            ax.set_yticklabels(_mdf['metric'], fontsize=12, fontweight='bold')
+            ax.set_xlabel("Value", fontsize=16, fontweight='bold', labelpad=10)
+
+            gen_clean_axes(ax)
+            ax.xaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+            ax.legend(fontsize=14, loc='lower right', frameon=True,
+                      facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+            ax.set_title("NU 1-4 vs NU 5+: Same Target, Two Outcomes",
+                          fontsize=26, fontweight='bold',
+                          color=GEN_COLORS['dark_text'], pad=35, loc='left')
+            ax.text(0.0, 1.01,
+                    "Both groups were non-users who got mailed -- what separates success from failure?",
+                    transform=ax.transAxes, fontsize=13,
+                    color=GEN_COLORS['muted'], style='italic')
+
+            plt.tight_layout()
+            plt.show()

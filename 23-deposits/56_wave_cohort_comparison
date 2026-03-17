@@ -1,0 +1,115 @@
+# ===========================================================================
+# WAVE COHORT COMPARISON: Early vs Late Responders (Conference Edition)
+# ===========================================================================
+# Compares responders from different time periods: are 2024 responders
+# different from 2025 responders? Groups waves into halves and compares
+# spend, deposits, and item metrics.
+#
+# Depends on: wave_cohort_df (23/50), GEN_COLORS
+
+if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
+    print("    No wave cohort data. Run cell 50 first.")
+else:
+    # Only successful responders
+    _success = wave_cohort_df[wave_cohort_df['is_success']].copy()
+
+    if len(_success) == 0:
+        print("    No successful responders in wave cohort data.")
+    else:
+        _waves_sorted = sorted(_success['wave'].unique(),
+                                key=lambda w: pd.to_datetime(w, format='%b%y'))
+        _mid = len(_waves_sorted) // 2
+
+        if _mid == 0:
+            print("    Not enough waves to split into early/late cohorts.")
+        else:
+            _early_waves = set(_waves_sorted[:_mid])
+            _late_waves = set(_waves_sorted[_mid:])
+
+            _early_label = f"{_waves_sorted[0]}-{_waves_sorted[_mid-1]}"
+            _late_label = f"{_waves_sorted[_mid]}-{_waves_sorted[-1]}"
+
+            _early = _success[_success['wave'].isin(_early_waves)]
+            _late = _success[_success['wave'].isin(_late_waves)]
+
+            print(f"  Early cohort ({_early_label}): {len(_early):,} responder-waves")
+            print(f"  Late cohort ({_late_label}):  {len(_late):,} responder-waves")
+
+            # Build comparison metrics
+            _metrics = []
+
+            def _add_comp(label, col, fmt='dollar'):
+                _ev = _early[col].dropna() if col in _early.columns else pd.Series(dtype=float)
+                _lv = _late[col].dropna() if col in _late.columns else pd.Series(dtype=float)
+                if len(_ev) > 0 or len(_lv) > 0:
+                    _em = _ev.mean() if len(_ev) > 0 else 0
+                    _lm = _lv.mean() if len(_lv) > 0 else 0
+                    _metrics.append({
+                        'metric': label,
+                        'early_mean': _em,
+                        'late_mean': _lm,
+                        'delta': _lm - _em,
+                        'pct_change': (_lm - _em) / _em * 100 if _em > 0 else 0,
+                        'fmt': fmt,
+                    })
+
+            _add_comp('Pre-Wave Spend', 'pre_spend')
+            _add_comp('Post-Wave Spend (3mo)', 'post_spend_3mo')
+            _add_comp('Spend Lift (post-pre)', 'post_spend_3mo')  # will compute below
+            _add_comp('Pre-Wave Swipes', 'pre_swipes', 'number')
+            _add_comp('Post-Wave Swipes (3mo)', 'post_swipes_3mo', 'number')
+            _add_comp('Balance', 'balance')
+            _add_comp('Deposits 365d', 'depAmt365')
+            _add_comp('Deposit Count 365d', 'depCount365', 'number')
+            _add_comp('Collected Fees', 'CollectedFees365')
+            if 'pre_mtd' in _early.columns:
+                _add_comp('Pre-Wave MTD Items', 'pre_mtd', 'number')
+                _add_comp('Post-Wave MTD Items', 'post_mtd_3mo', 'number')
+
+            if len(_metrics) == 0:
+                print("    No metrics for comparison.")
+            else:
+                _mdf = pd.DataFrame(_metrics)
+
+                fig, ax = plt.subplots(figsize=(16, max(7, len(_mdf) * 0.7)))
+
+                _y = np.arange(len(_mdf))
+                _h = 0.35
+
+                bars1 = ax.barh(_y - _h / 2, _mdf['early_mean'], _h,
+                                color=GEN_COLORS['info'], edgecolor='white',
+                                linewidth=1, label=f"Early ({_early_label})")
+                bars2 = ax.barh(_y + _h / 2, _mdf['late_mean'], _h,
+                                color=GEN_COLORS['success'], edgecolor='white',
+                                linewidth=1, label=f"Late ({_late_label})")
+
+                _max_v = max(_mdf['early_mean'].max(), _mdf['late_mean'].max())
+                for j, row in _mdf.iterrows():
+                    _pct = row['pct_change']
+                    _sign = '+' if _pct >= 0 else ''
+                    ax.text(_max_v * 1.02, j,
+                            f"{_sign}{_pct:.1f}%",
+                            va='center', fontsize=12, fontweight='bold',
+                            color=GEN_COLORS['success'] if _pct > 0 else GEN_COLORS['accent'])
+
+                ax.set_yticks(_y)
+                ax.set_yticklabels(_mdf['metric'], fontsize=12, fontweight='bold')
+                ax.set_xlim(0, _max_v * 1.2)
+
+                gen_clean_axes(ax)
+                ax.xaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+                ax.set_axisbelow(True)
+                ax.legend(fontsize=14, loc='lower right', frameon=True,
+                          facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+                ax.set_title("Early vs Late Wave Responders",
+                              fontsize=26, fontweight='bold',
+                              color=GEN_COLORS['dark_text'], pad=35, loc='left')
+                ax.text(0.0, 1.01,
+                        f"Are recent responders different from earlier ones?  |  "
+                        f"% change shown at right",
+                        transform=ax.transAxes, fontsize=13,
+                        color=GEN_COLORS['muted'], style='italic')
+
+                plt.tight_layout()
+                plt.show()
