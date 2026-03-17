@@ -1,13 +1,13 @@
 # ===========================================================================
 # RESPONSE RATE BY WAVE: Wave-Over-Wave Trend (Conference Edition)
 # ===========================================================================
-# Line chart: response rate per wave (% of mailed who hit NU 5+ or TH),
-# with NU 1-4 near-use rate as secondary line. Shows campaign momentum.
+# Line chart: response rate per wave with individual TH tier lines.
+# Excludes waves with no response data yet (zero responders = results pending).
 #
-# Depends on: response_journey_df (23/02), rewards_df, mail_cols, resp_cols
+# Depends on: rewards_df, mail_cols, resp_cols, GEN_COLORS
 
 if 'rewards_df' not in dir() or 'mail_cols' not in dir():
-    print("    No campaign data. Run 00-setup and 09-ars-campaign first.")
+    print("    No campaign data. Run cells 01-02 first.")
 else:
     _wave_pairs = list(zip(mail_cols, resp_cols))
     _rewards_cols = [c.strip() for c in rewards_df.columns]
@@ -27,8 +27,11 @@ else:
 
         _resp_vals = rewards_df[rc_s] if rc_s in _rewards_cols else pd.Series(dtype=str)
 
-        # Count each tier
-        _th_count = 0
+        # Count each tier individually
+        _th10 = 0
+        _th15 = 0
+        _th20 = 0
+        _th25 = 0
         _nu5_count = 0
         _nu14_count = 0
         _no_resp = 0
@@ -37,8 +40,14 @@ else:
                 _no_resp += 1
                 continue
             v = str(val).strip().upper()
-            if v.startswith('TH'):
-                _th_count += 1
+            if v.startswith('TH-25') or v == 'TH 25' or v == 'TH25':
+                _th25 += 1
+            elif v.startswith('TH-20') or v == 'TH 20' or v == 'TH20':
+                _th20 += 1
+            elif v.startswith('TH-15') or v == 'TH 15' or v == 'TH15':
+                _th15 += 1
+            elif v.startswith('TH-10') or v == 'TH 10' or v == 'TH10':
+                _th10 += 1
             elif v in ('NU 5+', 'NU5+', 'NU 5', 'NU 6', 'NU 7', 'NU 8', 'NU 9', 'NU 10'):
                 _nu5_count += 1
             elif v in ('NU 1-4', 'NU1-4'):
@@ -46,55 +55,90 @@ else:
             else:
                 _no_resp += 1
 
-        _success = _th_count + _nu5_count
+        _th_total = _th10 + _th15 + _th20 + _th25
+        _success = _th_total + _nu5_count
+        _any_response = _success + _nu14_count
+
         _wave_stats.append({
             'wave': _label,
             'mailed': _mailed,
-            'th_count': _th_count,
+            'th10': _th10,
+            'th15': _th15,
+            'th20': _th20,
+            'th25': _th25,
+            'th_total': _th_total,
             'nu5_count': _nu5_count,
             'nu14_count': _nu14_count,
             'success_count': _success,
+            'any_response': _any_response,
             'success_rate': _success / _mailed * 100,
             'nu14_rate': _nu14_count / _mailed * 100,
-            'th_rate': _th_count / _mailed * 100,
             'nu5_rate': _nu5_count / _mailed * 100,
+            'th10_rate': _th10 / _mailed * 100,
+            'th15_rate': _th15 / _mailed * 100,
+            'th20_rate': _th20 / _mailed * 100,
+            'th25_rate': _th25 / _mailed * 100,
         })
 
     _wave_df = pd.DataFrame(_wave_stats)
 
-    # Sort chronologically by parsing wave label (e.g., "Apr23" -> datetime)
+    # Sort chronologically
     if len(_wave_df) > 0:
         _wave_df['_sort'] = _wave_df['wave'].apply(
             lambda w: pd.to_datetime(w, format='%b%y'))
         _wave_df = _wave_df.sort_values('_sort').drop(columns='_sort').reset_index(drop=True)
 
+    # Drop waves with no response data yet (results pending)
+    if len(_wave_df) > 0:
+        _before = len(_wave_df)
+        _wave_df = _wave_df[_wave_df['any_response'] > 0].reset_index(drop=True)
+        _dropped = _before - len(_wave_df)
+        if _dropped > 0:
+            print(f"    Excluded {_dropped} wave(s) with no response data yet (results pending)")
+
     if len(_wave_df) == 0:
         print("    No wave statistics computed.")
     else:
-        fig, ax = plt.subplots(figsize=(14, 7))
+        fig, ax = plt.subplots(figsize=(16, 7))
 
         _x = range(len(_wave_df))
 
-        # Success rate (NU 5+ and TH combined)
+        # Success rate (NU 5+ and all TH combined)
         ax.plot(list(_x), _wave_df['success_rate'],
                 color=GEN_COLORS['success'], linewidth=3, marker='o',
                 markersize=10, markeredgecolor='white', markeredgewidth=2,
-                label='Success Rate (NU 5+ & TH)', zorder=5)
+                label='Total Success (NU 5+ & TH)', zorder=6)
 
         # NU 1-4 near-use rate
         ax.plot(list(_x), _wave_df['nu14_rate'],
                 color=GEN_COLORS['warning'], linewidth=2.5, marker='s',
                 markersize=8, markeredgecolor='white', markeredgewidth=1.5,
-                label='NU 1-4 Rate (Near Use)', zorder=4)
+                label='NU 1-4 (Near Use)', zorder=5)
 
-        # TH-only rate
-        ax.plot(list(_x), _wave_df['th_rate'],
-                color=GEN_COLORS['primary'], linewidth=2, marker='D',
+        # NU 5+ rate
+        ax.plot(list(_x), _wave_df['nu5_rate'],
+                color=GEN_COLORS['info'], linewidth=2, marker='^',
                 markersize=7, markeredgecolor='white', markeredgewidth=1.5,
-                linestyle='--', alpha=0.8,
-                label='Threshold Rate (TH Only)', zorder=3)
+                label='NU 5+', zorder=4)
 
-        # Annotate last points
+        # Individual TH rates
+        _th_configs = [
+            ('th10_rate', 'TH-10', '#2EC4B6', 'v'),
+            ('th15_rate', 'TH-15', '#20A39E', 'D'),
+            ('th20_rate', 'TH-20', '#1B8A7A', 'p'),
+            ('th25_rate', 'TH-25', GEN_COLORS['primary'], 'h'),
+        ]
+
+        for col, label, color, marker in _th_configs:
+            # Only plot if this tier has any data
+            if _wave_df[col].sum() > 0:
+                ax.plot(list(_x), _wave_df[col],
+                        color=color, linewidth=1.8, marker=marker,
+                        markersize=7, markeredgecolor='white', markeredgewidth=1,
+                        linestyle='--', alpha=0.85,
+                        label=label, zorder=3)
+
+        # Annotate last points for main lines
         for col, color in [('success_rate', GEN_COLORS['success']),
                            ('nu14_rate', GEN_COLORS['warning'])]:
             _val = _wave_df[col].iloc[-1]
@@ -111,14 +155,14 @@ else:
         gen_clean_axes(ax)
         ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
         ax.set_axisbelow(True)
-        ax.legend(fontsize=13, loc='upper right', frameon=True,
+        ax.legend(fontsize=11, loc='upper right', frameon=True, ncol=2,
                   facecolor='white', edgecolor=GEN_COLORS['grid'])
 
         ax.set_title("ARS Response Rate by Mailing Wave",
                       fontsize=26, fontweight='bold',
                       color=GEN_COLORS['dark_text'], pad=35, loc='left')
         ax.text(0.0, 1.02,
-                "Is campaign effectiveness improving or declining over time?",
+                "Waves with pending results excluded  |  TH broken out by challenge level",
                 transform=ax.transAxes, fontsize=14,
                 color=GEN_COLORS['muted'], style='italic')
 
