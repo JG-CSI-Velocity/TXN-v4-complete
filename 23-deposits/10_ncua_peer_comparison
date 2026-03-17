@@ -9,7 +9,7 @@
 if 'ncua_df' not in dir() or len(ncua_df) < 2:
     print("    Need at least 2 quarters of NCUA data for comparison.")
 elif 'ncua_peer_summary' not in dir() or len(ncua_peer_summary) == 0:
-    print("    No peer summary data. Run cell 23 first.")
+    print("    No peer summary data. Run cell 04 (ncua_benchmark_data) first.")
 else:
     # Calculate growth rates for USF FCU
     _quarters = ncua_df['quarter_label'].tolist()

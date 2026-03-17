@@ -7,7 +7,7 @@
 # Depends on: monthly_by_group (23/39), GEN_COLORS
 
 if 'monthly_by_group' not in dir() or len(monthly_by_group) == 0:
-    print("    No monthly data. Run cell 39 first.")
+    print("    No monthly data. Run cell 03 (spend_deposit_timeline_data) first.")
 elif 'active_pct' not in monthly_by_group.columns:
     print("    No active_pct in monthly data.")
 else:

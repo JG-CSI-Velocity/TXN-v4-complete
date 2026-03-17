@@ -8,7 +8,7 @@
 # Depends on: fred_df (23/23), GEN_COLORS
 
 if 'fred_df' not in dir() or len(fred_df) == 0:
-    print("    No FRED data. Run cell 23 first.")
+    print("    No FRED data. Run cell 04 (ncua_benchmark_data) first.")
 else:
     _series_map = {
         'FLUR':          {'title': 'Florida Unemployment Rate', 'fmt': gen_fmt_pct, 'color': GEN_COLORS['accent']},

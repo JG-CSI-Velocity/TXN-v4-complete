@@ -7,7 +7,7 @@
 # Depends on: wave_spend_impact (23/39), GEN_COLORS
 
 if 'wave_spend_impact' not in dir() or len(wave_spend_impact) == 0:
-    print("    No wave spend impact data. Run cell 39 first.")
+    print("    No wave spend impact data. Run cell 03 (spend_deposit_timeline_data) first.")
 else:
     fig, ax = plt.subplots(figsize=(16, 7))
 

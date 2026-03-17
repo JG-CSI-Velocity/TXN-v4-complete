@@ -6,7 +6,7 @@
 # Depends on: ncua_df (23/23), GEN_COLORS
 
 if 'ncua_df' not in dir() or len(ncua_df) == 0:
-    print("    No NCUA data. Run cell 23 first.")
+    print("    No NCUA data. Run cell 04 (ncua_benchmark_data) first.")
 elif 'net_worth_pct' not in ncua_df.columns:
     print("    No net_worth_pct in NCUA data.")
 else:

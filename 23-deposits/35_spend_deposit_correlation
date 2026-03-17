@@ -8,7 +8,7 @@
 # Depends on: spend_deposit_aligned (23/39), GEN_COLORS
 
 if 'spend_deposit_aligned' not in dir() or len(spend_deposit_aligned) == 0:
-    print("    No spend-deposit aligned data. Run cell 39 first.")
+    print("    No spend-deposit aligned data. Run cell 03 (spend_deposit_timeline_data) first.")
 else:
     _snap_order = [s for s in SNAPSHOT_ORDER if s in spend_deposit_aligned['snapshot'].values]
 
