@@ -80,10 +80,10 @@ if 'wave_cohort_df' in dir() and 'has_direct_deposit' in wave_cohort_df.columns:
 if 'wave_cohort_df' in dir() and 'segment' in wave_cohort_df.columns:
     _nu = wave_cohort_df[wave_cohort_df['segment'] == 'NU']
     if len(_nu) > 0:
-        _nu_best = _nu.sort_values(
-            _nu['outcome'].map({'Responder': 3, 'Near Miss': 2, 'Non-Responder': 1}).fillna(0),
-            ascending=False
-        ).drop_duplicates(subset='acct_number', keep='first')
+        _nu['_outcome_rank'] = _nu['outcome'].map({'Responder': 3, 'Near Miss': 2, 'Non-Responder': 1}).fillna(0)
+        _nu_best = _nu.sort_values('_outcome_rank', ascending=False).drop_duplicates(
+            subset='acct_number', keep='first'
+        )
         _nu_total = len(_nu_best)
         _nu_hit = len(_nu_best[_nu_best['outcome'] == 'Responder'])
         _nu_rate = _nu_hit / _nu_total * 100 if _nu_total > 0 else 0
