@@ -1,20 +1,22 @@
 # ===========================================================================
-# PORTFOLIO KPIs BY RESPONSE FREQUENCY (Conference Edition)
+# PORTFOLIO KPIs BY SEGMENT x RESPONSE FREQUENCY (Conference Edition)
 # ===========================================================================
-# Compares key deposit/spend metrics across response groups:
-# Never Responded, Responded Once, Responded 2+. Never Mailed as reference.
+# Within-segment comparison: for each segment, how do Never Responded,
+# Responded Once, and Responded 2+ accounts differ on deposits and spend?
 #
-# Depends on: wave_cohort_df (23/11), never_mailed_profile (23/11), GEN_COLORS
+# Same-challenge principle: NU vs NU, TH-10 vs TH-10. Never across.
+#
+# Depends on: wave_cohort_df (23/11), SEGMENT_ORDER (23/11), GEN_COLORS
 
 if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
     print("    No cohort data. Run cell 11 first.")
 else:
     from IPython.display import display
 
-    _cohort = wave_cohort_df.copy()
+    _cohort = wave_cohort_df.rename(columns={'wave': 'mailer'})
 
     # -----------------------------------------------------------------
-    # Build response frequency per unique account
+    # Response frequency + primary segment per account
     # -----------------------------------------------------------------
     _resp_per_acct = (
         _cohort[_cohort['outcome'] == 'Responder']
@@ -33,7 +35,14 @@ else:
         else 'Responded 2+'
     )
 
-    # Take latest row per account (most recent mailer data)
+    # Primary segment = first mailed assignment (where they started)
+    _first_seg = (
+        _cohort.sort_values('wave_date')
+        .groupby('acct_number')['segment']
+        .first()
+    )
+
+    # Latest data per account (most recent mailer row)
     _acct = (
         _cohort.sort_values('wave_date')
         .groupby('acct_number')
@@ -41,8 +50,9 @@ else:
         .reset_index()
     )
     _acct['resp_group'] = _acct['acct_number'].map(_resp_groups)
+    _acct['primary_segment'] = _acct['acct_number'].map(_first_seg)
 
-    # Discover snapshot balance/deposit columns and average across them
+    # Average deposit metrics across available snapshots
     _balance_cols = sorted(
         [c for c in _cohort.columns
          if c.endswith('_balance') and not c.startswith('delta')],
@@ -60,48 +70,43 @@ else:
         _acct['avg_dep365'] = _acct[_dep365_cols].mean(axis=1)
 
     # -----------------------------------------------------------------
-    # Compute group-level KPIs
+    # Compute segment x response group KPIs
     # -----------------------------------------------------------------
     _GROUP_ORDER = ['Never Responded', 'Responded Once', 'Responded 2+']
+    _GROUP_SHORT = {
+        'Never Responded': 'Never Resp',
+        'Responded Once': 'Resp 1x',
+        'Responded 2+': 'Resp 2+',
+    }
     _kpi_rows = []
 
-    for grp in _GROUP_ORDER:
-        _g = _acct[_acct['resp_group'] == grp]
-        if len(_g) == 0:
-            continue
-        _row = {'Group': grp, 'Accounts': len(_g)}
+    for seg in SEGMENT_ORDER:
+        for grp in _GROUP_ORDER:
+            _g = _acct[
+                (_acct['primary_segment'] == seg) & (_acct['resp_group'] == grp)
+            ]
+            if len(_g) == 0:
+                continue
+            _row = {'Segment': seg, 'Group': grp, 'N': len(_g)}
 
-        if 'avg_balance' in _g.columns:
-            _row['Avg Balance'] = _g['avg_balance'].mean()
-        if 'pre_spend' in _g.columns:
-            _row['Avg Monthly Spend'] = _g['pre_spend'].mean()
-        if 'post_spend_3mo' in _g.columns:
-            _row['Avg Post Spend'] = _g['post_spend_3mo'].mean()
-        if 'avg_dep365' in _g.columns:
-            _row['Avg Dep Amt (365d)'] = _g['avg_dep365'].mean()
-        if 'pre_mtd' in _g.columns:
-            _row['Avg MTD Items'] = _g['pre_mtd'].mean()
-        if 'spend_delta' in _g.columns:
-            _row['Spend Delta'] = _g['spend_delta'].mean()
+            if 'avg_balance' in _g.columns:
+                _row['Avg Balance'] = _g['avg_balance'].mean()
+            if 'pre_spend' in _g.columns:
+                _row['Avg Monthly Spend'] = _g['pre_spend'].mean()
+            if 'avg_dep365' in _g.columns:
+                _row['Avg Dep Amt (365d)'] = _g['avg_dep365'].mean()
+            if 'pre_mtd' in _g.columns:
+                _row['Avg MTD Items'] = _g['pre_mtd'].mean()
+            if 'spend_delta' in _g.columns:
+                _row['Spend Delta'] = _g['spend_delta'].mean()
 
-        _kpi_rows.append(_row)
-
-    # Never Mailed reference row
-    if 'never_mailed_profile' in dir() and never_mailed_profile:
-        _nm = {'Group': 'Never Mailed (ref)'}
-        _nm['Accounts'] = never_mailed_profile.get('n_accounts', 0)
-        if 'balance_mean' in never_mailed_profile:
-            _nm['Avg Balance'] = never_mailed_profile['balance_mean']
-        if 'avg_monthly_spend' in never_mailed_profile:
-            _nm['Avg Monthly Spend'] = never_mailed_profile['avg_monthly_spend']
-        if 'depAmt365_mean' in never_mailed_profile:
-            _nm['Avg Dep Amt (365d)'] = never_mailed_profile['depAmt365_mean']
-        _kpi_rows.append(_nm)
+            _kpi_rows.append(_row)
 
     _kpi_df = pd.DataFrame(_kpi_rows)
+    _active_segs = [s for s in SEGMENT_ORDER if s in _kpi_df['Segment'].values]
 
     # -----------------------------------------------------------------
-    # Chart: 2x2 panel -- key metrics by response frequency
+    # Chart: Faceted bar -- avg balance by response group within segment
     # -----------------------------------------------------------------
     _group_colors = {
         'Never Responded': GEN_COLORS['muted'],
@@ -109,103 +114,120 @@ else:
         'Responded 2+':    GEN_COLORS['success'],
     }
 
-    _chart_groups = [g for g in _GROUP_ORDER if g in _kpi_df['Group'].values]
+    _metric_col = ('Avg Balance' if 'Avg Balance' in _kpi_df.columns
+                    else 'Avg Monthly Spend' if 'Avg Monthly Spend' in _kpi_df.columns
+                    else None)
 
-    _metric_panels = []
-    if 'Avg Balance' in _kpi_df.columns:
-        _metric_panels.append(('Avg Balance', 'Avg Deposit Balance', gen_fmt_dollar))
-    if 'Avg Monthly Spend' in _kpi_df.columns:
-        _metric_panels.append(('Avg Monthly Spend', 'Avg Monthly Spend', gen_fmt_dollar))
-    if 'Avg Dep Amt (365d)' in _kpi_df.columns:
-        _metric_panels.append(('Avg Dep Amt (365d)', 'Deposit Volume (365d)', gen_fmt_dollar))
-    if 'Avg MTD Items' in _kpi_df.columns:
-        _metric_panels.append(('Avg MTD Items', 'Avg MTD Items', gen_fmt_count))
+    if _metric_col and len(_active_segs) > 0:
+        _n_panels = len(_active_segs)
+        _cols_chart = min(_n_panels, 5)
+        _rows_chart = (_n_panels + _cols_chart - 1) // _cols_chart
 
-    _n_panels = min(len(_metric_panels), 4)
-    if _n_panels > 0:
-        _rows_chart = 1 if _n_panels <= 2 else 2
-        _cols_chart = min(_n_panels, 2)
         fig, axes = plt.subplots(_rows_chart, _cols_chart,
-                                  figsize=(8 * _cols_chart, 5 * _rows_chart))
+                                  figsize=(4 * _cols_chart, 5 * _rows_chart))
         if _n_panels == 1:
-            axes = [axes]
-        else:
-            axes = axes.flat if hasattr(axes, 'flat') else [axes]
+            axes = np.array([axes])
+        axes_flat = axes.flat if hasattr(axes, 'flat') else [axes]
 
-        _x = np.arange(len(_chart_groups))
+        for ax, seg in zip(axes_flat, _active_segs):
+            _seg_data = _kpi_df[_kpi_df['Segment'] == seg]
+            _groups = [g for g in _GROUP_ORDER
+                       if g in _seg_data['Group'].values]
+            if not _groups:
+                ax.axis('off')
+                continue
 
-        for ax, (col, title, fmt_fn) in zip(axes, _metric_panels[:_n_panels]):
+            _x = np.arange(len(_groups))
             _vals = []
             _colors = []
-            for g in _chart_groups:
-                _gdata = _kpi_df[_kpi_df['Group'] == g]
-                _v = _gdata[col].iloc[0] if len(_gdata) > 0 and col in _gdata.columns and pd.notna(_gdata[col].iloc[0]) else 0
+            for g in _groups:
+                _gd = _seg_data[_seg_data['Group'] == g]
+                _v = (_gd[_metric_col].iloc[0]
+                      if len(_gd) > 0 and pd.notna(_gd[_metric_col].iloc[0])
+                      else 0)
                 _vals.append(_v)
                 _colors.append(_group_colors.get(g, GEN_COLORS['muted']))
 
-            bars = ax.bar(_x, _vals, color=_colors,
-                          edgecolor='white', linewidth=1.5, width=0.55, zorder=3)
+            bars = ax.bar(_x, _vals, color=_colors, edgecolor='white',
+                          linewidth=1.5, width=0.55, zorder=3)
 
+            _max_val = max(_vals) if _vals else 1
             for bar, val in zip(bars, _vals):
                 if val > 0:
                     ax.text(bar.get_x() + bar.get_width() / 2,
-                            bar.get_height() + ax.get_ylim()[1] * 0.01,
-                            fmt_fn(val, None),
-                            ha='center', va='bottom', fontsize=13, fontweight='bold',
-                            color=GEN_COLORS['dark_text'])
+                            bar.get_height() + _max_val * 0.02,
+                            gen_fmt_dollar(val, None),
+                            ha='center', va='bottom', fontsize=11,
+                            fontweight='bold', color=GEN_COLORS['dark_text'])
 
             ax.set_xticks(_x)
-            ax.set_xticklabels(_chart_groups, fontsize=11, fontweight='bold')
-            ax.set_title(title, fontsize=16, fontweight='bold',
-                          color=GEN_COLORS['dark_text'], pad=10)
+            ax.set_xticklabels(
+                [_GROUP_SHORT.get(g, g) for g in _groups],
+                fontsize=9, fontweight='bold'
+            )
+            ax.set_title(seg, fontsize=16, fontweight='bold',
+                          color=GEN_COLORS['dark_text'], pad=8)
             gen_clean_axes(ax)
-            ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+            ax.yaxis.grid(True, color=GEN_COLORS['grid'],
+                           linewidth=0.5, alpha=0.7)
             ax.set_axisbelow(True)
-            ax.yaxis.set_major_formatter(mticker.FuncFormatter(fmt_fn))
-
-            _ylim = ax.get_ylim()
-            ax.set_ylim(0, max(_vals) * 1.2 if max(_vals) > 0 else 1)
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+            ax.set_ylim(0, _max_val * 1.25 if _max_val > 0 else 1)
 
         # Turn off unused axes
-        for ax in list(axes)[_n_panels:]:
+        for ax in list(axes_flat)[_n_panels:]:
             ax.axis('off')
 
-        fig.suptitle("Portfolio KPIs by Response Frequency",
-                      fontsize=26, fontweight='bold',
-                      color=GEN_COLORS['dark_text'], x=0.02, ha='left', y=1.02)
+        _metric_label = ('Avg Deposit Balance' if _metric_col == 'Avg Balance'
+                          else _metric_col)
+        fig.suptitle(f"{_metric_label} by Response Frequency Within Segment",
+                      fontsize=22, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], x=0.02, ha='left', y=1.03)
+        fig.text(0.02, 1.00,
+                 "Same segment, different outcomes -- gray = never responded, "
+                 "blue = once, teal = 2+",
+                 fontsize=12, color=GEN_COLORS['muted'], style='italic')
 
         plt.tight_layout()
         plt.show()
 
     # -----------------------------------------------------------------
-    # Styled table: full KPI comparison
+    # Styled table: segment x response group
     # -----------------------------------------------------------------
     _display_cols = [c for c in _kpi_df.columns if _kpi_df[c].notna().any()]
     _display_df = _kpi_df[_display_cols].copy()
 
-    _last_idx = len(_display_df) - 1
-    _has_nm = 'Never Mailed (ref)' in _display_df['Group'].values
+    # Identify first row of each segment for visual separator
+    _seg_first_rows = set()
+    _prev_seg = None
+    for i, row in _display_df.iterrows():
+        if row['Segment'] != _prev_seg and _prev_seg is not None:
+            _seg_first_rows.add(i)
+        _prev_seg = row['Segment']
 
     def _style_rows(row):
-        if _has_nm and row.name == _last_idx:
-            return ['font-style: italic; border-top: 2px solid #1B2A4A; '
-                    'color: #6C757D'] * len(row)
-        return [''] * len(row)
+        grp = row.get('Group', '')
+        if grp == 'Responded 2+':
+            base = 'background-color: rgba(46, 196, 182, 0.12)'
+        elif grp == 'Responded Once':
+            base = 'background-color: rgba(69, 123, 157, 0.08)'
+        else:
+            base = ''
+        sep = '; border-top: 2px solid #1B2A4A' if row.name in _seg_first_rows else ''
+        return [base + sep] * len(row)
 
-    _fmt = {}
-    if 'Accounts' in _display_cols:
-        _fmt['Accounts'] = '{:,.0f}'
-    for col in ['Avg Balance', 'Avg Monthly Spend', 'Avg Post Spend',
-                'Avg Dep Amt (365d)']:
+    _fmt = {'N': '{:,.0f}'}
+    for col in ['Avg Balance', 'Avg Monthly Spend', 'Avg Dep Amt (365d)']:
         if col in _display_cols:
             _fmt[col] = '${:,.0f}'
     if 'Avg MTD Items' in _display_cols:
         _fmt['Avg MTD Items'] = '{:,.1f}'
     if 'Spend Delta' in _display_cols:
-        _fmt['Spend Delta'] = lambda v: (f"+${v:,.0f}" if pd.notna(v) and v > 0
-                                          else f"-${abs(v):,.0f}" if pd.notna(v) and v < 0
-                                          else '--' if pd.isna(v)
-                                          else '$0')
+        _fmt['Spend Delta'] = (
+            lambda v: f"+${v:,.0f}" if pd.notna(v) and v > 0
+            else f"-${abs(v):,.0f}" if pd.notna(v) and v < 0
+            else '--' if pd.isna(v) else '$0'
+        )
 
     _styled = (
         _display_df.style
@@ -213,19 +235,22 @@ else:
         .format(_fmt, na_rep='--')
         .apply(_style_rows, axis=1)
         .set_properties(**{
-            'font-size': '14px', 'font-weight': 'bold',
+            'font-size': '13px', 'font-weight': 'bold',
             'text-align': 'center', 'border': '1px solid #E9ECEF',
-            'padding': '10px 12px',
+            'padding': '8px 10px',
+        })
+        .set_properties(subset=['Segment'], **{
+            'text-align': 'left', 'color': GEN_COLORS['primary'],
         })
         .set_properties(subset=['Group'], **{
-            'text-align': 'left', 'color': GEN_COLORS['primary'],
+            'text-align': 'left',
         })
         .set_table_styles([
             {'selector': 'th', 'props': [
                 ('background-color', GEN_COLORS['primary']),
-                ('color', 'white'), ('font-size', '14px'),
+                ('color', 'white'), ('font-size', '13px'),
                 ('font-weight', 'bold'), ('text-align', 'center'),
-                ('padding', '10px 12px'),
+                ('padding', '8px 10px'),
             ]},
             {'selector': 'caption', 'props': [
                 ('font-size', '22px'), ('font-weight', 'bold'),
@@ -233,34 +258,46 @@ else:
                 ('text-align', 'left'), ('padding-bottom', '12px'),
             ]},
         ])
-        .set_caption("Portfolio KPIs by Response Frequency")
+        .set_caption("Portfolio KPIs: Within-Segment Response Comparison")
     )
     display(_styled)
 
     # -----------------------------------------------------------------
-    # Narrative
+    # Narrative: per-segment lift stories
     # -----------------------------------------------------------------
-    _mailed_groups = _kpi_df[_kpi_df['Group'] != 'Never Mailed (ref)']
-    if len(_mailed_groups) >= 2:
-        _nr = _mailed_groups[_mailed_groups['Group'] == 'Never Responded']
-        _r2 = _mailed_groups[_mailed_groups['Group'] == 'Responded 2+']
+    print(f"\n  Within-segment lift stories:")
+    for seg in _active_segs:
+        _seg_data = _kpi_df[_kpi_df['Segment'] == seg]
+        _nr = _seg_data[_seg_data['Group'] == 'Never Responded']
+        _r2 = _seg_data[_seg_data['Group'] == 'Responded 2+']
+        _r1 = _seg_data[_seg_data['Group'] == 'Responded Once']
 
-        print(f"\n  Response frequency breakdown:")
-        for _, row in _mailed_groups.iterrows():
-            print(f"    {row['Group']:<20s}: {int(row['Accounts']):>6,} accounts")
+        # Use best responding group available
+        _best = _r2 if len(_r2) > 0 else _r1
+        _best_label = 'Resp 2+' if len(_r2) > 0 else 'Resp 1x'
 
-        if len(_nr) > 0 and len(_r2) > 0 and 'Avg Balance' in _kpi_df.columns:
+        if len(_nr) == 0 or len(_best) == 0:
+            continue
+
+        _parts = [f"    {seg}:"]
+
+        if 'Avg Balance' in _kpi_df.columns:
             _nr_bal = _nr['Avg Balance'].iloc[0]
-            _r2_bal = _r2['Avg Balance'].iloc[0]
-            if _nr_bal > 0:
-                _lift = (_r2_bal - _nr_bal) / _nr_bal * 100
-                print(f"\n    Responded 2+ carry ${_r2_bal:,.0f} avg balance vs "
-                      f"${_nr_bal:,.0f} for Never Responded ({_lift:+.1f}%)")
+            _best_bal = _best['Avg Balance'].iloc[0]
+            if pd.notna(_nr_bal) and pd.notna(_best_bal) and _nr_bal > 0:
+                _lift = (_best_bal - _nr_bal) / _nr_bal * 100
+                _parts.append(
+                    f"balance ${_best_bal:,.0f} vs ${_nr_bal:,.0f} ({_lift:+.0f}%)"
+                )
 
-        if len(_nr) > 0 and len(_r2) > 0 and 'Avg Monthly Spend' in _kpi_df.columns:
+        if 'Avg Monthly Spend' in _kpi_df.columns:
             _nr_sp = _nr['Avg Monthly Spend'].iloc[0]
-            _r2_sp = _r2['Avg Monthly Spend'].iloc[0]
-            if _nr_sp > 0:
-                _sp_lift = (_r2_sp - _nr_sp) / _nr_sp * 100
-                print(f"    Responded 2+ spend ${_r2_sp:,.0f}/mo avg vs "
-                      f"${_nr_sp:,.0f} for Never Responded ({_sp_lift:+.1f}%)")
+            _best_sp = _best['Avg Monthly Spend'].iloc[0]
+            if pd.notna(_nr_sp) and pd.notna(_best_sp) and _nr_sp > 0:
+                _sp_lift = (_best_sp - _nr_sp) / _nr_sp * 100
+                _parts.append(
+                    f"spend ${_best_sp:,.0f}/mo vs ${_nr_sp:,.0f} ({_sp_lift:+.0f}%)"
+                )
+
+        if len(_parts) > 1:
+            print(f"{_parts[0]} {_best_label} -- {', '.join(_parts[1:])}")
