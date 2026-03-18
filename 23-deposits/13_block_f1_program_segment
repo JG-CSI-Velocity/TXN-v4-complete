@@ -74,7 +74,7 @@ else:
         .set_properties(subset=['Segment'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
         .set_table_styles([
             {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
-                ('color', 'white'), ('font-size': '14px'), ('font-weight', 'bold'),
+                ('color', 'white'), ('font-size', '14px'), ('font-weight', 'bold'),
                 ('text-align', 'center'), ('padding', '10px 12px')]},
             {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
                 ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},

@@ -61,7 +61,7 @@ else:
                 'text-align': 'left', 'color': GEN_COLORS['primary']})
             .set_table_styles([
                 {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
-                    ('color', 'white'), ('font-size': '10px'), ('font-weight', 'bold'),
+                    ('color', 'white'), ('font-size', '10px'), ('font-weight', 'bold'),
                     ('text-align', 'center'), ('padding', '5px 7px')]},
                 {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
                     ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),

@@ -72,7 +72,7 @@ else:
         .set_properties(subset=['Group'], **{'text-align': 'left'})
         .set_table_styles([
             {'selector': 'th', 'props': [('background-color', GEN_COLORS['success']),
-                ('color', 'white'), ('font-size': '12px'), ('font-weight', 'bold'),
+                ('color', 'white'), ('font-size', '12px'), ('font-weight', 'bold'),
                 ('text-align', 'center'), ('padding', '7px 10px')]},
             {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
                 ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
