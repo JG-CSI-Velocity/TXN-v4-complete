@@ -1,0 +1,326 @@
+# ===========================================================================
+# DEPOSIT VELOCITY: 33/66/99/365-Day Windows Across Snapshots
+# ===========================================================================
+# Four views of deposit velocity from Z5 data:
+#   1. Velocity table -- daily deposit rate at each window
+#   2. Acceleration ratio -- 33d rate / 99d rate (>1 = accelerating)
+#   3. Trend across snapshots -- same window, different snapshots
+#   4. Recency heatmap -- snapshots x windows
+#
+# Groups: Total Open, Responder, Non-Responder
+#
+# Depends on: rewards_df, deposit_long, _group (cell 13),
+#             DEPOSIT_JOIN_KEY_ODDD, DEPOSIT_JOIN_KEY_DEPOSIT,
+#             SNAPSHOT_ORDER, SNAPSHOT_CONFIG, GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+elif 'deposit_long' not in dir() or len(deposit_long) == 0:
+    print("    deposit_long not available. Run cell 01.")
+elif 'DEPOSIT_JOIN_KEY_ODDD' not in dir():
+    print("    Join keys not established. Run cell 01.")
+elif '_acct' not in dir() or 'group' not in _acct.columns:
+    print("    Run cell 13 first.")
+else:
+    from IPython.display import display
+
+    _WINDOWS = [
+        ('33d', 'DepAmt33', 'DepCount33', 33),
+        ('66d', 'DepAmt66', 'DepCount66', 66),
+        ('99d', 'DepAmt99', 'DepCount99', 99),
+        ('365d', 'depAmt365', 'depCount365', 365),
+    ]
+    _GROUPS = ['Total Open', 'Responder', 'Non-Responder']
+    _GROUP_COLORS = {
+        'Total Open': GEN_COLORS['primary'],
+        'Responder': GEN_COLORS['success'],
+        'Non-Responder': GEN_COLORS['muted'],
+    }
+
+    # Build join key from rewards_df
+    _jk = rewards_df[DEPOSIT_JOIN_KEY_ODDD].astype(str).str.strip()
+
+    # Group masks on rewards_df index
+    _group_masks = {
+        'Total Open': pd.Series(True, index=rewards_df.index),
+        'Responder': _acct['group'].reindex(rewards_df.index) == 'Responder',
+        'Non-Responder': _acct['group'].reindex(rewards_df.index) == 'Non-Responder',
+    }
+    # Fill NaN masks with False
+    for g in _group_masks:
+        _group_masks[g] = _group_masks[g].fillna(False)
+
+    # Snapshot config
+    _snap_dates = {}
+    _snap_labels = {}
+    if 'SNAPSHOT_CONFIG' in dir():
+        for sk in SNAPSHOT_ORDER:
+            cfg = SNAPSHOT_CONFIG[sk]
+            _snap_labels[sk] = cfg.get('label', sk)
+            try:
+                _snap_dates[sk] = pd.to_datetime(cfg['label'], format='%b %Y')
+            except (ValueError, KeyError):
+                if 'sort_key' in cfg:
+                    _snap_dates[sk] = pd.Timestamp(
+                        year=cfg['sort_key'] // 100,
+                        month=cfg['sort_key'] % 100, day=1)
+
+    # -----------------------------------------------------------------
+    # Pull deposit data for each snapshot x group
+    # -----------------------------------------------------------------
+    _velocity_data = {}  # (snapshot, group) -> {window_label: daily_rate_amt, ...}
+
+    for sk in SNAPSHOT_ORDER:
+        _snap = deposit_long[deposit_long['snapshot'] == sk].copy()
+        if DEPOSIT_JOIN_KEY_DEPOSIT not in _snap.columns:
+            continue
+        _snap['_jk'] = _snap[DEPOSIT_JOIN_KEY_DEPOSIT].astype(str).str.strip()
+        _snap = _snap.drop_duplicates(subset='_jk').set_index('_jk')
+
+        for grp in _GROUPS:
+            _mask = _group_masks[grp]
+            _grp_keys = set(_jk[_mask])
+            _matched = _snap[_snap.index.isin(_grp_keys)]
+
+            if len(_matched) == 0:
+                continue
+
+            _vel = {'n': len(_matched)}
+            for wlabel, amt_col, cnt_col, days in _WINDOWS:
+                if amt_col in _matched.columns:
+                    _vel[f'{wlabel}_daily_amt'] = _matched[amt_col].median() / days
+                    _vel[f'{wlabel}_amt'] = _matched[amt_col].median()
+                if cnt_col in _matched.columns:
+                    _vel[f'{wlabel}_daily_cnt'] = _matched[cnt_col].median() / days
+                    _vel[f'{wlabel}_cnt'] = _matched[cnt_col].median()
+
+            _velocity_data[(sk, grp)] = _vel
+
+    print(f"  Snapshots: {list(SNAPSHOT_ORDER)}")
+    print(f"  Data points: {len(_velocity_data)}")
+
+    # ===================================================================
+    # VIEW 1: Velocity Table -- daily deposit rate at each window
+    # ===================================================================
+    _v1_rows = []
+    for sk in SNAPSHOT_ORDER:
+        for grp in _GROUPS:
+            _vel = _velocity_data.get((sk, grp), {})
+            if not _vel:
+                continue
+            _row = {'Snapshot': _snap_labels.get(sk, sk), 'Group': grp,
+                    'N': _vel.get('n', 0)}
+            for wlabel, _, _, _ in _WINDOWS:
+                _row[f'{wlabel} $/day'] = _vel.get(f'{wlabel}_daily_amt', np.nan)
+                _row[f'{wlabel} #/day'] = _vel.get(f'{wlabel}_daily_cnt', np.nan)
+            _v1_rows.append(_row)
+
+    _v1_df = pd.DataFrame(_v1_rows)
+
+    # Show just the $ daily rates for cleaner view
+    _v1_cols = ['Snapshot', 'Group', 'N'] + [f'{w[0]} $/day' for w in _WINDOWS]
+    _v1_display = _v1_df[[c for c in _v1_cols if c in _v1_df.columns]]
+
+    _snap_breaks = set()
+    _prev = None
+    for i, row in _v1_display.iterrows():
+        if row['Snapshot'] != _prev and _prev is not None:
+            _snap_breaks.add(i)
+        _prev = row['Snapshot']
+
+    def _style_v1(row):
+        parts = []
+        _grp = _v1_display.loc[row.name, 'Group']
+        if _grp == 'Responder':
+            parts.append('background-color: rgba(46, 196, 182, 0.08)')
+        if _grp == 'Total Open':
+            parts.append('font-weight: bold')
+        if row.name in _snap_breaks:
+            parts.append('border-top: 2px solid #1B2A4A')
+        return ['; '.join(parts) if parts else ''] * len(row)
+
+    def _color_grp(col):
+        if col.name != 'Group':
+            return [''] * len(col)
+        return [f'color: {_GROUP_COLORS.get(v, "")}' for v in col]
+
+    _fmt_v1 = {'N': '{:,.0f}'}
+    for w in _WINDOWS:
+        _fmt_v1[f'{w[0]} $/day'] = '${:,.1f}'
+
+    _styled_v1 = (
+        _v1_display.style.hide(axis='index')
+        .format({k: v for k, v in _fmt_v1.items() if k in _v1_display.columns}, na_rep='--')
+        .apply(_style_v1, axis=1).apply(_color_grp)
+        .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+        .set_properties(subset=['Snapshot'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+        .set_properties(subset=['Group'], **{'text-align': 'left'})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '8px 10px')]},
+            {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
+        ])
+        .set_caption("View 1: Daily Deposit Rate ($/day) by Window")
+    )
+    display(_styled_v1)
+
+    # ===================================================================
+    # VIEW 2: Acceleration Ratio -- 33d rate / 99d rate
+    # ===================================================================
+    _v2_rows = []
+    for sk in SNAPSHOT_ORDER:
+        for grp in _GROUPS:
+            _vel = _velocity_data.get((sk, grp), {})
+            if not _vel:
+                continue
+            _r33 = _vel.get('33d_daily_amt', np.nan)
+            _r99 = _vel.get('99d_daily_amt', np.nan)
+            _accel = _r33 / _r99 if pd.notna(_r33) and pd.notna(_r99) and _r99 > 0 else np.nan
+            _v2_rows.append({
+                'Snapshot': _snap_labels.get(sk, sk),
+                'Group': grp,
+                '33d $/day': _r33,
+                '99d $/day': _r99,
+                'Accel Ratio': _accel,
+            })
+
+    _v2_df = pd.DataFrame(_v2_rows)
+
+    _snap_breaks_2 = set()
+    _prev = None
+    for i, row in _v2_df.iterrows():
+        if row['Snapshot'] != _prev and _prev is not None:
+            _snap_breaks_2.add(i)
+        _prev = row['Snapshot']
+
+    def _style_v2(row):
+        parts = []
+        _grp = _v2_df.loc[row.name, 'Group']
+        if _grp == 'Responder':
+            parts.append('background-color: rgba(46, 196, 182, 0.08)')
+        if _grp == 'Total Open':
+            parts.append('font-weight: bold')
+        if row.name in _snap_breaks_2:
+            parts.append('border-top: 2px solid #1B2A4A')
+        return ['; '.join(parts) if parts else ''] * len(row)
+
+    def _color_accel(col):
+        if col.name != 'Accel Ratio':
+            return [''] * len(col)
+        return [
+            f'color: {GEN_COLORS["success"]}' if pd.notna(v) and v > 1.05
+            else f'color: {GEN_COLORS["accent"]}' if pd.notna(v) and v < 0.95
+            else '' for v in col
+        ]
+
+    _styled_v2 = (
+        _v2_df.style.hide(axis='index')
+        .format({'33d $/day': '${:,.1f}', '99d $/day': '${:,.1f}',
+                 'Accel Ratio': '{:.2f}x'}, na_rep='--')
+        .apply(_style_v2, axis=1).apply(_color_accel)
+        .apply(lambda col: [f'color: {_GROUP_COLORS.get(v, "")}' for v in col]
+               if col.name == 'Group' else [''] * len(col))
+        .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+        .set_properties(subset=['Snapshot'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+        .set_properties(subset=['Group'], **{'text-align': 'left'})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['info']),
+                ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '8px 10px')]},
+            {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
+        ])
+        .set_caption("View 2: Acceleration Ratio (33d/99d) -- >1.0 = Accelerating")
+    )
+    display(_styled_v2)
+
+    # ===================================================================
+    # VIEW 3: Trend Chart -- 33-day daily rate across snapshots
+    # ===================================================================
+    fig, ax = plt.subplots(figsize=(14, 7))
+
+    for grp in _GROUPS:
+        _dates = []
+        _vals = []
+        for sk in SNAPSHOT_ORDER:
+            _vel = _velocity_data.get((sk, grp), {})
+            _r = _vel.get('33d_daily_amt', np.nan)
+            if pd.notna(_r) and sk in _snap_dates:
+                _dates.append(_snap_dates[sk])
+                _vals.append(_r)
+
+        if _vals:
+            _lw = 3 if grp == 'Total Open' else 2.5
+            _ls = '--' if grp == 'Total Open' else '-'
+            ax.plot(_dates, _vals, color=_GROUP_COLORS[grp], linewidth=_lw,
+                    linestyle=_ls, marker='o', markersize=9,
+                    markeredgecolor='white', markeredgewidth=2,
+                    label=grp, zorder=5)
+            for d, v in zip(_dates, _vals):
+                ax.text(d, v, f"${v:,.1f}",
+                        ha='center', va='bottom', fontsize=11,
+                        fontweight='bold', color=_GROUP_COLORS[grp])
+
+    ax.set_ylabel("Median Daily Deposit Rate ($/day)", fontsize=14,
+                   fontweight='bold', labelpad=10)
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+    gen_clean_axes(ax)
+    ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax.set_axisbelow(True)
+    ax.legend(fontsize=12, loc='upper left', frameon=True,
+              facecolor='white', edgecolor=GEN_COLORS['grid'])
+    ax.set_title("View 3: 33-Day Deposit Velocity Across Snapshots",
+                  fontsize=22, fontweight='bold',
+                  color=GEN_COLORS['dark_text'], pad=15, loc='left')
+    ax.text(0.0, 1.02, "Most recent 33-day window at each snapshot -- "
+            "shows short-term deposit momentum",
+            transform=ax.transAxes, fontsize=12,
+            color=GEN_COLORS['muted'], style='italic')
+    fig.autofmt_xdate(rotation=45)
+    plt.tight_layout()
+    plt.show()
+
+    # ===================================================================
+    # VIEW 4: Recency Heatmap -- snapshots x windows, per group
+    # ===================================================================
+    for grp in ['Responder', 'Non-Responder']:
+        _heat_rows = []
+        for sk in SNAPSHOT_ORDER:
+            _vel = _velocity_data.get((sk, grp), {})
+            if not _vel:
+                continue
+            _row = {'Snapshot': _snap_labels.get(sk, sk)}
+            for wlabel, _, _, _ in _WINDOWS:
+                _row[wlabel] = _vel.get(f'{wlabel}_daily_amt', np.nan)
+            _heat_rows.append(_row)
+
+        if not _heat_rows:
+            continue
+
+        _heat_df = pd.DataFrame(_heat_rows)
+        _win_cols = [w[0] for w in _WINDOWS if w[0] in _heat_df.columns]
+
+        _styled_heat = (
+            _heat_df.style.hide(axis='index')
+            .background_gradient(cmap='YlGnBu', subset=_win_cols, axis=None)
+            .format({w: '${:,.1f}/day' for w in _win_cols}, na_rep='--')
+            .set_properties(**{'font-size': '14px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '10px 14px'})
+            .set_properties(subset=['Snapshot'], **{
+                'text-align': 'left', 'color': GEN_COLORS['primary'], 'font-size': '15px'})
+            .set_table_styles([
+                {'selector': 'th', 'props': [
+                    ('background-color', _GROUP_COLORS[grp]),
+                    ('color', 'white'), ('font-size', '14px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '10px 14px')]},
+                {'selector': 'caption', 'props': [('font-size', '20px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                    ('padding-bottom', '10px')]},
+            ])
+            .set_caption(f"View 4: {grp} -- Daily Deposit Rate Heatmap ($/day)")
+        )
+        display(_styled_heat)
