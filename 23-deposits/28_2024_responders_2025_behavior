@@ -1,0 +1,220 @@
+# ===========================================================================
+# 2024 RESPONDERS: 2025 Behavior by Response Segment
+# ===========================================================================
+# Everyone who responded in 2024 (any mailer), grouped by their
+# response segment (NU 5+, TH-10, TH-15, TH-20, TH-25) vs
+# Non-Responders. Shows their 2025 activity + Z5 deposits.
+#
+# Not causal, but: higher response tier = better 2025 deposits.
+#
+# Depends on: rewards_df, _acct (cell 04), PROGRAM_SEG_ORDER, GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+elif '_acct' not in dir():
+    print("    Run cell 04 first.")
+else:
+    from IPython.display import display
+
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+
+    _mail_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
+        key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
+    _resp_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Resp')],
+        key=lambda c: pd.to_datetime(c.replace(' Resp', ''), format='%b%y'))
+
+    # 2024 mailers only
+    _mail_2024 = [c for c in _mail_cols
+                   if pd.to_datetime(c.replace(' Mail', ''), format='%b%y').year == 2024]
+    _resp_2024 = [c for c in _resp_cols
+                   if pd.to_datetime(c.replace(' Resp', ''), format='%b%y').year == 2024
+                   and rewards_df[c].notna().sum() > 0]
+
+    print(f"  2024 mailers: {[c.replace(' Mail', '') for c in _mail_2024]}")
+    print(f"  2024 resp columns: {[c.replace(' Resp', '') for c in _resp_2024]}")
+
+    def _parse_seg(val):
+        if pd.isna(val): return None
+        v = str(val).strip().upper()
+        if 'TH-25' in v or 'TH 25' in v or 'TH25' in v: return 'TH-25'
+        if 'TH-20' in v or 'TH 20' in v or 'TH20' in v: return 'TH-20'
+        if 'TH-15' in v or 'TH 15' in v or 'TH15' in v: return 'TH-15'
+        if 'TH-10' in v or 'TH 10' in v or 'TH10' in v: return 'TH-10'
+        if v.startswith('NU') or 'NON-USER' in v: return 'NU'
+        return None
+
+    def _is_success(val):
+        if pd.isna(val): return False
+        v = str(val).strip().upper()
+        if not v or v == 'NAN': return False
+        if 'NU' in v: return '5+' in v or '5 +' in v
+        return True
+
+    _eligible = rewards_df.reindex(_acct.index)
+
+    # Classify: which segment did they respond in during 2024?
+    # Use the HIGHEST tier they responded at
+    _SEG_RANK = {'NU': 1, 'TH-10': 2, 'TH-15': 3, 'TH-20': 4, 'TH-25': 5}
+    _resp_segment_2024 = pd.Series(np.nan, index=_acct.index, dtype='object')
+    _mailed_2024 = pd.Series(False, index=_acct.index)
+
+    for mc in _mail_2024:
+        _month = mc.replace(' Mail', '')
+        _rc = f"{_month} Resp"
+        if _rc not in _eligible.columns:
+            continue
+
+        _mailed = _eligible[mc].notna()
+        _mailed_2024 |= _mailed
+        _resp = _eligible[_rc].apply(_is_success)
+        _seg = _eligible[mc].apply(_parse_seg)
+
+        for idx in _eligible.index[_mailed & _resp]:
+            _new_seg = _seg[idx]
+            _old_seg = _resp_segment_2024[idx]
+            if pd.isna(_old_seg):
+                _resp_segment_2024[idx] = _new_seg
+            elif _new_seg and _SEG_RANK.get(_new_seg, 0) > _SEG_RANK.get(_old_seg, 0):
+                _resp_segment_2024[idx] = _new_seg
+
+    _responded_2024 = _resp_segment_2024.notna()
+
+    print(f"\n  Mailed in 2024: {_mailed_2024.sum():,}")
+    print(f"  Responded in 2024: {_responded_2024.sum():,}")
+    print(f"  Non-responders: {(_mailed_2024 & ~_responded_2024).sum():,}")
+
+    # 2025 activity columns
+    def _find_2025_cols(suffix):
+        return sorted(
+            [c.strip() for c in rewards_df.columns if c.strip().endswith(suffix)
+             and c.strip()[0].isupper()
+             and len(c.strip().split(' ')[0]) in (5, 6)
+             and c.strip().split(' ')[0][:3] in _VALID_MON
+             and pd.to_datetime(c.strip().replace(suffix, ''), format='%b%y').year == 2025],
+            key=lambda c: pd.to_datetime(c.strip().replace(suffix, ''), format='%b%y'))
+
+    _swipe_2025 = _find_2025_cols(' Swipes')
+    _spend_2025 = _find_2025_cols(' Spend')
+    _items_2025 = _find_2025_cols(' MTD')
+
+    print(f"  2025 data: {len(_swipe_2025)} Swipes, {len(_spend_2025)} Spend, "
+          f"{len(_items_2025)} MTD months")
+
+    # Build table
+    _groups = []
+    for seg in PROGRAM_SEG_ORDER:
+        _mask = _resp_segment_2024 == seg
+        if _mask.sum() > 0:
+            _groups.append((f'{seg} Resp', _mask))
+
+    _nr_mask = _mailed_2024 & ~_responded_2024
+    _groups.append(('Non-Responder', _nr_mask))
+
+    _rows = []
+    for label, mask in _groups:
+        _g = _acct[mask]
+        _n = len(_g)
+        if _n == 0:
+            continue
+
+        _row = {'Group': label, 'N': _n}
+
+        # 2025 averages
+        if _swipe_2025:
+            _row['2025 Avg Swipes'] = (_eligible.loc[mask, _swipe_2025]
+                .apply(pd.to_numeric, errors='coerce').fillna(0).mean(axis=1).mean())
+        if _spend_2025:
+            _row['2025 Avg Spend'] = (_eligible.loc[mask, _spend_2025]
+                .apply(pd.to_numeric, errors='coerce').fillna(0).mean(axis=1).mean())
+        if _items_2025:
+            _row['2025 Avg Items'] = (_eligible.loc[mask, _items_2025]
+                .apply(pd.to_numeric, errors='coerce').fillna(0).mean(axis=1).mean())
+
+        # Deposits from Z5
+        if 'mo_dep_count' in _g.columns:
+            _row['Avg Dep Ct'] = _g['mo_dep_count'].mean()
+        if 'mo_dep_amt' in _g.columns:
+            _row['Med Dep $'] = _g['mo_dep_amt'].median()
+            _row['Avg Dep $'] = _g['mo_dep_amt'].mean()
+
+        _rows.append(_row)
+
+    _df = pd.DataFrame(_rows)
+    for _rc in _df.columns:
+        if _rc not in ('Group', 'N') and _df[_rc].dtype in ('float64', 'float32'):
+            _df[_rc] = _df[_rc].round(1)
+
+    def _color_grp(col):
+        if col.name != 'Group': return [''] * len(col)
+        return [f'color: {GEN_COLORS["success"]}' if 'Resp' in str(v)
+                else f'color: {GEN_COLORS["muted"]}' for v in col]
+
+    _fmt = {'N': '{:,.0f}'}
+    for c in _df.columns:
+        if c in ('Group', 'N'): continue
+        elif '$' in c or 'Spend' in c: _fmt[c] = '${:,.1f}'
+        else: _fmt[c] = '{:,.1f}'
+
+    _styled = (
+        _df.style.hide(axis='index')
+        .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+        .apply(_color_grp)
+        .set_properties(**{'font-size': '14px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '10px 12px'})
+        .set_properties(subset=['Group'], **{'text-align': 'left'})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '14px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '10px 12px')]},
+            {'selector': 'caption', 'props': [('font-size', '24px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '14px')]},
+        ])
+        .set_caption("2024 Responders: 2025 Activity + Deposits by Response Segment")
+    )
+    display(_styled)
+
+    # -----------------------------------------------------------------
+    # Bar chart: Median Deposit $ by group
+    # -----------------------------------------------------------------
+    if 'Med Dep $' in _df.columns:
+        _chart_df = _df[['Group', 'Med Dep $']].dropna()
+        if len(_chart_df) > 0:
+            fig, ax = plt.subplots(figsize=(14, 7))
+
+            _x = np.arange(len(_chart_df))
+            _colors = [GEN_COLORS['success'] if 'Resp' in g
+                        else GEN_COLORS['muted'] for g in _chart_df['Group']]
+
+            bars = ax.bar(_x, _chart_df['Med Dep $'], color=_colors,
+                          edgecolor='white', linewidth=1.5, width=0.6, zorder=3)
+
+            for bar, val in zip(bars, _chart_df['Med Dep $']):
+                ax.text(bar.get_x() + bar.get_width() / 2,
+                        bar.get_height() + 20,
+                        f"${val:,.0f}",
+                        ha='center', va='bottom', fontsize=13,
+                        fontweight='bold', color=GEN_COLORS['dark_text'])
+
+            ax.set_xticks(_x)
+            ax.set_xticklabels(_chart_df['Group'], fontsize=12, fontweight='bold',
+                                rotation=15, ha='right')
+            ax.set_ylabel("Median Monthly Deposit ($)", fontsize=14,
+                           fontweight='bold', labelpad=10)
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+            gen_clean_axes(ax)
+            ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+
+            ax.set_title("2024 Responders: Median Monthly Deposits by Segment",
+                          fontsize=22, fontweight='bold',
+                          color=GEN_COLORS['dark_text'], pad=15, loc='left')
+            ax.text(0.0, 1.02,
+                    "Higher response tier = higher deposits  |  "
+                    "Gray = never responded in 2024",
+                    transform=ax.transAxes, fontsize=12,
+                    color=GEN_COLORS['muted'], style='italic')
+
+            plt.tight_layout()
+            plt.show()
