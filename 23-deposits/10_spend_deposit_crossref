@@ -148,10 +148,6 @@ else:
     _summary_rows = []
 
     _groups = [('Total Open', pd.Series(True, index=_joined.index))]
-    _groups.append(('All Mailed', _joined['Segment'].notna()))
-    for seg in _SEG_ORDER:
-        _groups.append((seg, _joined['Segment'] == seg))
-    _groups.append(('Not Mailed', _joined['Segment'].isna()))
 
     _metric_cols = (['Spend 3mo Avg', 'Swipes 3mo Avg']
                     + [c for c in ['depAmt365', 'depCount365', 'balance']
@@ -178,18 +174,8 @@ else:
             else:
                 _fmt[mc] = '${:,.0f}'
 
-    _agg_idx = set(_summary_df[
-        _summary_df['Group'].isin(['Total Open', 'All Mailed', 'Not Mailed'])].index)
-
     def _style_rows(row):
-        _grp = _summary_df.loc[row.name, 'Group'] if row.name in _summary_df.index else ''
-        if _grp == 'Total Open':
-            return ['font-weight: bold; background-color: rgba(27, 42, 74, 0.08); '
-                    'border-bottom: 2px solid #1B2A4A'] * len(row)
-        if _grp in ('All Mailed', 'Not Mailed'):
-            return ['font-weight: bold; border-top: 1px solid #adb5bd; '
-                    'background-color: rgba(27, 42, 74, 0.03)'] * len(row)
-        return [''] * len(row)
+        return ['font-weight: bold'] * len(row)
 
     _styled = (
         _summary_df.style
