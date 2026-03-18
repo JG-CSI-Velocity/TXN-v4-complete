@@ -160,10 +160,10 @@ else:
     _fmt = {
         'Accounts': '{:,.0f}',
         'Mo Swipes': '{:,.1f}',
-        'Mo Spend': '${:,.0f}',
-        'Mo Dep Count': '{:,.1f}',
-        'Mo Dep Amt': '${:,.0f}',
-        'Balance': '${:,.0f}',
+        'Mo Spend': '${:,.1f}',
+        'Median Mo Dep Count': '{:,.1f}',
+        'Median Mo Dep Amt': '${:,.1f}',
+        'Median Balance': '${:,.1f}',
     }
 
     _total_idx = set(_summary_df[_summary_df['Tier'] == 'TOTAL'].index)
