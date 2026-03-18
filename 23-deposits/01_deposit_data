@@ -1,0 +1,577 @@
+# ===========================================================================
+# DEPOSIT DATA: Longitudinal Snapshot Pipeline (Conference Edition)
+# ===========================================================================
+# Loads 3 zaccounts snapshot files (Nov24, Jun25, Dec25), filters to open
+# accounts, joins to rewards_df on HASHED_ACCOUNT, and merges ARS campaign
+# status + response journey data.
+#
+# Outputs: deposit_df (one row per account with columns from latest snapshot
+#          plus snapshot comparison columns), deposit_long (one row per
+#          account-snapshot for trajectory analysis), response_journey_df
+#          (per-account response ladder history across all waves).
+#
+# Depends on: rewards_df (00-setup/08), camp_acct (09-ars-campaign/01),
+#             combined_df (optional -- graceful fallback if absent).
+
+import warnings
+warnings.filterwarnings('ignore')
+
+# ---------------------------------------------------------------------------
+# 1. Snapshot file configuration
+# ---------------------------------------------------------------------------
+# Three zaccounts snapshots in the same directory as the ODDD file.
+# Adjust filenames to match actual files for each client.
+
+if 'odd_file' not in dir():
+    print("    WARNING: odd_file not defined. Run 00-setup cells first.")
+    print("    Skipping deposit data pipeline.")
+else:
+    # Use ZACCOUNTS_DIR from setup cell 02 if defined, else search from ODDD dir
+    _explicit_dir = 'ZACCOUNTS_DIR' in dir() and ZACCOUNTS_DIR is not None
+    if _explicit_dir:
+        _data_dir = Path(ZACCOUNTS_DIR)
+        print(f"  Z accounts directory: {_data_dir} (from ZACCOUNTS_DIR)")
+    else:
+        _data_dir = odd_file.parent if hasattr(odd_file, 'parent') else Path(odd_file).parent
+        print(f"  Z accounts directory: {_data_dir} (auto from ODDD path)")
+
+    # ---------------------------------------------------------------------------
+    # 1a. Auto-discover zaccounts files in the data directory
+    # ---------------------------------------------------------------------------
+    # If ZACCOUNTS_DIR is explicitly set, search ONLY that directory.
+    # If auto-discovering from ODDD path, search parent/sibling dirs too.
+
+    import re as _re
+    import glob as _glob
+
+    def _find_zaccounts_files(search_dir, search_siblings=True):
+        """Find all CSV files with 'zaccounts' in the name."""
+        found = []
+        search_path = Path(search_dir)
+        _search_paths = [search_path]
+        # Only search parent/siblings when auto-discovering
+        if search_siblings and search_path.parent.exists():
+            _search_paths.append(search_path.parent)
+            for sibling in search_path.parent.iterdir():
+                if sibling.is_dir() and sibling != search_path:
+                    _search_paths.append(sibling)
+
+        for sp in _search_paths:
+            for f in sp.glob('*'):
+                if f.is_file() and 'zaccounts' in f.name.lower() and f.suffix.lower() in ('.csv', '.txt'):
+                    found.append(f)
+        return sorted(set(found))
+
+    def _parse_snapshot_date(filename):
+        """Try to extract a date from a zaccounts filename.
+        Handles patterns like:
+          zaccounts_nov24.csv, zaccounts-12312025.csv, zaccounts_2025-12.csv,
+          zaccounts.csv (no date), 1780-zaccounts-dec2025.csv, etc.
+        Returns (label, sort_key) or None.
+        """
+        stem = Path(filename).stem.lower()
+
+        # Pattern: MonYY or MonYYYY (e.g., nov24, dec2025)
+        m = _re.search(r'(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s*(\d{2,4})', stem)
+        if m:
+            _mon_map = {'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,
+                        'jul':7,'aug':8,'sep':9,'oct':10,'nov':11,'dec':12}
+            mon = _mon_map[m.group(1)]
+            yr = int(m.group(2))
+            if yr < 100:
+                yr += 2000
+            label = f"{m.group(1).capitalize()}{yr % 100:02d}"
+            return label, yr * 100 + mon
+
+        # Pattern: MMDDYYYY or YYYYMMDD (e.g., 12312025, 20251231)
+        m = _re.search(r'(\d{8})', stem)
+        if m:
+            digits = m.group(1)
+            # Try MMDDYYYY
+            try:
+                from datetime import datetime as _dt
+                d = _dt.strptime(digits, '%m%d%Y')
+                _mon_names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+                label = f"{_mon_names[d.month-1]}{d.year % 100:02d}"
+                return label, d.year * 100 + d.month
+            except ValueError:
+                pass
+            # Try YYYYMMDD
+            try:
+                d = _dt.strptime(digits, '%Y%m%d')
+                _mon_names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+                label = f"{_mon_names[d.month-1]}{d.year % 100:02d}"
+                return label, d.year * 100 + d.month
+            except ValueError:
+                pass
+
+        # Pattern: YYYY-MM or YYYY_MM (e.g., 2025-12, 2025_06)
+        m = _re.search(r'(\d{4})[-_](\d{1,2})', stem)
+        if m:
+            yr, mon = int(m.group(1)), int(m.group(2))
+            if 1 <= mon <= 12:
+                _mon_names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+                label = f"{_mon_names[mon-1]}{yr % 100:02d}"
+                return label, yr * 100 + mon
+
+        # Pattern: YYYY.M.D or YYYY.MM.DD (e.g., 2025.3.3, 2025.12.31)
+        m = _re.search(r'(\d{4})\.(\d{1,2})\.(\d{1,2})', stem)
+        if m:
+            yr, mon = int(m.group(1)), int(m.group(2))
+            if 1 <= mon <= 12:
+                _mon_names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+                label = f"{_mon_names[mon-1]}{yr % 100:02d}"
+                return label, yr * 100 + mon
+
+        return None
+
+    # Discover files
+    _discovered = _find_zaccounts_files(_data_dir, search_siblings=not _explicit_dir)
+
+    if _discovered:
+        print(f"  Auto-discovered {len(_discovered)} zaccounts file(s):")
+        for f in _discovered:
+            print(f"    {f.name}  ({f.parent})")
+
+    # Build SNAPSHOT_CONFIG from discovered files
+    _auto_config = {}
+    _undated = []
+    for fpath in _discovered:
+        parsed = _parse_snapshot_date(fpath.name)
+        if parsed:
+            label, sort_key = parsed
+            _auto_config[label] = {
+                'filename': fpath.name,
+                'filepath': fpath,
+                'label': f"{label[:3]} 20{label[3:]}",
+                'sort_key': sort_key,
+            }
+        else:
+            _undated.append(fpath)
+
+    # Sort by date
+    _sorted_keys = sorted(_auto_config.keys(), key=lambda k: _auto_config[k]['sort_key'])
+
+    if len(_sorted_keys) > 0:
+        SNAPSHOT_CONFIG = {k: _auto_config[k] for k in _sorted_keys}
+        SNAPSHOT_ORDER = _sorted_keys
+        print(f"\n  Snapshot config (auto-detected):")
+        for k in SNAPSHOT_ORDER:
+            print(f"    {k}: {SNAPSHOT_CONFIG[k]['filename']} -> {SNAPSHOT_CONFIG[k]['label']}")
+    elif len(_undated) > 0:
+        # Single undated file -- use it as the only snapshot
+        print(f"\n  Found {len(_undated)} undated zaccounts file(s) -- using as single snapshot:")
+        SNAPSHOT_CONFIG = {}
+        for i, fpath in enumerate(_undated):
+            key = f"Snap{i+1}"
+            SNAPSHOT_CONFIG[key] = {
+                'filename': fpath.name,
+                'filepath': fpath,
+                'label': f"Snapshot {i+1}",
+                'sort_key': i,
+            }
+            print(f"    {key}: {fpath.name}")
+        SNAPSHOT_ORDER = list(SNAPSHOT_CONFIG.keys())
+    else:
+        # Fallback: manual config (user must set filenames)
+        print(f"\n  No zaccounts files found in {_data_dir}")
+        print(f"  Also searched: {_data_dir.parent}")
+        print(f"\n  MANUAL CONFIG: Set filenames below to match your files.")
+        SNAPSHOT_CONFIG = {
+            'Nov24': {'filename': 'zaccounts_nov24.csv', 'filepath': None, 'label': 'Nov 2024', 'sort_key': 202411},
+            'Jun25': {'filename': 'zaccounts_jun25.csv', 'filepath': None, 'label': 'Jun 2025', 'sort_key': 202506},
+            'Dec25': {'filename': 'zaccounts_dec25.csv', 'filepath': None, 'label': 'Dec 2025', 'sort_key': 202512},
+        }
+        SNAPSHOT_ORDER = ['Nov24', 'Jun25', 'Dec25']
+
+    # ---------------------------------------------------------------------------
+    # 2. Load and validate each snapshot
+    # ---------------------------------------------------------------------------
+    _snapshots_raw = {}
+    _load_errors = []
+
+    for snap_key in SNAPSHOT_ORDER:
+        cfg = SNAPSHOT_CONFIG[snap_key]
+        # Use filepath if auto-discovered, otherwise build from filename
+        if 'filepath' in cfg and cfg['filepath'] is not None:
+            fpath = cfg['filepath']
+        else:
+            fpath = _data_dir / cfg['filename']
+
+        if not fpath.exists():
+            _load_errors.append(f"  {snap_key}: file not found -- {fpath}")
+            continue
+        try:
+            _df = pd.read_csv(fpath, low_memory=False)
+            _df.columns = _df.columns.str.strip()
+            _snapshots_raw[snap_key] = _df
+            print(f"  {snap_key}: loaded {len(_df):,} rows, {len(_df.columns)} columns")
+        except Exception as e:
+            _load_errors.append(f"  {snap_key}: load error -- {e}")
+
+    if _load_errors:
+        print("\n  Snapshot load issues:")
+        for err in _load_errors:
+            print(err)
+
+    if len(_snapshots_raw) == 0:
+        print("\n    No snapshot files loaded. Cannot proceed with deposit analysis.")
+        deposit_df = pd.DataFrame()
+        deposit_long = pd.DataFrame()
+    else:
+        # -------------------------------------------------------------------
+        # 3. Filter to open accounts only (exclude closed/charged-off)
+        # -------------------------------------------------------------------
+        # Preserve raw snapshots for closed-account analysis (cell 67)
+        snapshots_raw_all = {k: v.copy() for k, v in _snapshots_raw.items()}
+
+        _snapshots = {}
+        for snap_key, raw_df in _snapshots_raw.items():
+            if 'acctstatus' in raw_df.columns:
+                _before = len(raw_df)
+                # Keep only open/active accounts
+                _open_mask = raw_df['acctstatus'].astype(str).str.strip().str.lower().isin(
+                    ['open', 'active', 'o', 'a', '1']
+                )
+                # If the mask catches nothing, the values may be numeric or different
+                # Fall back to excluding known closed statuses
+                if _open_mask.sum() == 0:
+                    _closed_vals = ['closed', 'inactive', 'charged off', 'chargeoff',
+                                    'c', 'i', 'x', '0']
+                    _closed_mask = raw_df['acctstatus'].astype(str).str.strip().str.lower().isin(
+                        _closed_vals
+                    )
+                    _open_mask = ~_closed_mask
+                _df = raw_df[_open_mask].copy()
+                print(f"  {snap_key}: {_before:,} total -> {len(_df):,} open accounts "
+                      f"({_before - len(_df):,} excluded)")
+            else:
+                _df = raw_df.copy()
+                print(f"  {snap_key}: no acctstatus column, keeping all {len(_df):,} rows")
+
+            _snapshots[snap_key] = _df
+
+        # -------------------------------------------------------------------
+        # 4. Standardize numeric columns across snapshots
+        # -------------------------------------------------------------------
+        NUMERIC_DEPOSIT_COLS = [
+            'balance', 'AvgCollectedBalance',
+            'DepCount33', 'DepAmt33', 'DepCount66', 'DepAmt66',
+            'DepCount99', 'DepAmt99', 'depCount365', 'depAmt365',
+            'avgdaysbetweendeposits', 'avgrepaymentrate',
+            'nsfodfeestodepositsratio90days', 'fdicoccasionsrolling12months',
+            'PossibleFees365', 'CollectedFees365',
+            'ODLimit', 'AvgODLimit',
+            'items365', 'SIG_365', 'PIN_365',
+            'declines_365', 'declines_amt_365',
+            'Mobile_Deposits_90',
+            'RepaymentTrendCount33', 'DepositTrendCount33',
+            'WindfallTrendCount33', 'CashFlowTrendCount33',
+            'sixty_od',
+        ]
+
+        for snap_key, df in _snapshots.items():
+            for col in NUMERIC_DEPOSIT_COLS:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(
+                        df[col].astype(str).str.replace(r'[,$]', '', regex=True),
+                        errors='coerce'
+                    ).fillna(0)
+
+        # -------------------------------------------------------------------
+        # 5. Build deposit_long: one row per account-snapshot
+        # -------------------------------------------------------------------
+        _long_rows = []
+        _keep_cols = [
+            'HASHED_ACCOUNT', 'acctid', 'balance', 'AvgCollectedBalance',
+            'autodeposit', 'avgdaysbetweendeposits', 'avgrepaymentrate',
+            'DepCount33', 'DepAmt33', 'DepCount66', 'DepAmt66',
+            'DepCount99', 'DepAmt99', 'depCount365', 'depAmt365',
+            'nsfodfeestodepositsratio90days', 'fdicoccasionsrolling12months',
+            'PossibleFees365', 'CollectedFees365',
+            'ODLimit', 'AvgODLimit',
+            'items365', 'SIG_365', 'PIN_365',
+            'declines_365', 'declines_amt_365',
+            'Mobile_Deposits_90',
+            'RepaymentTrendCount33', 'DepositTrendCount33',
+            'WindfallTrendCount33', 'CashFlowTrendCount33',
+            'sixty_od', 'acctstatus', 'prodcode', 'accttype',
+            'IsPersonal', 'branch', 'branchname',
+        ]
+
+        for snap_key, df in _snapshots.items():
+            avail = [c for c in _keep_cols if c in df.columns]
+            chunk = df[avail].copy()
+            chunk['snapshot'] = snap_key
+            chunk['snapshot_label'] = SNAPSHOT_CONFIG[snap_key]['label']
+            _long_rows.append(chunk)
+
+        deposit_long = pd.concat(_long_rows, ignore_index=True)
+
+        # Normalize HASHED_ACCOUNT for joining
+        deposit_long['HASHED_ACCOUNT'] = (
+            deposit_long['HASHED_ACCOUNT'].astype(str).str.strip()
+        )
+
+        # Normalize autodeposit to boolean
+        if 'autodeposit' in deposit_long.columns:
+            _ad = deposit_long['autodeposit'].astype(str).str.strip().str.lower()
+            deposit_long['has_direct_deposit'] = _ad.isin(
+                ['true', '1', 'yes', 'y', 't']
+            )
+
+        print(f"\n  deposit_long: {len(deposit_long):,} rows "
+              f"({deposit_long['HASHED_ACCOUNT'].nunique():,} unique accounts "
+              f"across {deposit_long['snapshot'].nunique()} snapshots)")
+
+        # -------------------------------------------------------------------
+        # 6. Build deposit_df: latest snapshot as primary, with delta columns
+        # -------------------------------------------------------------------
+        # Use the most recent available snapshot as the base
+        _latest_key = [k for k in reversed(SNAPSHOT_ORDER) if k in _snapshots][0]
+        _earliest_key = [k for k in SNAPSHOT_ORDER if k in _snapshots][0]
+
+        deposit_df = _snapshots[_latest_key].copy()
+        deposit_df['HASHED_ACCOUNT'] = (
+            deposit_df['HASHED_ACCOUNT'].astype(str).str.strip()
+        )
+
+        # Normalize autodeposit on deposit_df too
+        if 'autodeposit' in deposit_df.columns:
+            _ad = deposit_df['autodeposit'].astype(str).str.strip().str.lower()
+            deposit_df['has_direct_deposit'] = _ad.isin(
+                ['true', '1', 'yes', 'y', 't']
+            )
+
+        # Add delta columns if we have more than one snapshot
+        if len(_snapshots) > 1 and _earliest_key != _latest_key:
+            _early = _snapshots[_earliest_key].copy()
+            _early['HASHED_ACCOUNT'] = (
+                _early['HASHED_ACCOUNT'].astype(str).str.strip()
+            )
+
+            _delta_cols = ['balance', 'AvgCollectedBalance', 'depCount365',
+                           'depAmt365', 'CollectedFees365', 'ODLimit']
+            _early_sub = _early[['HASHED_ACCOUNT'] +
+                                [c for c in _delta_cols if c in _early.columns]].copy()
+            _early_sub = _early_sub.rename(
+                columns={c: f'{c}_early' for c in _delta_cols if c in _early_sub.columns}
+            )
+
+            deposit_df = deposit_df.merge(_early_sub, on='HASHED_ACCOUNT', how='left')
+
+            for col in _delta_cols:
+                early_col = f'{col}_early'
+                delta_col = f'{col}_delta'
+                if col in deposit_df.columns and early_col in deposit_df.columns:
+                    deposit_df[delta_col] = (
+                        deposit_df[col].fillna(0) - deposit_df[early_col].fillna(0)
+                    )
+
+            print(f"  Delta columns: {_earliest_key} -> {_latest_key}")
+
+        # -------------------------------------------------------------------
+        # 7. Join deposit_df to rewards_df
+        # -------------------------------------------------------------------
+        # Tries multiple join strategies in order:
+        #   1. HASHED_ACCOUNT = HASHED_ACCOUNT (if both files have it)
+        #   2. acctid (zaccounts) = Acct Number (ODDD) -- direct account ID match
+        #   3. acctid (zaccounts) = Acct ID (ODDD)
+        # Picks the first strategy with a reasonable match rate.
+
+        _joined = False
+        _join_key_deposit = None  # column name in deposit_df used for join
+        _join_key_oddd = None     # column name in rewards_df used for join
+
+        if 'rewards_df' not in dir():
+            print("\n  WARNING: rewards_df not available. Run 00-setup cells first.")
+        else:
+            _rw_cols = [c.strip() for c in rewards_df.columns]
+
+            # Build list of join strategies to try
+            _strategies = []
+
+            # Strategy 1: HASHED_ACCOUNT on both sides
+            _oddd_hash = None
+            for _c in rewards_df.columns:
+                if _c.strip().upper().replace(' ', '_') == 'HASHED_ACCOUNT':
+                    _oddd_hash = _c
+                    break
+            if _oddd_hash is None:
+                for _c in rewards_df.columns:
+                    if 'hash' in _c.lower():
+                        _oddd_hash = _c
+                        break
+            if _oddd_hash and 'HASHED_ACCOUNT' in deposit_df.columns:
+                _strategies.append(('HASHED_ACCOUNT', _oddd_hash, 'HASHED_ACCOUNT match'))
+
+            # Strategy 2: acctid (zaccounts) = Acct Number (ODDD)
+            if 'acctid' in deposit_df.columns and 'Acct Number' in rewards_df.columns:
+                _strategies.append(('acctid', 'Acct Number', 'acctid = Acct Number'))
+
+            # Strategy 3: acctid (zaccounts) = Acct ID (ODDD)
+            _oddd_acct_id = None
+            for _c in rewards_df.columns:
+                if _c.strip().lower() in ('acct id', 'acctid', 'acct_id'):
+                    _oddd_acct_id = _c
+                    break
+            if _oddd_acct_id and 'acctid' in deposit_df.columns:
+                _strategies.append(('acctid', _oddd_acct_id, f'acctid = {_oddd_acct_id}'))
+
+            # Strategy 4: HASHED_ACCOUNT (zaccounts) = any hash col in ODDD
+            # (already covered by strategy 1)
+
+            print(f"\n  Join strategies to try: {len(_strategies)}")
+            for dep_col, oddd_col, desc in _strategies:
+                _dep_vals = deposit_df[dep_col].astype(str).str.strip()
+                _oddd_vals = rewards_df[oddd_col].astype(str).str.strip()
+
+                _match_count = _dep_vals.isin(_oddd_vals).sum()
+                _match_pct = _match_count / len(deposit_df) * 100 if len(deposit_df) > 0 else 0
+
+                print(f"    {desc}: {_match_count:,} matches ({_match_pct:.1f}%)")
+
+                if _match_pct >= 10 and not _joined:
+                    _join_key_deposit = dep_col
+                    _join_key_oddd = oddd_col
+                    _joined = True
+                    print(f"    -> SELECTED as join key")
+
+                    if _match_pct < 50:
+                        print(f"    Sample deposit values: {_dep_vals.head(3).tolist()}")
+                        print(f"    Sample ODDD values:    {_oddd_vals.head(3).tolist()}")
+
+            if not _joined:
+                print(f"\n  WARNING: No join strategy achieved >= 10% match rate.")
+                print(f"    deposit_df columns: {[c for c in deposit_df.columns if 'acct' in c.lower() or 'hash' in c.lower() or 'id' in c.lower()]}")
+                print(f"    rewards_df columns: {[c for c in rewards_df.columns if 'acct' in c.lower() or 'hash' in c.lower() or 'id' in c.lower()]}")
+                print(f"    Sample deposit acctid: {deposit_df['acctid'].head(3).tolist() if 'acctid' in deposit_df.columns else 'N/A'}")
+                print(f"    Sample ODDD Acct Number: {rewards_df['Acct Number'].head(3).tolist() if 'Acct Number' in rewards_df.columns else 'N/A'}")
+
+        # Build a unified join column for downstream use
+        if _joined:
+            # Normalize both sides into a common '_join_key' column
+            deposit_df['_join_key'] = deposit_df[_join_key_deposit].astype(str).str.strip()
+            deposit_long['_join_key'] = deposit_long[_join_key_deposit].astype(str).str.strip() if _join_key_deposit in deposit_long.columns else ''
+
+            _rewards_join = rewards_df[[_join_key_oddd]].copy()
+            _rewards_join['_join_key'] = _rewards_join[_join_key_oddd].astype(str).str.strip()
+            _rewards_join = _rewards_join.drop(columns=[_join_key_oddd])
+
+            # Store for use by other cells
+            DEPOSIT_JOIN_KEY_DEPOSIT = _join_key_deposit
+            DEPOSIT_JOIN_KEY_ODDD = _join_key_oddd
+            print(f"\n  Join established: deposit_df.{_join_key_deposit} = rewards_df.{_join_key_oddd}")
+
+        # -------------------------------------------------------------------
+        # 8. Merge campaign status -- uses the join key from step 7
+        # -------------------------------------------------------------------
+        # Build camp_status directly from ODDD Mail/Resp columns.
+        # No combined_df or section 09 dependency.
+
+        _camp_merged = False
+
+        if _joined and 'rewards_df' in dir():
+            _rw_cols = [c.strip() for c in rewards_df.columns]
+            _mail_cols_local = sorted([c for c in _rw_cols if c.endswith(' Mail')])
+            _resp_cols_local = sorted([c for c in _rw_cols if c.endswith(' Resp')])
+
+            if len(_mail_cols_local) > 0:
+                _was_mailed = rewards_df[_mail_cols_local].notna().any(axis=1)
+
+                # Vectorized success check
+                _success_mask = pd.Series(False, index=rewards_df.index)
+                for rc in _resp_cols_local:
+                    rc_s = rc.strip()
+                    if rc_s not in _rw_cols:
+                        continue
+                    _vals = rewards_df[rc_s].astype(str).str.strip().str.upper()
+                    _is_success = (
+                        _vals.str.startswith('TH', na=False) |
+                        _vals.isin(['NU 5+', 'NU5+', 'NU 5'])
+                    ) & rewards_df[rc_s].notna()
+                    _success_mask = _success_mask | _is_success
+
+                # Build camp_status keyed on the ODDD join column
+                _camp_lite = pd.DataFrame()
+                _camp_lite['_join_key'] = rewards_df[_join_key_oddd].astype(str).str.strip()
+                _camp_lite['camp_status'] = 'Never Mailed'
+                _camp_lite.loc[_was_mailed, 'camp_status'] = 'Non-Responder'
+                _camp_lite.loc[_success_mask, 'camp_status'] = 'Responder'
+
+                # Merge via _join_key (already on deposit_df from step 7)
+                deposit_df = deposit_df.merge(_camp_lite, on='_join_key', how='left')
+                deposit_df['camp_status'] = deposit_df['camp_status'].fillna('Never Mailed')
+
+                deposit_long = deposit_long.merge(_camp_lite, on='_join_key', how='left')
+                deposit_long['camp_status'] = deposit_long['camp_status'].fillna('Never Mailed')
+                _camp_merged = True
+                print(f"\n  Campaign status built from ODDD Mail/Resp columns.")
+
+        if _camp_merged:
+            _camp_dist = deposit_df['camp_status'].value_counts()
+            print(f"  Campaign status distribution in deposit data:")
+            for status, count in _camp_dist.items():
+                print(f"    {status:<20s}: {count:>8,} ({count / len(deposit_df) * 100:>5.1f}%)")
+        else:
+            print("\n  Campaign data not available.")
+            deposit_df['camp_status'] = 'Unknown'
+            deposit_long['camp_status'] = 'Unknown'
+
+        # -------------------------------------------------------------------
+        # 9. Build matched cohort: accounts present in ALL snapshots
+        # -------------------------------------------------------------------
+        # For trajectory analysis, we need the same accounts across all
+        # snapshots so we're comparing apples to apples.
+        _snap_keys_loaded = list(_snapshots.keys())
+        if len(_snap_keys_loaded) >= 2:
+            _hash_sets = [
+                set(deposit_long[deposit_long['snapshot'] == s]['HASHED_ACCOUNT'])
+                for s in _snap_keys_loaded
+            ]
+            matched_cohort_hashes = _hash_sets[0]
+            for hs in _hash_sets[1:]:
+                matched_cohort_hashes = matched_cohort_hashes & hs
+
+            deposit_long['in_matched_cohort'] = deposit_long['HASHED_ACCOUNT'].isin(
+                matched_cohort_hashes
+            )
+            deposit_df['in_matched_cohort'] = deposit_df['HASHED_ACCOUNT'].isin(
+                matched_cohort_hashes
+            )
+
+            _total_unique = deposit_long['HASHED_ACCOUNT'].nunique()
+            _matched_n = len(matched_cohort_hashes)
+            _matched_pct = _matched_n / _total_unique * 100 if _total_unique > 0 else 0
+            print(f"\n  Matched cohort (present in all {len(_snap_keys_loaded)} snapshots):")
+            print(f"    {_matched_n:,} of {_total_unique:,} accounts ({_matched_pct:.1f}%)")
+        else:
+            matched_cohort_hashes = set(deposit_df['HASHED_ACCOUNT'])
+            deposit_long['in_matched_cohort'] = True
+            deposit_df['in_matched_cohort'] = True
+            print(f"\n  Single snapshot -- all accounts in cohort.")
+
+        # -------------------------------------------------------------------
+        # 10. Summary statistics
+        # -------------------------------------------------------------------
+        print(f"\n  Deposit data pipeline complete.")
+        print(f"    deposit_df:   {len(deposit_df):,} accounts (latest snapshot: {_latest_key})")
+        print(f"    deposit_long: {len(deposit_long):,} account-snapshot rows")
+        print(f"    Snapshots loaded: {list(_snapshots.keys())}")
+
+        if 'balance' in deposit_df.columns:
+            _total_bal = deposit_df['balance'].sum()
+            _avg_bal = deposit_df['balance'].mean()
+            _median_bal = deposit_df['balance'].median()
+            print(f"    Total deposits:  ${_total_bal:,.0f}")
+            print(f"    Average balance: ${_avg_bal:,.0f}")
+            print(f"    Median balance:  ${_median_bal:,.0f}")
+
+        if 'has_direct_deposit' in deposit_df.columns:
+            _dd_pct = deposit_df['has_direct_deposit'].mean() * 100
+            print(f"    Direct deposit:  {_dd_pct:.1f}%")
+
+        if 'avgdaysbetweendeposits' in deposit_df.columns:
+            _avg_days = deposit_df['avgdaysbetweendeposits'].replace(0, np.nan).median()
+            if pd.notna(_avg_days):
+                print(f"    Median days between deposits: {_avg_days:.0f}")

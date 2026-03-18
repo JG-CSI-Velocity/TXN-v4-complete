@@ -1,0 +1,29 @@
+# ===========================================================================
+# SECTION 23: DEPOSIT RELATIONSHIP & ARS IMPACT -- NOTES
+# ===========================================================================
+#
+# FUTURE STATE: Client-specific values are hardcoded in several cells.
+# Before running for a different client, update the following:
+#
+# Cell 01 (deposit_data):
+#   - SNAPSHOT_CONFIG filenames (auto-discovered, but verify)
+#   - acctstatus filter values may vary by client
+#
+# Cell 04 (ncua_benchmark_data):
+#   - CU_NUMBER = '24223'         <-- USF FCU specific
+#   - CU_NAME = 'USF Federal Credit Union'
+#   - PEER_STATE = 'FL'           <-- Florida peers
+#   - PEER_ASSET_MIN / MAX        <-- sized for USF FCU ($500M-$2B)
+#   - FRED_API_KEY                <-- shared across clients, but don't commit
+#
+# Cell 05-10 (NCUA/FRED charts):
+#   - All reference CU_NAME from cell 04
+#
+# LONG-TERM: Move CU_NUMBER, CU_NAME, PEER_STATE, and asset range into
+# the 00-setup/02-file-config cell alongside CLIENT_ID and CLIENT_NAME.
+# The NCUA benchmark cells should read from there so the whole section
+# is client-agnostic. FRED_API_KEY should come from an environment
+# variable, not hardcoded in the cell.
+#
+# Everything in cells 01-03 and 11-46 is already client-agnostic --
+# it derives from the ODDD and zaccounts data dynamically.

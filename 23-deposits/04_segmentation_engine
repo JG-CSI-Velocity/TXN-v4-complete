@@ -1,0 +1,293 @@
+# ===========================================================================
+# SEGMENTATION ENGINE: Build All Segmentation Columns
+# ===========================================================================
+# Run after cells 01-03. Creates all segmentation columns on a
+# unified _acct DataFrame that every downstream cell references.
+#
+# Segmentations built:
+#   1. Swipe tiers (3mo, 12mo) -- from ODDD Swipes
+#   2. Spend tiers (3mo, 12mo) -- from ODDD Spend
+#   3. Deposit amount tiers (99d, 365d) -- from Z5 DepAmt
+#   4. Deposit count tiers (99d, 365d) -- from Z5 DepCount
+#   5. Items/MTD tiers (3mo, 12mo) -- from ODDD MTD
+#   6. Program segment -- from ODDD Mail (NU, TH-10/15/20/25)
+#   7. Response grouping -- from ODDD pre-computed field
+#   8. Responder binary -- R vs NR from ODDD Resp
+#   9. Granular response -- within each segment: R vs NR
+#
+# NU 5+ = Responder. NU 1-4 and NU 0 are NOT responders.
+#
+# Depends on: rewards_df (00-setup/08), deposit_long (23/01),
+#             DEPOSIT_JOIN_KEY_ODDD, DEPOSIT_JOIN_KEY_DEPOSIT,
+#             SNAPSHOT_ORDER, GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available. Run 00-setup cells first.")
+else:
+    import time as _t
+    _t0 = _t.time()
+
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+
+    def _find_monthly_cols(suffix):
+        return sorted(
+            [c.strip() for c in rewards_df.columns if c.strip().endswith(suffix)
+             and c.strip()[0].isupper()
+             and len(c.strip().split(' ')[0]) in (5, 6)
+             and c.strip().split(' ')[0][:3] in _VALID_MON],
+            key=lambda c: pd.to_datetime(c.strip().replace(suffix, ''), format='%b%y'))
+
+    # Discover all monthly columns
+    _spend_cols = _find_monthly_cols(' Spend')
+    _swipe_cols = _find_monthly_cols(' Swipes')
+    _mtd_cols = _find_monthly_cols(' MTD')
+    _mail_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
+        key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
+    _resp_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Resp')],
+        key=lambda c: pd.to_datetime(c.replace(' Resp', ''), format='%b%y'))
+
+    print(f"  ODDD columns: {len(_spend_cols)} Spend, {len(_swipe_cols)} Swipes, "
+          f"{len(_mtd_cols)} MTD, {len(_mail_cols)} Mail, {len(_resp_cols)} Resp")
+
+    # Eligibility filter
+    _elig_col = None
+    for c in rewards_df.columns:
+        if 'elig' in c.lower():
+            _elig_col = c.strip()
+            break
+
+    if _elig_col:
+        _elig_mask = (rewards_df[_elig_col].astype(str).str.strip()
+                       .str.upper().isin(['Y', 'YES', '1', 'TRUE']))
+        _eligible = rewards_df[_elig_mask].copy()
+        print(f"  Eligibility: {_elig_col} -> {len(_eligible):,} / {len(rewards_df):,}")
+    else:
+        _eligible = rewards_df.copy()
+        print(f"  No eligibility column -- using all {len(_eligible):,} accounts")
+
+    # ===================================================================
+    # Build _acct DataFrame
+    # ===================================================================
+    _acct = pd.DataFrame(index=_eligible.index)
+
+    if 'DEPOSIT_JOIN_KEY_ODDD' in dir():
+        _acct['_join_key'] = _eligible[DEPOSIT_JOIN_KEY_ODDD].astype(str).str.strip()
+
+    # -----------------------------------------------------------------
+    # ODDD metrics: 3mo and 12mo windows
+    # -----------------------------------------------------------------
+    _last3_swipe = _swipe_cols[-3:] if len(_swipe_cols) >= 3 else _swipe_cols
+    _last12_swipe = _swipe_cols[-12:] if len(_swipe_cols) >= 12 else _swipe_cols
+    _last3_spend = _spend_cols[-3:] if len(_spend_cols) >= 3 else _spend_cols
+    _last12_spend = _spend_cols[-12:] if len(_spend_cols) >= 12 else _spend_cols
+    _last3_mtd = _mtd_cols[-3:] if len(_mtd_cols) >= 3 else _mtd_cols
+    _last12_mtd = _mtd_cols[-12:] if len(_mtd_cols) >= 12 else _mtd_cols
+
+    _acct['mo_swipes_3mo'] = _eligible[_last3_swipe].apply(pd.to_numeric, errors='coerce').fillna(0).mean(axis=1)
+    _acct['mo_swipes_12mo'] = _eligible[_last12_swipe].apply(pd.to_numeric, errors='coerce').fillna(0).mean(axis=1)
+    _acct['mo_spend_3mo'] = _eligible[_last3_spend].apply(pd.to_numeric, errors='coerce').fillna(0).mean(axis=1)
+    _acct['mo_spend_12mo'] = _eligible[_last12_spend].apply(pd.to_numeric, errors='coerce').fillna(0).mean(axis=1)
+    _acct['mo_items_3mo'] = _eligible[_last3_mtd].apply(pd.to_numeric, errors='coerce').fillna(0).mean(axis=1)
+    _acct['mo_items_12mo'] = _eligible[_last12_mtd].apply(pd.to_numeric, errors='coerce').fillna(0).mean(axis=1)
+
+    print(f"  ODDD windows: 3mo={[c.replace(' Swipes','') for c in _last3_swipe]}, "
+          f"12mo={len(_last12_swipe)} months")
+
+    # -----------------------------------------------------------------
+    # Z5 deposit metrics: 99d and 365d
+    # -----------------------------------------------------------------
+    if ('deposit_long' in dir() and len(deposit_long) > 0
+            and 'DEPOSIT_JOIN_KEY_DEPOSIT' in dir()
+            and 'SNAPSHOT_ORDER' in dir()):
+        _latest_snap = SNAPSHOT_ORDER[-1]
+        _snap = deposit_long[deposit_long['snapshot'] == _latest_snap].copy()
+        if DEPOSIT_JOIN_KEY_DEPOSIT in _snap.columns:
+            _snap['_join_key'] = _snap[DEPOSIT_JOIN_KEY_DEPOSIT].astype(str).str.strip()
+            _dep_cols = [c for c in ['DepAmt99', 'DepCount99', 'depAmt365', 'depCount365']
+                          if c in _snap.columns]
+            if _dep_cols:
+                _dep = (_snap[['_join_key'] + _dep_cols]
+                        .drop_duplicates(subset='_join_key')
+                        .set_index('_join_key'))
+                _acct = _acct.join(_dep, on='_join_key', how='left')
+                print(f"  Z5: {_latest_snap}, matched {_acct[_dep_cols[0]].notna().sum():,}")
+
+    # Normalize deposit metrics to monthly
+    if 'DepCount99' in _acct.columns:
+        _acct['mo_dep_count_99d'] = _acct['DepCount99'] / 3.3
+    if 'DepAmt99' in _acct.columns:
+        _acct['mo_dep_amt_99d'] = _acct['DepAmt99'] / 3.3
+    if 'depCount365' in _acct.columns:
+        _acct['mo_dep_count_365d'] = _acct['depCount365'] / 12
+    if 'depAmt365' in _acct.columns:
+        _acct['mo_dep_amt_365d'] = _acct['depAmt365'] / 12
+
+    # -----------------------------------------------------------------
+    # SEG 1: Swipe tiers (program tiers)
+    # -----------------------------------------------------------------
+    _SWIPE_TIERS = [
+        ('0', 0, 0), ('1-5', 0.01, 5), ('6-10', 5.01, 10),
+        ('11-15', 10.01, 15), ('16-20', 15.01, 20),
+        ('21-25', 20.01, 25), ('26+', 25.01, float('inf')),
+    ]
+    SWIPE_TIER_ORDER = [t[0] for t in _SWIPE_TIERS]
+
+    for suffix in ['3mo', '12mo']:
+        col = f'mo_swipes_{suffix}'
+        tier_col = f'swipe_tier_{suffix}'
+        _acct[tier_col] = '0'
+        for name, lo, hi in _SWIPE_TIERS:
+            _mask = (_acct[col] >= lo) & (_acct[col] <= hi)
+            _acct.loc[_mask, tier_col] = name
+
+    # -----------------------------------------------------------------
+    # SEG 2: Spend tiers
+    # -----------------------------------------------------------------
+    _SPEND_TIERS = [
+        ('$0', 0, 0), ('$1-$100', 0.01, 100), ('$100-$500', 100.01, 500),
+        ('$500-$1K', 500.01, 1000), ('$1K+', 1000.01, float('inf')),
+    ]
+    SPEND_TIER_ORDER = [t[0] for t in _SPEND_TIERS]
+
+    for suffix in ['3mo', '12mo']:
+        col = f'mo_spend_{suffix}'
+        tier_col = f'spend_tier_{suffix}'
+        _acct[tier_col] = '$0'
+        for name, lo, hi in _SPEND_TIERS:
+            _mask = (_acct[col] >= lo) & (_acct[col] <= hi)
+            _acct.loc[_mask, tier_col] = name
+
+    # -----------------------------------------------------------------
+    # SEG 3: Deposit amount tiers
+    # -----------------------------------------------------------------
+    _DEP_AMT_TIERS = [
+        ('$0-$6K', 0, 6000), ('$6K-$12K', 6000.01, 12000),
+        ('$12K-$24K', 12000.01, 24000), ('$24K-$36K', 24000.01, 36000),
+        ('$36K+', 36000.01, float('inf')),
+    ]
+    DEP_AMT_TIER_ORDER = [t[0] for t in _DEP_AMT_TIERS]
+
+    for src, suffix in [('DepAmt99', '99d'), ('depAmt365', '365d')]:
+        tier_col = f'dep_amt_tier_{suffix}'
+        if src in _acct.columns:
+            _acct[tier_col] = 'No Data'
+            for name, lo, hi in _DEP_AMT_TIERS:
+                _mask = (_acct[src] >= lo) & (_acct[src] <= hi)
+                _acct.loc[_mask, tier_col] = name
+
+    # -----------------------------------------------------------------
+    # SEG 4: Deposit count tiers
+    # -----------------------------------------------------------------
+    _DEP_CT_TIERS = [
+        ('0', 0, 0), ('1-3', 0.01, 3), ('4-10', 3.01, 10),
+        ('11-20', 10.01, 20), ('21+', 20.01, float('inf')),
+    ]
+    DEP_CT_TIER_ORDER = [t[0] for t in _DEP_CT_TIERS]
+
+    for src, suffix in [('DepCount99', '99d'), ('depCount365', '365d')]:
+        tier_col = f'dep_ct_tier_{suffix}'
+        if src in _acct.columns:
+            _acct[tier_col] = 'No Data'
+            for name, lo, hi in _DEP_CT_TIERS:
+                _mask = (_acct[src] >= lo) & (_acct[src] <= hi)
+                _acct.loc[_mask, tier_col] = name
+
+    # -----------------------------------------------------------------
+    # SEG 5: Items/MTD tiers
+    # -----------------------------------------------------------------
+    _ITEMS_TIERS = [
+        ('0', 0, 0), ('1-5', 0.01, 5), ('6-15', 5.01, 15),
+        ('16-30', 15.01, 30), ('30+', 30.01, float('inf')),
+    ]
+    ITEMS_TIER_ORDER = [t[0] for t in _ITEMS_TIERS]
+
+    for suffix in ['3mo', '12mo']:
+        col = f'mo_items_{suffix}'
+        tier_col = f'items_tier_{suffix}'
+        _acct[tier_col] = '0'
+        for name, lo, hi in _ITEMS_TIERS:
+            _mask = (_acct[col] >= lo) & (_acct[col] <= hi)
+            _acct.loc[_mask, tier_col] = name
+
+    # -----------------------------------------------------------------
+    # SEG 6: Program segment (from Mail columns)
+    # -----------------------------------------------------------------
+    def _parse_seg(val):
+        if pd.isna(val): return None
+        v = str(val).strip().upper()
+        if 'TH-25' in v or 'TH 25' in v or 'TH25' in v: return 'TH-25'
+        if 'TH-20' in v or 'TH 20' in v or 'TH20' in v: return 'TH-20'
+        if 'TH-15' in v or 'TH 15' in v or 'TH15' in v: return 'TH-15'
+        if 'TH-10' in v or 'TH 10' in v or 'TH10' in v: return 'TH-10'
+        if v.startswith('NU') or 'NON-USER' in v: return 'NU'
+        return None
+
+    PROGRAM_SEG_ORDER = ['NU', 'TH-10', 'TH-15', 'TH-20', 'TH-25']
+
+    _seg_matrix = _eligible[_mail_cols].apply(lambda col: col.apply(_parse_seg))
+    _acct['program_segment'] = _seg_matrix.ffill(axis=1).iloc[:, -1] if len(_mail_cols) > 0 else np.nan
+
+    # -----------------------------------------------------------------
+    # SEG 7: Response grouping (pre-computed)
+    # -----------------------------------------------------------------
+    if 'Response Grouping' in _eligible.columns:
+        _acct['response_grouping'] = _eligible['Response Grouping'].astype(str).str.strip()
+
+    # -----------------------------------------------------------------
+    # SEG 8: Responder binary
+    # -----------------------------------------------------------------
+    def _is_success(val):
+        if pd.isna(val): return False
+        v = str(val).strip().upper()
+        if not v or v == 'NAN': return False
+        if 'NU' in v: return '5+' in v or '5 +' in v
+        return True
+
+    _valid_resp = [rc for rc in _resp_cols
+                    if _eligible[rc].notna().sum() > 0]
+    _excluded_resp = [rc.replace(' Resp', '') for rc in _resp_cols
+                       if _eligible[rc].notna().sum() == 0]
+    if _excluded_resp:
+        print(f"  Excluded Resp months (zero data): {_excluded_resp}")
+
+    _acct['ever_responded'] = False
+    for rc in _valid_resp:
+        _acct['ever_responded'] |= _eligible[rc].apply(_is_success)
+
+    _was_mailed = _eligible[_mail_cols].notna().any(axis=1) if _mail_cols else pd.Series(False, index=_eligible.index)
+    _acct['was_mailed'] = _was_mailed
+
+    _acct['group'] = 'Not Mailed'
+    _acct.loc[_acct['was_mailed'] & ~_acct['ever_responded'], 'group'] = 'Non-Responder'
+    _acct.loc[_acct['ever_responded'], 'group'] = 'Responder'
+
+    # -----------------------------------------------------------------
+    # SEG 9: Granular response (segment x R/NR)
+    # -----------------------------------------------------------------
+    _acct['granular_response'] = 'Not Mailed'
+    for seg in PROGRAM_SEG_ORDER:
+        _seg_mask = _acct['program_segment'] == seg
+        _acct.loc[_seg_mask & _acct['ever_responded'], 'granular_response'] = f'{seg} Resp'
+        _acct.loc[_seg_mask & ~_acct['ever_responded'] & _acct['was_mailed'],
+                   'granular_response'] = f'{seg} NR'
+
+    GRANULAR_ORDER = []
+    for seg in PROGRAM_SEG_ORDER:
+        GRANULAR_ORDER.extend([f'{seg} Resp', f'{seg} NR'])
+
+    # -----------------------------------------------------------------
+    # Summary
+    # -----------------------------------------------------------------
+    _elapsed = _t.time() - _t0
+    print(f"\n  Segmentation engine complete ({_elapsed:.1f}s)")
+    print(f"  _acct: {len(_acct):,} accounts x {len(_acct.columns)} columns")
+
+    _grp = _acct['group'].value_counts()
+    for g in ['Responder', 'Non-Responder', 'Not Mailed']:
+        print(f"    {g}: {_grp.get(g, 0):,}")
+
+    print(f"\n  Tier columns built:")
+    for tc in sorted([c for c in _acct.columns if '_tier_' in c]):
+        print(f"    {tc}: {_acct[tc].nunique()} tiers")
