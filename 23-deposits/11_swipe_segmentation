@@ -50,11 +50,30 @@ else:
     _swipe_labels = [c.replace(' Swipes', '') for c in _last3_swipe]
     print(f"  Swipe months: {_swipe_labels}")
 
-    _acct = pd.DataFrame(index=rewards_df.index)
-    _acct['_join_key'] = rewards_df[DEPOSIT_JOIN_KEY_ODDD].astype(str).str.strip()
+    # -----------------------------------------------------------------
+    # Filter to program-eligible accounts
+    # -----------------------------------------------------------------
+    _elig_col = None
+    for c in rewards_df.columns:
+        if 'elig' in c.lower():
+            _elig_col = c.strip()
+            break
 
-    _swipe_matrix = rewards_df[_last3_swipe].apply(pd.to_numeric, errors='coerce').fillna(0)
-    _spend_matrix = rewards_df[_last3_spend].apply(pd.to_numeric, errors='coerce').fillna(0)
+    if _elig_col:
+        _elig_mask = (rewards_df[_elig_col].astype(str).str.strip()
+                       .str.upper().isin(['Y', 'YES', '1', 'TRUE']))
+        _eligible = rewards_df[_elig_mask].copy()
+        print(f"  Eligibility filter: {_elig_col} -> {len(_eligible):,} / "
+              f"{len(rewards_df):,} accounts ({len(_eligible)/len(rewards_df)*100:.1f}%)")
+    else:
+        _eligible = rewards_df.copy()
+        print("  No eligibility column found -- using all accounts")
+
+    _acct = pd.DataFrame(index=_eligible.index)
+    _acct['_join_key'] = _eligible[DEPOSIT_JOIN_KEY_ODDD].astype(str).str.strip()
+
+    _swipe_matrix = _eligible[_last3_swipe].apply(pd.to_numeric, errors='coerce').fillna(0)
+    _spend_matrix = _eligible[_last3_spend].apply(pd.to_numeric, errors='coerce').fillna(0)
 
     _acct['mo_swipes'] = _swipe_matrix.mean(axis=1)
     _acct['mo_spend'] = _spend_matrix.mean(axis=1)
@@ -110,21 +129,14 @@ else:
         ('Accounts', 'count', None),
         ('Mo Swipes', 'mean', 'mo_swipes'),
         ('Mo Spend', 'mean', 'mo_spend'),
-        ('Mo Dep Count', 'mean', 'mo_dep_count'),
-        ('Mo Dep Amt', 'mean', 'mo_dep_amt'),
-        ('Balance', 'mean', 'balance'),
+        ('Median Mo Dep Count', 'median', 'mo_dep_count'),
+        ('Median Mo Dep Amt', 'median', 'mo_dep_amt'),
+        ('Median Balance', 'median', 'balance'),
     ]
 
     _rows = []
 
-    # Total Open row
-    _total_row = {'Tier': 'Total Open', 'Accounts': len(_acct)}
-    for label, agg, col in _metric_defs:
-        if col and col in _acct.columns:
-            _total_row[label] = _acct[col].mean()
-    _rows.append(_total_row)
-
-    # Per tier
+    # Per tier first
     for tier in _tier_order:
         _g = _acct[_acct['swipe_tier'] == tier]
         if len(_g) == 0:
@@ -132,8 +144,15 @@ else:
         _row = {'Tier': tier, 'Accounts': len(_g)}
         for label, agg, col in _metric_defs:
             if col and col in _g.columns:
-                _row[label] = _g[col].mean()
+                _row[label] = _g[col].median() if agg == 'median' else _g[col].mean()
         _rows.append(_row)
+
+    # Total row at the bottom
+    _total_row = {'Tier': 'TOTAL', 'Accounts': len(_acct)}
+    for label, agg, col in _metric_defs:
+        if col and col in _acct.columns:
+            _total_row[label] = _acct[col].median() if agg == 'median' else _acct[col].mean()
+    _rows.append(_total_row)
 
     _summary_df = pd.DataFrame(_rows)
 
@@ -147,12 +166,12 @@ else:
         'Balance': '${:,.0f}',
     }
 
-    _total_idx = set(_summary_df[_summary_df['Tier'] == 'Total Open'].index)
+    _total_idx = set(_summary_df[_summary_df['Tier'] == 'TOTAL'].index)
 
     def _style_rows(row):
         if row.name in _total_idx:
             return ['font-weight: bold; background-color: rgba(27, 42, 74, 0.08); '
-                    'border-bottom: 2px solid #1B2A4A'] * len(row)
+                    'border-top: 2px solid #1B2A4A'] * len(row)
         return [''] * len(row)
 
     _styled = (
