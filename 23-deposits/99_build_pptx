@@ -90,52 +90,41 @@ else:
                                   _img_width, _img_height)
         return slide
 
-    def _add_table_slide(title, df, col_widths=None):
-        """Add a slide with a data table."""
-        slide = _add_chart_slide(title)
+    def _add_table_slide(title, df):
+        """Render DataFrame as a styled matplotlib table image and insert."""
+        _nrows, _ncols = df.shape
+        _fig_h = max(2.5, 0.4 * (_nrows + 1) + 0.5)
+        fig, ax = plt.subplots(figsize=(10, _fig_h))
+        ax.axis('off')
 
-        rows, cols = df.shape
-        rows += 1  # header row
-        _left = Inches(0.4)
-        _top = Inches(1.5)
-        _width = prs.slide_width - Inches(0.8)
-        _height = Inches(0.35) * rows
+        _tbl = ax.table(
+            cellText=df.values,
+            colLabels=df.columns,
+            cellLoc='center',
+            loc='center',
+        )
+        _tbl.auto_set_font_size(False)
+        _tbl.set_fontsize(11)
+        _tbl.scale(1, 1.6)
 
-        table = slide.shapes.add_table(rows, cols, _left, _top,
-                                         _width, _height).table
+        # Style header row
+        for j in range(_ncols):
+            _cell = _tbl[0, j]
+            _cell.set_facecolor('#1B2A4A')
+            _cell.set_text_props(color='white', fontweight='bold', fontsize=11)
+            _cell.set_edgecolor('#E9ECEF')
 
-        # Header row
-        for j, col_name in enumerate(df.columns):
-            cell = table.cell(0, j)
-            cell.text = str(col_name)
-            for paragraph in cell.text_frame.paragraphs:
-                paragraph.font.size = Pt(10)
-                paragraph.font.bold = True
-                paragraph.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
-                paragraph.alignment = PP_ALIGN.CENTER
-            cell.fill.solid()
-            cell.fill.fore_color.rgb = RGBColor(0x1B, 0x2A, 0x4A)
+        # Style data rows
+        for i in range(_nrows):
+            for j in range(_ncols):
+                _cell = _tbl[i + 1, j]
+                _cell.set_facecolor('#FFFFFF' if i % 2 == 0 else '#F8F9FA')
+                _cell.set_edgecolor('#E9ECEF')
+                _cell.set_text_props(fontweight='bold', fontsize=10)
 
-        # Data rows
-        for i in range(len(df)):
-            for j, col_name in enumerate(df.columns):
-                cell = table.cell(i + 1, j)
-                val = df.iloc[i, j]
-                if isinstance(val, float):
-                    if abs(val) >= 100:
-                        cell.text = f'${val:,.0f}'
-                    elif abs(val) < 1 and col_name not in ('N',):
-                        cell.text = f'{val:.1%}'
-                    else:
-                        cell.text = f'{val:.1f}'
-                else:
-                    cell.text = str(val)
-                for paragraph in cell.text_frame.paragraphs:
-                    paragraph.font.size = Pt(9)
-                    paragraph.alignment = PP_ALIGN.CENTER
-                cell.vertical_anchor = MSO_ANCHOR.MIDDLE
-
-        return slide
+        plt.tight_layout()
+        _img = _save_fig(fig, f'table_{title[:20].replace(" ", "_")}')
+        return _add_image_slide(title, _img)
 
     # -----------------------------------------------------------------
     # Shared setup
@@ -172,7 +161,7 @@ else:
     _overview_text = (
         f"Accounts Mailed: {_n_mailed:,}  |  "
         f"Responders: {_n_resp:,} ({_resp_rate:.1f}%)  |  "
-        f"Waves: {len(_mail_cols_local)}  |  "
+        f"Mailers: {len(_mail_cols_local)}  |  "
         f"Segments: {', '.join(PROGRAM_SEG_ORDER)}"
     )
     _add_section_slide("Program Overview", _overview_text)
@@ -298,9 +287,9 @@ else:
     # =================================================================
     if 'camp_summary' in dir() and len(camp_summary) > 0:
         _cs = camp_summary[['period', 'mailed', 'responded', 'near_use', 'response_rate']].copy()
-        _cs.columns = ['Wave', 'Mailed', 'Responded', 'NU 1-4', 'Rate %']
+        _cs.columns = ['Mailer', 'Mailed', 'Responded', 'NU 1-4', 'Rate %']
         _cs['Rate %'] = _cs['Rate %'].round(1).astype(str) + '%'
-        _add_table_slide("Campaign Response by Wave", _cs)
+        _add_table_slide("Campaign Response by Mailer", _cs)
 
     # =================================================================
     # SLIDE 8: NU Conversion — Deposits (cell 32 chart)
