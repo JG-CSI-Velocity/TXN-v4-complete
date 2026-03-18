@@ -114,14 +114,15 @@ else:
         display(_styled_seg)
 
     # -----------------------------------------------------------------
-    # Determine latest segmentation for segment group breakdown
+    # Determine segment per account: last non-null across all mailers
     # -----------------------------------------------------------------
-    _latest_seg_col = _seg_cols[-1] if _seg_cols else None
     _acct_segment = None
-    if _latest_seg_col:
-        _acct_segment = rewards_df[_latest_seg_col].astype(str).str.strip()
-        _acct_segment = _acct_segment.where(
-            _acct_segment.notna() & ~_acct_segment.isin(['nan', '']), other=np.nan)
+    if _seg_cols:
+        _seg_matrix = rewards_df[_seg_cols].astype(str)
+        _seg_matrix = _seg_matrix.where(
+            ~_seg_matrix.isin(['nan', '', 'None']), other=np.nan)
+        # ffill across columns (left=earliest, right=latest), take last
+        _acct_segment = _seg_matrix.ffill(axis=1).iloc[:, -1]
 
     # Segment group order for breakdown columns
     _SEG_GROUP_ORDER = ['NU', 'TH-10', 'TH-15', 'TH-20', 'TH-25']
@@ -246,7 +247,7 @@ else:
     # -----------------------------------------------------------------
     # 4. Response Grouping -- custom sort order
     # -----------------------------------------------------------------
-    _RG_ORDER = ['MR', 'SR', 'SO', 'NR', 'NO']
+    _RG_ORDER = ['MR', 'SR', 'SO', 'NO', 'NR']
     _RG_LABELS = {
         'MR': 'Multiple Response',
         'SR': 'Single Response',
@@ -353,5 +354,7 @@ else:
     if _seg_cols:
         print(f"  Mailer range: {_seg_cols[0].replace(' Segmentation', '')} to "
               f"{_seg_cols[-1].replace(' Segmentation', '')}")
-    if _latest_seg_col:
-        print(f"  Segment breakdown based on: {_latest_seg_col}")
+    if _seg_cols:
+        _seg_coverage = _acct_segment.notna().sum() if _acct_segment is not None else 0
+        print(f"  Segment breakdown: last non-null across all {len(_seg_cols)} mailers "
+              f"({_seg_coverage:,} accounts with a segment)")
