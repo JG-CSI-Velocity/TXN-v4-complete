@@ -1,0 +1,373 @@
+# ===========================================================================
+# NU CONVERSION LADDER: Card Activation → Deposit Relationship
+# ===========================================================================
+# Within the NU (non-user) segment, all accounts started as non-card-users.
+# The ONLY difference is how they responded to the mailer:
+#   NU 5+  = Converted (hit 5+ swipes threshold — Responder)
+#   NU 1-4 = Partial activation (tried, missed threshold)
+#   NU 0   = Never activated (mailed, no card usage)
+#
+# If deposits follow a dose-response pattern (5+ > 1-4 > 0),
+# that's clean evidence: more card activation → better deposit relationship.
+#
+# Depends on: rewards_df, _acct (cell 04), camp_acct (09/01),
+#             SNAPSHOT_ORDER, SNAPSHOT_CONFIG, GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+elif '_acct' not in dir():
+    print("    Run cell 04 first.")
+else:
+    from IPython.display import display
+
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+
+    _mail_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
+        key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
+    _resp_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Resp')],
+        key=lambda c: pd.to_datetime(c.replace(' Resp', ''), format='%b%y'))
+
+    _eligible = rewards_df.reindex(_acct.index)
+
+    def _parse_seg(val):
+        if pd.isna(val): return None
+        v = str(val).strip().upper()
+        if 'TH-25' in v or 'TH 25' in v or 'TH25' in v: return 'TH-25'
+        if 'TH-20' in v or 'TH 20' in v or 'TH20' in v: return 'TH-20'
+        if 'TH-15' in v or 'TH 15' in v or 'TH15' in v: return 'TH-15'
+        if 'TH-10' in v or 'TH 10' in v or 'TH10' in v: return 'TH-10'
+        if v.startswith('NU') or 'NON-USER' in v: return 'NU'
+        return None
+
+    def _is_success(val):
+        if pd.isna(val): return False
+        v = str(val).strip().upper()
+        if not v or v == 'NAN': return False
+        if 'NU' in v: return '5+' in v or '5 +' in v
+        return True
+
+    def _is_nu_partial(val):
+        if pd.isna(val): return False
+        v = str(val).strip().upper()
+        return v in ('NU 1-4', 'NU1-4', 'NU 1', 'NU 2', 'NU 3', 'NU 4')
+
+    # =================================================================
+    # 1. Classify NU accounts into three groups
+    # =================================================================
+    # Find NU-segment accounts
+    _nu_mask = _acct['program_segment'] == 'NU'
+    _nu_mailed = _nu_mask & _acct['was_mailed']
+
+    # Track per-account: ever hit 5+, ever showed 1-4
+    _ever_5plus = pd.Series(False, index=_acct.index)
+    _ever_1to4 = pd.Series(False, index=_acct.index)
+    _count_5plus = pd.Series(0, index=_acct.index)
+    _count_1to4 = pd.Series(0, index=_acct.index)
+
+    for rc in _resp_cols:
+        if rc not in _eligible.columns:
+            continue
+        _vals = _eligible[rc]
+        _ever_5plus |= _vals.apply(_is_success)
+        _ever_1to4 |= _vals.apply(_is_nu_partial)
+        _count_5plus += _vals.apply(_is_success).astype(int)
+        _count_1to4 += _vals.apply(_is_nu_partial).astype(int)
+
+    # Three NU groups
+    _nu_5plus = _nu_mailed & _ever_5plus
+    _nu_1to4 = _nu_mailed & ~_ever_5plus & _ever_1to4
+    _nu_zero = _nu_mailed & ~_ever_5plus & ~_ever_1to4
+
+    print(f"  NU segment: {_nu_mailed.sum():,} mailed accounts")
+    print(f"    NU 5+ (converted):     {_nu_5plus.sum():,} "
+          f"({_nu_5plus.sum() / _nu_mailed.sum() * 100:.1f}%)")
+    print(f"    NU 1-4 (partial):      {_nu_1to4.sum():,} "
+          f"({_nu_1to4.sum() / _nu_mailed.sum() * 100:.1f}%)")
+    print(f"    NU 0 (never activated): {_nu_zero.sum():,} "
+          f"({_nu_zero.sum() / _nu_mailed.sum() * 100:.1f}%)")
+
+    # =================================================================
+    # 2. Build comparison table
+    # =================================================================
+    _groups = [
+        ('NU 5+ (Converted)', _nu_5plus),
+        ('NU 1-4 (Partial)', _nu_1to4),
+        ('NU 0 (Never Activated)', _nu_zero),
+    ]
+
+    _rows = []
+    for label, mask in _groups:
+        _g = _acct[mask]
+        _n = len(_g)
+        if _n == 0:
+            continue
+
+        _row = {'Group': label, 'N': _n}
+
+        # Swipes
+        if 'mo_swipes_3mo' in _g.columns:
+            _row['Swipes/mo (3mo)'] = _g['mo_swipes_3mo'].median()
+        if 'mo_swipes_12mo' in _g.columns:
+            _row['Swipes/mo (12mo)'] = _g['mo_swipes_12mo'].median()
+
+        # Spend
+        if 'mo_spend_3mo' in _g.columns:
+            _row['Spend/mo (3mo)'] = _g['mo_spend_3mo'].median()
+        if 'mo_spend_12mo' in _g.columns:
+            _row['Spend/mo (12mo)'] = _g['mo_spend_12mo'].median()
+
+        # Deposits
+        if 'mo_dep_amt' in _g.columns:
+            _row['Dep $/mo'] = _g['mo_dep_amt'].median()
+        if 'mo_dep_count' in _g.columns:
+            _row['Dep Ct/mo'] = _g['mo_dep_count'].median()
+
+        # Balance
+        if 'balance' in _g.columns:
+            _bal = pd.to_numeric(_g['balance'], errors='coerce')
+            _row['Median Balance'] = _bal.median()
+
+        # Direct deposit
+        if 'has_direct_deposit' in _g.columns:
+            _row['Direct Dep %'] = _g['has_direct_deposit'].mean()
+
+        # Avg days between deposits
+        if 'avgdaysbetweendeposits' in _g.columns:
+            _abd = _g['avgdaysbetweendeposits'].replace(0, np.nan)
+            _row['Avg Days Btwn Dep'] = _abd.median()
+
+        _rows.append(_row)
+
+    _df = pd.DataFrame(_rows)
+    for _rc in _df.columns:
+        if _rc not in ('Group', 'N') and _df[_rc].dtype in ('float64', 'float32'):
+            _df[_rc] = _df[_rc].round(1)
+
+    def _gradient_row(row):
+        """Teal for 5+, amber for 1-4, gray for 0."""
+        g = str(_df.loc[row.name, 'Group'])
+        if '5+' in g:
+            return ['background-color: rgba(46, 196, 182, 0.10)'] * len(row)
+        elif '1-4' in g:
+            return ['background-color: rgba(255, 159, 28, 0.08)'] * len(row)
+        return [''] * len(row)
+
+    def _color_grp(col):
+        if col.name != 'Group': return [''] * len(col)
+        styles = []
+        for v in col:
+            if '5+' in str(v):
+                styles.append(f'color: {GEN_COLORS["success"]}')
+            elif '1-4' in str(v):
+                styles.append(f'color: {GEN_COLORS["warning"]}')
+            else:
+                styles.append(f'color: {GEN_COLORS["muted"]}')
+        return styles
+
+    _fmt = {'N': '{:,.0f}'}
+    for c in _df.columns:
+        if c in ('Group', 'N'): continue
+        elif 'Direct' in c: _fmt[c] = '{:.0%}'
+        elif '$' in c or 'Spend' in c or 'Balance' in c: _fmt[c] = '${:,.0f}'
+        elif 'Days' in c: _fmt[c] = '{:.0f}'
+        elif 'Ct' in c: _fmt[c] = '{:,.1f}'
+        else: _fmt[c] = '{:,.1f}'
+
+    _styled = (
+        _df.style.hide(axis='index')
+        .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+        .apply(_gradient_row, axis=1)
+        .apply(_color_grp)
+        .set_properties(**{'font-size': '15px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF',
+            'padding': '12px 14px'})
+        .set_properties(subset=['Group'], **{'text-align': 'left'})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '14px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '12px 14px')]},
+            {'selector': 'caption', 'props': [('font-size', '24px'),
+                ('font-weight', 'bold'), ('color', GEN_COLORS['dark_text']),
+                ('text-align', 'left'), ('padding-bottom', '14px')]},
+        ])
+        .set_caption("NU Conversion Ladder: Card Activation Drives Deposit Relationship")
+    )
+    display(_styled)
+
+    # =================================================================
+    # 3. Bar chart: Dose-response pattern
+    # =================================================================
+    _dep_col = 'Dep $/mo' if 'Dep $/mo' in _df.columns else None
+    _bal_col = 'Median Balance' if 'Median Balance' in _df.columns else None
+
+    _chart_metrics = []
+    if _dep_col:
+        _chart_metrics.append((_dep_col, 'Median Monthly Deposits ($)', True))
+    if _bal_col:
+        _chart_metrics.append((_bal_col, 'Median Balance ($)', True))
+    if 'Swipes/mo (3mo)' in _df.columns:
+        _chart_metrics.append(('Swipes/mo (3mo)', 'Median Swipes/mo (Recent 3mo)', False))
+
+    if _chart_metrics:
+        _n_charts = len(_chart_metrics)
+        fig, axes = plt.subplots(1, _n_charts,
+                                  figsize=(5.5 * _n_charts, 6))
+        if _n_charts == 1:
+            axes = [axes]
+
+        _bar_colors = [GEN_COLORS['success'], GEN_COLORS['warning'],
+                        GEN_COLORS['muted']]
+        _bar_labels = ['NU 5+', 'NU 1-4', 'NU 0']
+
+        for ax, (col, ylabel, is_dollar) in zip(axes, _chart_metrics):
+            _vals = _df[col].tolist()
+            _x = np.arange(len(_vals))
+
+            bars = ax.bar(_x, _vals, color=_bar_colors[:len(_vals)],
+                          edgecolor='white', linewidth=1.5, width=0.55,
+                          zorder=3)
+
+            for bar, val, color in zip(bars, _vals, _bar_colors):
+                if pd.notna(val) and val > 0:
+                    _label = f'${val:,.0f}' if is_dollar else f'{val:.1f}'
+                    ax.text(bar.get_x() + bar.get_width() / 2,
+                            bar.get_height() + bar.get_height() * 0.02,
+                            _label, ha='center', va='bottom',
+                            fontsize=13, fontweight='bold', color=color)
+
+            ax.set_xticks(_x)
+            ax.set_xticklabels(_bar_labels[:len(_vals)],
+                                fontsize=12, fontweight='bold')
+            ax.set_ylabel(ylabel, fontsize=12, fontweight='bold', labelpad=8)
+            if is_dollar:
+                ax.yaxis.set_major_formatter(
+                    mticker.FuncFormatter(gen_fmt_dollar))
+            gen_clean_axes(ax)
+            ax.yaxis.grid(True, color=GEN_COLORS['grid'],
+                          linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+
+        fig.suptitle("NU Dose-Response: More Activation = Better Relationship",
+                      fontsize=22, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], y=1.02)
+        fig.text(0.5, 0.98,
+                 "All accounts started as non-card-users  |  "
+                 "Only difference is how they responded to the mailer",
+                 ha='center', fontsize=12,
+                 color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.subplots_adjust(top=0.86)
+        plt.show()
+
+    # =================================================================
+    # 4. Conversion wave analysis: NU progression across mailers
+    # =================================================================
+    # Track how NU accounts progressed through waves
+    _wave_data = []
+    for mc, rc in zip(_mail_cols, _resp_cols):
+        _period = mc.replace(' Mail', '')
+        if rc not in _eligible.columns:
+            continue
+
+        _seg = _eligible[mc].apply(_parse_seg)
+        _is_nu_mail = _eligible[mc].notna() & (_seg == 'NU')
+
+        if _is_nu_mail.sum() == 0:
+            continue
+
+        _resp_val = _eligible.loc[_is_nu_mail, rc]
+        _n_mailed = _is_nu_mail.sum()
+        _n_5plus = _resp_val.apply(_is_success).sum()
+        _n_1to4 = _resp_val.apply(_is_nu_partial).sum()
+        _n_zero = _n_mailed - _n_5plus - _n_1to4
+
+        _wave_data.append({
+            'Wave': _period,
+            'Mailed': _n_mailed,
+            'NU 5+': _n_5plus,
+            'NU 1-4': _n_1to4,
+            'NU 0': _n_zero,
+            '5+ Rate': _n_5plus / _n_mailed * 100 if _n_mailed > 0 else 0,
+            'Any Activity': (_n_5plus + _n_1to4) / _n_mailed * 100 if _n_mailed > 0 else 0,
+        })
+
+    if _wave_data:
+        _w_df = pd.DataFrame(_wave_data)
+
+        _styled = (
+            _w_df.style.hide(axis='index')
+            .format({
+                'Mailed': '{:,.0f}', 'NU 5+': '{:,.0f}',
+                'NU 1-4': '{:,.0f}', 'NU 0': '{:,.0f}',
+                '5+ Rate': '{:.1f}%', 'Any Activity': '{:.1f}%',
+            })
+            .set_properties(**{'font-size': '14px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF',
+                'padding': '10px 12px'})
+            .set_properties(subset=['Wave'], **{'text-align': 'left'})
+            .bar(subset=['5+ Rate'], color=GEN_COLORS['success'], vmin=0)
+            .bar(subset=['Any Activity'], color=GEN_COLORS['warning'], vmin=0)
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                    ('color', 'white'), ('font-size', '14px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '10px 12px')]},
+                {'selector': 'caption', 'props': [('font-size', '22px'),
+                    ('font-weight', 'bold'), ('color', GEN_COLORS['dark_text']),
+                    ('text-align', 'left'), ('padding-bottom', '12px')]},
+            ])
+            .set_caption("NU Conversion by Mailer Wave")
+        )
+        display(_styled)
+
+        # Stacked bar chart of wave outcomes
+        if len(_w_df) > 1:
+            fig, ax = plt.subplots(figsize=(max(10, len(_w_df) * 1.2), 6))
+            _x = np.arange(len(_w_df))
+            _bw = 0.55
+
+            ax.bar(_x, _w_df['NU 5+'], _bw,
+                   color=GEN_COLORS['success'], label='NU 5+ (Converted)',
+                   zorder=3)
+            ax.bar(_x, _w_df['NU 1-4'], _bw,
+                   bottom=_w_df['NU 5+'],
+                   color=GEN_COLORS['warning'], label='NU 1-4 (Partial)',
+                   zorder=3)
+            ax.bar(_x, _w_df['NU 0'], _bw,
+                   bottom=_w_df['NU 5+'] + _w_df['NU 1-4'],
+                   color=GEN_COLORS['grid'], label='NU 0 (No Activity)',
+                   zorder=3)
+
+            ax.set_xticks(_x)
+            ax.set_xticklabels(_w_df['Wave'], fontsize=11,
+                                fontweight='bold', rotation=45, ha='right')
+            ax.set_ylabel("NU Accounts", fontsize=13,
+                           fontweight='bold', labelpad=10)
+            gen_clean_axes(ax)
+            ax.yaxis.grid(True, color=GEN_COLORS['grid'],
+                          linewidth=0.5, alpha=0.3)
+            ax.set_axisbelow(True)
+            ax.legend(fontsize=11, loc='upper right', frameon=True,
+                      facecolor='white', edgecolor=GEN_COLORS['grid'])
+            ax.set_title("NU Conversion Funnel by Wave",
+                          fontsize=20, fontweight='bold',
+                          color=GEN_COLORS['dark_text'], pad=15)
+
+            plt.tight_layout()
+            plt.show()
+
+    # =================================================================
+    # 5. Summary
+    # =================================================================
+    print(f"\n  NU Conversion Summary:")
+    for label, mask in _groups:
+        _g = _acct[mask]
+        _dep = _g['mo_dep_amt'].median() if 'mo_dep_amt' in _g.columns else 0
+        _bal = pd.to_numeric(_g['balance'], errors='coerce').median() if 'balance' in _g.columns else 0
+        _swp = _g['mo_swipes_3mo'].median() if 'mo_swipes_3mo' in _g.columns else 0
+        print(f"    {label} (n={len(_g):,}):")
+        print(f"      Swipes: {_swp:.1f}/mo  |  "
+              f"Deposits: ${_dep:,.0f}/mo  |  "
+              f"Balance: ${_bal:,.0f}")
