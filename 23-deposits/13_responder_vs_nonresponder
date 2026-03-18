@@ -75,7 +75,8 @@ else:
         _snap = deposit_long[deposit_long['snapshot'] == _latest_snap].copy()
         if DEPOSIT_JOIN_KEY_DEPOSIT in _snap.columns:
             _snap['_join_key'] = _snap[DEPOSIT_JOIN_KEY_DEPOSIT].astype(str).str.strip()
-            _dep_cols = [c for c in ['DepAmt99', 'DepCount99', 'depAmt365', 'depCount365', 'balance']
+            _dep_cols = [c for c in ['DepAmt99', 'DepCount99', 'depAmt365', 'depCount365',
+                                     'AvgCollectedBalance', 'balance']
                           if c in _snap.columns]
             if _dep_cols:
                 _dep = (_snap[['_join_key'] + _dep_cols]
@@ -84,13 +85,15 @@ else:
                 _acct = _acct.join(_dep, on='_join_key', how='left')
 
     # Diagnostic: raw deposit column values
-    for _dc in ['DepCount99', 'DepAmt99', 'depCount365', 'depAmt365', 'balance']:
+    for _dc in ['DepCount99', 'DepAmt99', 'depCount365', 'depAmt365',
+                 'AvgCollectedBalance', 'balance']:
         if _dc in _acct.columns:
             _vals = _acct[_dc].dropna()
             print(f"  RAW {_dc}: n={len(_vals):,}, "
                   f"mean={_vals.mean():,.1f}, median={_vals.median():,.1f}, "
                   f"min={_vals.min():,.1f}, max={_vals.max():,.1f}, "
-                  f"nunique={_vals.nunique():,}")
+                  f"nunique={_vals.nunique():,}, "
+                  f"p25={_vals.quantile(0.25):,.1f}, p75={_vals.quantile(0.75):,.1f}")
 
     if 'DepCount99' in _acct.columns:
         _acct['mo_dep_count'] = _acct['DepCount99'] / 3.3
