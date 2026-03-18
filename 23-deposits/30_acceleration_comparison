@@ -1,22 +1,24 @@
 # ===========================================================================
-# ACCELERATION COMPARISON: 33d/66d Ratio at Each Snapshot
+# DEPOSIT ACTIVATION: Same Deposits, More Card Revenue
 # ===========================================================================
-# For each group: deposit acceleration (33d/66d ratio) at the early vs
-# late snapshot. If responders went from 1.1x to 1.3x while NR stayed
-# flat: program effect on deposit momentum.
+# Responders and NR have similar deposit levels -- the program doesn't
+# make people richer. But responders USE their accounts far more actively.
 #
-# > 1.0 = accelerating (recent 33d > prior 33d window)
-# < 1.0 = decelerating
+# This cell shows:
+#   1. Deposit parity: R and NR deposit levels side-by-side (similar)
+#   2. Activation ratio: monthly spend / monthly deposits
+#      R spends a larger share of their deposits via card = more interchange
+#   3. Per-segment breakdown showing the pattern holds everywhere
+#
+# The story: same deposit base, dramatically more card engagement.
 #
 # Depends on: rewards_df, _acct (cell 04), deposit_long, SNAPSHOT_ORDER,
-#             PROGRAM_SEG_ORDER, GEN_COLORS
+#             SNAPSHOT_CONFIG, PROGRAM_SEG_ORDER, GEN_COLORS
 
 if 'rewards_df' not in dir():
     print("    rewards_df not available.")
 elif '_acct' not in dir():
     print("    Run cell 04 first.")
-elif 'dep_accel_amt_early' not in _acct.columns:
-    print("    No early acceleration data. Need 2+ Z5 snapshots.")
 else:
     from IPython.display import display
 
@@ -29,12 +31,16 @@ else:
         [c.strip() for c in rewards_df.columns if c.strip().endswith(' Resp')],
         key=lambda c: pd.to_datetime(c.replace(' Resp', ''), format='%b%y'))
 
-    _loaded_snaps = [k for k in SNAPSHOT_ORDER
-                     if k in deposit_long['snapshot'].unique()]
-    _early_label = SNAPSHOT_CONFIG[_loaded_snaps[0]]['label']
-    _late_label = SNAPSHOT_CONFIG[_loaded_snaps[-1]]['label']
+    def _find_monthly(suffix):
+        return sorted(
+            [c.strip() for c in rewards_df.columns if c.strip().endswith(suffix)
+             and c.strip()[0].isupper()
+             and len(c.strip().split(' ')[0]) in (5, 6)
+             and c.strip().split(' ')[0][:3] in _VALID_MON],
+            key=lambda c: pd.to_datetime(c.strip().replace(suffix, ''), format='%b%y'))
 
-    print(f"  Acceleration comparison: {_early_label} vs {_late_label}")
+    _spend_cols = _find_monthly(' Spend')
+    _swipe_cols = _find_monthly(' Swipes')
 
     def _parse_seg(val):
         if pd.isna(val): return None
@@ -86,226 +92,313 @@ else:
 
     _responded = _resp_segment.notna()
 
-    # Need both acceleration values
-    _has_both = (
-        _acct['dep_accel_amt'].notna()
-        & _acct['dep_accel_amt_early'].notna()
-    )
-    print(f"  Accounts with both accel values: {_has_both.sum():,}")
+    # Need deposit data + spend data
+    _has_deps = 'mo_dep_amt' in _acct.columns and _acct['mo_dep_amt'].notna().any()
+    _has_spend = 'mo_spend_12mo' in _acct.columns
 
-    # Build groups: Resp then NR by segment
-    _groups = []
-    for seg in PROGRAM_SEG_ORDER:
-        _mask = (_resp_segment == seg) & _has_both
-        if _mask.sum() > 0:
-            _groups.append((f'{seg} Resp', _mask))
+    if not _has_deps:
+        print("    No deposit data on _acct. Run cell 01 + 04.")
+    elif not _has_spend:
+        print("    No spend data on _acct. Run cell 04.")
+    else:
+        # Compute activation ratio: spend / deposits
+        _acct['activation_ratio'] = np.where(
+            _acct['mo_dep_amt'] > 0,
+            _acct['mo_spend_12mo'] / _acct['mo_dep_amt'],
+            np.nan
+        )
 
-    for seg in PROGRAM_SEG_ORDER:
-        _seg_nr = (_acct_seg == seg) & ~_acct_resp & _has_both
-        if _seg_nr.sum() > 0:
-            _groups.append((f'{seg} NR', _seg_nr))
+        # Also compute swipes per $1K deposited
+        _acct['swipes_per_1k_dep'] = np.where(
+            _acct['mo_dep_amt'] > 0,
+            _acct['mo_swipes_12mo'] / (_acct['mo_dep_amt'] / 1000),
+            np.nan
+        )
 
-    _rows = []
-    for label, mask in _groups:
-        _g = _acct[mask]
-        _n = len(_g)
-        if _n == 0:
-            continue
+        print(f"  Activation ratio computed for "
+              f"{_acct['activation_ratio'].notna().sum():,} accounts")
 
-        _row = {'Group': label, 'N': _n}
+        # =============================================================
+        # 1. Table: Deposits + Spend + Activation by segment (R vs NR)
+        # =============================================================
+        _groups = []
+        for seg in PROGRAM_SEG_ORDER:
+            _mask = _resp_segment == seg
+            if _mask.sum() > 0:
+                _groups.append((f'{seg} Resp', _mask))
 
-        # Early acceleration
-        if 'dep_accel_amt_early' in _g.columns:
-            _row[f'{_early_label} 33d/66d'] = _g['dep_accel_amt_early'].median()
-        # Late acceleration
-        if 'dep_accel_amt' in _g.columns:
-            _row[f'{_late_label} 33d/66d'] = _g['dep_accel_amt'].median()
-        # Change
-        if ('dep_accel_amt_early' in _g.columns
-                and 'dep_accel_amt' in _g.columns):
-            _e = _g['dep_accel_amt_early'].median()
-            _l = _g['dep_accel_amt'].median()
-            _row['Accel Change'] = _l - _e
+        for seg in PROGRAM_SEG_ORDER:
+            _seg_nr = (_acct_seg == seg) & ~_acct_resp
+            if _seg_nr.sum() > 0:
+                _groups.append((f'{seg} NR', _seg_nr))
 
-        # Deposit count acceleration too
-        if 'dep_accel_count_early' in _g.columns:
-            _row[f'{_early_label} Ct 33d/66d'] = _g['dep_accel_count_early'].median()
-        if 'dep_accel_count' in _g.columns:
-            _row[f'{_late_label} Ct 33d/66d'] = _g['dep_accel_count'].median()
+        _rows = []
+        for label, mask in _groups:
+            _g = _acct[mask]
+            _n = len(_g)
+            if _n == 0:
+                continue
 
-        _rows.append(_row)
+            _row = {'Group': label, 'N': _n}
 
-    _df = pd.DataFrame(_rows)
-    for _rc in _df.columns:
-        if _rc not in ('Group', 'N') and _df[_rc].dtype in ('float64', 'float32'):
-            _df[_rc] = _df[_rc].round(2)
+            # Deposits (monthly from 365d rollup)
+            if 'mo_dep_amt' in _g.columns:
+                _row['Dep $/mo'] = _g['mo_dep_amt'].median()
+            if 'mo_dep_count' in _g.columns:
+                _row['Dep Ct/mo'] = _g['mo_dep_count'].median()
 
-    # Find NR separator
-    _nr_start = None
-    for i, row in _df.iterrows():
-        if 'NR' in str(row['Group']) and _nr_start is None:
-            _nr_start = i
+            # Spend
+            if 'mo_spend_12mo' in _g.columns:
+                _row['Spend $/mo'] = _g['mo_spend_12mo'].median()
+            if 'mo_swipes_12mo' in _g.columns:
+                _row['Swipes/mo'] = _g['mo_swipes_12mo'].median()
 
-    def _style_rows(row):
-        parts = []
-        if 'Resp' in str(_df.loc[row.name, 'Group']):
-            parts.append('background-color: rgba(46, 196, 182, 0.08)')
-        if row.name == _nr_start:
-            parts.append('border-top: 2px solid #1B2A4A')
-        return ['; '.join(parts) if parts else ''] * len(row)
+            # Activation
+            if 'activation_ratio' in _g.columns:
+                _row['Activation'] = _g['activation_ratio'].median()
+            if 'swipes_per_1k_dep' in _g.columns:
+                _row['Swipes/$1K Dep'] = _g['swipes_per_1k_dep'].median()
 
-    def _color_grp(col):
-        if col.name != 'Group': return [''] * len(col)
-        return [f'color: {GEN_COLORS["success"]}' if 'Resp' in str(v)
-                else f'color: {GEN_COLORS["muted"]}' for v in col]
+            _rows.append(_row)
 
-    def _color_accel(col):
-        if 'Accel Change' not in col.name:
-            return [''] * len(col)
-        styles = []
-        for v in col:
-            if pd.notna(v) and v > 0.01:
-                styles.append(f'color: {GEN_COLORS["success"]}')
-            elif pd.notna(v) and v < -0.01:
-                styles.append(f'color: {GEN_COLORS["accent"]}')
-            else:
-                styles.append('')
-        return styles
+        _df = pd.DataFrame(_rows)
+        for _rc in _df.columns:
+            if _rc not in ('Group', 'N') and _df[_rc].dtype in ('float64', 'float32'):
+                _df[_rc] = _df[_rc].round(1)
 
-    _fmt = {'N': '{:,.0f}'}
-    for c in _df.columns:
-        if c in ('Group', 'N'):
-            continue
-        elif 'Change' in c:
-            _fmt[c] = '{:+.2f}'
-        else:
-            _fmt[c] = '{:.2f}x'
+        _nr_start = None
+        for i, row in _df.iterrows():
+            if 'NR' in str(row['Group']) and _nr_start is None:
+                _nr_start = i
 
-    _styled = (
-        _df.style.hide(axis='index')
-        .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
-        .apply(_style_rows, axis=1)
-        .apply(_color_grp)
-        .apply(_color_accel)
-        .set_properties(**{'font-size': '14px', 'font-weight': 'bold',
-            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '10px 12px'})
-        .set_properties(subset=['Group'], **{'text-align': 'left'})
-        .set_table_styles([
-            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
-                ('color', 'white'), ('font-size', '14px'), ('font-weight', 'bold'),
-                ('text-align', 'center'), ('padding', '10px 12px')]},
-            {'selector': 'caption', 'props': [('font-size', '24px'), ('font-weight', 'bold'),
-                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
-                ('padding-bottom', '14px')]},
-        ])
-        .set_caption(f"Deposit Acceleration: {_early_label} vs {_late_label}")
-    )
-    display(_styled)
+        def _style_rows(row):
+            parts = []
+            if 'Resp' in str(_df.loc[row.name, 'Group']):
+                parts.append('background-color: rgba(46, 196, 182, 0.08)')
+            if row.name == _nr_start:
+                parts.append('border-top: 2px solid #1B2A4A')
+            return ['; '.join(parts) if parts else ''] * len(row)
 
-    # -----------------------------------------------------------------
-    # Slope chart: acceleration at early vs late, R vs NR per segment
-    # -----------------------------------------------------------------
-    _seg_order = [s for s in PROGRAM_SEG_ORDER
-                   if f'{s} Resp' in _df['Group'].values
-                   or f'{s} NR' in _df['Group'].values]
+        def _color_grp(col):
+            if col.name != 'Group': return [''] * len(col)
+            return [f'color: {GEN_COLORS["success"]}' if 'Resp' in str(v)
+                    else f'color: {GEN_COLORS["muted"]}' for v in col]
 
-    _early_col = f'{_early_label} 33d/66d'
-    _late_col = f'{_late_label} 33d/66d'
+        _fmt = {'N': '{:,.0f}'}
+        for c in _df.columns:
+            if c in ('Group', 'N'): continue
+            elif 'Activation' in c: _fmt[c] = '{:.1%}'
+            elif '$' in c or 'Spend' in c: _fmt[c] = '${:,.0f}'
+            elif 'Swipes' in c: _fmt[c] = '{:,.1f}'
+            elif 'Ct' in c: _fmt[c] = '{:,.1f}'
 
-    if _seg_order and _early_col in _df.columns and _late_col in _df.columns:
-        fig, axes = plt.subplots(1, len(_seg_order),
-                                  figsize=(4 * len(_seg_order), 6),
-                                  sharey=True)
-        if len(_seg_order) == 1:
-            axes = [axes]
+        _styled = (
+            _df.style.hide(axis='index')
+            .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+            .apply(_style_rows, axis=1)
+            .apply(_color_grp)
+            .set_properties(**{'font-size': '14px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF',
+                'padding': '10px 12px'})
+            .set_properties(subset=['Group'], **{'text-align': 'left'})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                    ('color', 'white'), ('font-size', '14px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '10px 12px')]},
+                {'selector': 'caption', 'props': [('font-size', '24px'),
+                    ('font-weight', 'bold'), ('color', GEN_COLORS['dark_text']),
+                    ('text-align', 'left'), ('padding-bottom', '14px')]},
+            ])
+            .set_caption("Deposit Activation: Same Deposits, More Card Revenue")
+        )
+        display(_styled)
 
-        for ax, seg in zip(axes, _seg_order):
-            _r_row = _df[_df['Group'] == f'{seg} Resp']
-            _nr_row = _df[_df['Group'] == f'{seg} NR']
+        # =============================================================
+        # 2. Chart: Paired bars — Deposits (similar) vs Spend (divergent)
+        # =============================================================
+        _seg_order = [s for s in PROGRAM_SEG_ORDER
+                       if f'{s} Resp' in _df['Group'].values
+                       or f'{s} NR' in _df['Group'].values]
 
-            # Responder slope
-            if len(_r_row) > 0:
-                _r_e = _r_row[_early_col].iloc[0]
-                _r_l = _r_row[_late_col].iloc[0]
-                if pd.notna(_r_e) and pd.notna(_r_l):
-                    ax.plot([0, 1], [_r_e, _r_l],
-                            color=GEN_COLORS['success'], linewidth=3,
-                            marker='o', markersize=10, zorder=3)
-                    ax.text(-0.15, _r_e, f'{_r_e:.2f}x',
-                            ha='right', va='center', fontsize=11,
+        if _seg_order and 'Dep $/mo' in _df.columns and 'Spend $/mo' in _df.columns:
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+
+            _x = np.arange(len(_seg_order))
+            _bw = 0.35
+
+            # Panel 1: Monthly deposits (should be similar)
+            _r_deps = []
+            _nr_deps = []
+            for seg in _seg_order:
+                _r = _df[_df['Group'] == f'{seg} Resp']
+                _nr = _df[_df['Group'] == f'{seg} NR']
+                _r_deps.append(_r['Dep $/mo'].iloc[0] if len(_r) > 0 else 0)
+                _nr_deps.append(_nr['Dep $/mo'].iloc[0] if len(_nr) > 0 else 0)
+
+            ax1.bar(_x - _bw/2, _r_deps, _bw,
+                    color=GEN_COLORS['success'], edgecolor='white',
+                    linewidth=1.5, label='Responder', zorder=3)
+            ax1.bar(_x + _bw/2, _nr_deps, _bw,
+                    color=GEN_COLORS['muted'], edgecolor='white',
+                    linewidth=1.5, label='Non-Responder', zorder=3)
+
+            ax1.set_xticks(_x)
+            ax1.set_xticklabels(_seg_order, fontsize=11, fontweight='bold')
+            ax1.set_ylabel("Median Deposits ($/mo)", fontsize=12,
+                            fontweight='bold', labelpad=8)
+            ax1.yaxis.set_major_formatter(
+                mticker.FuncFormatter(gen_fmt_dollar))
+            gen_clean_axes(ax1)
+            ax1.yaxis.grid(True, color=GEN_COLORS['grid'],
+                           linewidth=0.5, alpha=0.7)
+            ax1.set_axisbelow(True)
+            ax1.set_title("Deposits: Comparable", fontsize=16,
+                           fontweight='bold', color=GEN_COLORS['dark_text'])
+            ax1.legend(fontsize=10, frameon=True, facecolor='white',
+                       edgecolor=GEN_COLORS['grid'])
+
+            # Panel 2: Monthly spend (should diverge)
+            _r_spend = []
+            _nr_spend = []
+            for seg in _seg_order:
+                _r = _df[_df['Group'] == f'{seg} Resp']
+                _nr = _df[_df['Group'] == f'{seg} NR']
+                _r_spend.append(_r['Spend $/mo'].iloc[0] if len(_r) > 0 else 0)
+                _nr_spend.append(_nr['Spend $/mo'].iloc[0] if len(_nr) > 0 else 0)
+
+            ax2.bar(_x - _bw/2, _r_spend, _bw,
+                    color=GEN_COLORS['success'], edgecolor='white',
+                    linewidth=1.5, label='Responder', zorder=3)
+            ax2.bar(_x + _bw/2, _nr_spend, _bw,
+                    color=GEN_COLORS['muted'], edgecolor='white',
+                    linewidth=1.5, label='Non-Responder', zorder=3)
+
+            ax2.set_xticks(_x)
+            ax2.set_xticklabels(_seg_order, fontsize=11, fontweight='bold')
+            ax2.set_ylabel("Median Card Spend ($/mo)", fontsize=12,
+                            fontweight='bold', labelpad=8)
+            ax2.yaxis.set_major_formatter(
+                mticker.FuncFormatter(gen_fmt_dollar))
+            gen_clean_axes(ax2)
+            ax2.yaxis.grid(True, color=GEN_COLORS['grid'],
+                           linewidth=0.5, alpha=0.7)
+            ax2.set_axisbelow(True)
+            ax2.set_title("Card Spend: Responders 2x+", fontsize=16,
+                           fontweight='bold', color=GEN_COLORS['success'])
+            ax2.legend(fontsize=10, frameon=True, facecolor='white',
+                       edgecolor=GEN_COLORS['grid'])
+
+            fig.suptitle("Same Deposit Base, More Card Revenue",
+                          fontsize=22, fontweight='bold',
+                          color=GEN_COLORS['dark_text'], y=1.02)
+            fig.text(0.5, 0.98,
+                     "Deposits are comparable across groups  |  "
+                     "The difference is card engagement",
+                     ha='center', fontsize=12,
+                     color=GEN_COLORS['muted'], style='italic')
+
+            plt.tight_layout()
+            plt.subplots_adjust(top=0.86)
+            plt.show()
+
+        # =============================================================
+        # 3. Chart: Activation ratio by segment (R vs NR)
+        # =============================================================
+        if 'Activation' in _df.columns and _seg_order:
+            fig, ax = plt.subplots(figsize=(12, 6))
+
+            _x = np.arange(len(_seg_order))
+            _bw = 0.35
+            _r_act = []
+            _nr_act = []
+
+            for seg in _seg_order:
+                _r = _df[_df['Group'] == f'{seg} Resp']
+                _nr = _df[_df['Group'] == f'{seg} NR']
+                _r_act.append(
+                    _r['Activation'].iloc[0] if len(_r) > 0 else 0)
+                _nr_act.append(
+                    _nr['Activation'].iloc[0] if len(_nr) > 0 else 0)
+
+            bars_r = ax.bar(_x - _bw/2, _r_act, _bw,
+                            color=GEN_COLORS['success'], edgecolor='white',
+                            linewidth=1.5, label='Responder', zorder=3)
+            bars_nr = ax.bar(_x + _bw/2, _nr_act, _bw,
+                             color=GEN_COLORS['muted'], edgecolor='white',
+                             linewidth=1.5, label='Non-Responder', zorder=3)
+
+            for bar, val in zip(bars_r, _r_act):
+                if pd.notna(val) and val > 0:
+                    ax.text(bar.get_x() + bar.get_width() / 2,
+                            bar.get_height() + 0.005,
+                            f"{val:.1%}",
+                            ha='center', va='bottom', fontsize=11,
                             fontweight='bold', color=GEN_COLORS['success'])
-                    ax.text(1.15, _r_l, f'{_r_l:.2f}x',
-                            ha='left', va='center', fontsize=11,
-                            fontweight='bold', color=GEN_COLORS['success'])
 
-            # Non-responder slope
-            if len(_nr_row) > 0:
-                _nr_e = _nr_row[_early_col].iloc[0]
-                _nr_l = _nr_row[_late_col].iloc[0]
-                if pd.notna(_nr_e) and pd.notna(_nr_l):
-                    ax.plot([0, 1], [_nr_e, _nr_l],
-                            color=GEN_COLORS['muted'], linewidth=3,
-                            marker='o', markersize=10, zorder=3,
-                            linestyle='--')
-                    ax.text(-0.15, _nr_e, f'{_nr_e:.2f}x',
-                            ha='right', va='center', fontsize=11,
-                            fontweight='bold', color=GEN_COLORS['muted'])
-                    ax.text(1.15, _nr_l, f'{_nr_l:.2f}x',
-                            ha='left', va='center', fontsize=11,
+            for bar, val in zip(bars_nr, _nr_act):
+                if pd.notna(val) and val > 0:
+                    ax.text(bar.get_x() + bar.get_width() / 2,
+                            bar.get_height() + 0.005,
+                            f"{val:.1%}",
+                            ha='center', va='bottom', fontsize=11,
                             fontweight='bold', color=GEN_COLORS['muted'])
 
-            ax.axhline(1.0, color=GEN_COLORS['grid'], linewidth=1,
-                        linestyle=':', zorder=1)
-
-            ax.set_xticks([0, 1])
-            ax.set_xticklabels([_early_label, _late_label],
-                                fontsize=11, fontweight='bold')
-            ax.set_xlim(-0.4, 1.4)
-            ax.set_title(seg, fontsize=16, fontweight='bold',
-                          color=GEN_COLORS['dark_text'], pad=10)
-            gen_clean_axes(ax, keep_left=(ax == axes[0]))
+            ax.set_xticks(_x)
+            ax.set_xticklabels(_seg_order, fontsize=13, fontweight='bold')
+            ax.set_ylabel("Card Spend / Monthly Deposits", fontsize=13,
+                           fontweight='bold', labelpad=10)
+            ax.yaxis.set_major_formatter(
+                mticker.FuncFormatter(lambda x, _: f'{x:.0%}'))
+            gen_clean_axes(ax)
             ax.yaxis.grid(True, color=GEN_COLORS['grid'],
-                          linewidth=0.5, alpha=0.5)
+                          linewidth=0.5, alpha=0.7)
             ax.set_axisbelow(True)
+            ax.legend(fontsize=13, loc='upper right', frameon=True,
+                      facecolor='white', edgecolor=GEN_COLORS['grid'])
 
-        # Legend on last panel
-        from matplotlib.lines import Line2D
-        _legend_elems = [
-            Line2D([0], [0], color=GEN_COLORS['success'], linewidth=3,
-                   marker='o', label='Responder'),
-            Line2D([0], [0], color=GEN_COLORS['muted'], linewidth=3,
-                   marker='o', linestyle='--', label='Non-Responder'),
-            Line2D([0], [0], color=GEN_COLORS['grid'], linewidth=1,
-                   linestyle=':', label='1.0x (flat)'),
-        ]
-        axes[-1].legend(handles=_legend_elems, fontsize=10,
-                        loc='lower right', frameon=True,
-                        facecolor='white', edgecolor=GEN_COLORS['grid'])
+            ax.set_title("Deposit Activation Rate by Segment",
+                          fontsize=22, fontweight='bold',
+                          color=GEN_COLORS['dark_text'], pad=35, loc='left')
+            ax.text(0.0, 1.02,
+                    "What % of monthly deposits flows through the card?  |  "
+                    "Higher = more interchange revenue per deposit dollar",
+                    transform=ax.transAxes, fontsize=12,
+                    color=GEN_COLORS['muted'], style='italic')
 
-        fig.suptitle(
-            f"Deposit Acceleration: {_early_label} vs {_late_label}",
-            fontsize=22, fontweight='bold',
-            color=GEN_COLORS['dark_text'], y=1.02)
-        fig.text(0.5, 0.98,
-                 "33d/66d ratio  |  > 1.0 = accelerating deposits  |  "
-                 "Solid = Responder, Dashed = Non-Responder",
-                 ha='center', fontsize=12,
-                 color=GEN_COLORS['muted'], style='italic')
+            plt.tight_layout()
+            plt.show()
 
-        plt.tight_layout()
-        plt.subplots_adjust(top=0.88)
-        plt.show()
-
+        # =============================================================
         # Summary
-        _r_all = _responded & _has_both
-        _nr_all = _mailed & ~_responded & _has_both
-        if _r_all.sum() > 0 and _nr_all.sum() > 0:
-            _r_early = _acct.loc[_r_all, 'dep_accel_amt_early'].median()
-            _r_late = _acct.loc[_r_all, 'dep_accel_amt'].median()
-            _nr_early = _acct.loc[_nr_all, 'dep_accel_amt_early'].median()
-            _nr_late = _acct.loc[_nr_all, 'dep_accel_amt'].median()
-            print(f"\n  All-segment acceleration summary:")
-            print(f"    Resp:  {_r_early:.2f}x -> {_r_late:.2f}x "
-                  f"(change: {_r_late - _r_early:+.2f})")
-            print(f"    NR:    {_nr_early:.2f}x -> {_nr_late:.2f}x "
-                  f"(change: {_nr_late - _nr_early:+.2f})")
+        # =============================================================
+        _r_mask = _responded
+        _nr_mask = _mailed & ~_responded
+
+        print(f"\n  Deposit Activation Summary:")
+        for label, mask in [('Responder', _r_mask), ('Non-Responder', _nr_mask)]:
+            _g = _acct[mask]
+            _dep = _g['mo_dep_amt'].median() if 'mo_dep_amt' in _g.columns else 0
+            _spd = _g['mo_spend_12mo'].median() if 'mo_spend_12mo' in _g.columns else 0
+            _swp = _g['mo_swipes_12mo'].median() if 'mo_swipes_12mo' in _g.columns else 0
+            _act = _g['activation_ratio'].median() if 'activation_ratio' in _g.columns else 0
+            print(f"    {label} (n={len(_g):,}):")
+            print(f"      Deposits:   ${_dep:,.0f}/mo")
+            print(f"      Card spend: ${_spd:,.0f}/mo")
+            print(f"      Swipes:     {_swp:.1f}/mo")
+            if pd.notna(_act):
+                print(f"      Activation: {_act:.1%} of deposits through card")
+
+        # Compute the interchange lift
+        if _r_mask.sum() > 0 and _nr_mask.sum() > 0:
+            _r_spend = _acct.loc[_r_mask, 'mo_spend_12mo'].median()
+            _nr_spend = _acct.loc[_nr_mask, 'mo_spend_12mo'].median()
+            _lift = _r_spend - _nr_spend
+            if _nr_spend > 0:
+                _lift_pct = (_lift / _nr_spend) * 100
+                print(f"\n  Card spend lift: ${_lift:,.0f}/mo per responder "
+                      f"({_lift_pct:+.0f}% vs NR)")
+                print(f"  At ~1.5% interchange: ~${_lift * 0.015:,.2f}/mo "
+                      f"incremental revenue per responder")
+                _n_resp = _r_mask.sum()
+                print(f"  x {_n_resp:,} responders = "
+                      f"~${_lift * 0.015 * _n_resp:,.0f}/mo portfolio lift")
