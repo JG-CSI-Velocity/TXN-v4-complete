@@ -27,7 +27,8 @@ if 'odd_file' not in dir():
     print("    Skipping deposit data pipeline.")
 else:
     # Use ZACCOUNTS_DIR from setup cell 02 if defined, else search from ODDD dir
-    if 'ZACCOUNTS_DIR' in dir() and ZACCOUNTS_DIR is not None:
+    _explicit_dir = 'ZACCOUNTS_DIR' in dir() and ZACCOUNTS_DIR is not None
+    if _explicit_dir:
         _data_dir = Path(ZACCOUNTS_DIR)
         print(f"  Z accounts directory: {_data_dir} (from ZACCOUNTS_DIR)")
     else:
@@ -37,20 +38,19 @@ else:
     # ---------------------------------------------------------------------------
     # 1a. Auto-discover zaccounts files in the data directory
     # ---------------------------------------------------------------------------
-    # Searches for CSV files containing "zaccounts" (case-insensitive) in the
-    # search directory and any parent/sibling directories. Assigns snapshot labels
-    # based on dates found in the filename, or falls back to manual config.
+    # If ZACCOUNTS_DIR is explicitly set, search ONLY that directory.
+    # If auto-discovering from ODDD path, search parent/sibling dirs too.
 
     import re as _re
     import glob as _glob
 
-    def _find_zaccounts_files(search_dir):
+    def _find_zaccounts_files(search_dir, search_siblings=True):
         """Find all CSV files with 'zaccounts' in the name."""
         found = []
         search_path = Path(search_dir)
-        # Search current dir, parent dir, and sibling dirs
         _search_paths = [search_path]
-        if search_path.parent.exists():
+        # Only search parent/siblings when auto-discovering
+        if search_siblings and search_path.parent.exists():
             _search_paths.append(search_path.parent)
             for sibling in search_path.parent.iterdir():
                 if sibling.is_dir() and sibling != search_path:
@@ -117,7 +117,7 @@ else:
         return None
 
     # Discover files
-    _discovered = _find_zaccounts_files(_data_dir)
+    _discovered = _find_zaccounts_files(_data_dir, search_siblings=not _explicit_dir)
 
     if _discovered:
         print(f"  Auto-discovered {len(_discovered)} zaccounts file(s):")
