@@ -16,25 +16,31 @@ else:
         if len(_g) == 0:
             continue
         _row = {'Tier': tier, 'Accounts': len(_g)}
-        for col, label in [
-            ('mo_swipes_3mo', 'Mo Swipes (3mo)'), ('mo_spend_3mo', 'Mo Spend (3mo)'),
-            ('mo_items_3mo', 'Mo Items (3mo)'),
-            ('mo_dep_count', 'Mo Dep Ct'), ('mo_dep_amt', 'Mo Dep $'),
+        for col, label, agg in [
+            ('mo_swipes_12mo', 'Avg Swipes (12mo)', 'mean'),
+            ('mo_spend_12mo', 'Avg Spend (12mo)', 'mean'),
+            ('mo_items_12mo', 'Avg Items (12mo)', 'mean'),
+            ('mo_dep_count', 'Med Dep Ct', 'median'),
+            ('mo_dep_amt', 'Med Dep $', 'median'),
+            ('mo_dep_amt', 'Avg Dep $', 'mean'),
         ]:
             if col in _g.columns:
-                _row[label] = _g[col].median()
+                _row[label] = _g[col].median() if agg == 'median' else _g[col].mean()
         if 'dep_accel_amt' in _g.columns:
             _row['Dep Accel'] = _g['dep_accel_amt'].median()
         _rows.append(_row)
 
     _total = {'Tier': 'TOTAL', 'Accounts': len(_acct)}
-    for col, label in [
-        ('mo_swipes_3mo', 'Mo Swipes (3mo)'), ('mo_spend_3mo', 'Mo Spend (3mo)'),
-        ('mo_items_3mo', 'Mo Items (3mo)'),
-        ('mo_dep_count', 'Mo Dep Ct'), ('mo_dep_amt', 'Mo Dep $'),
+    for col, label, agg in [
+        ('mo_swipes_12mo', 'Avg Swipes (12mo)', 'mean'),
+        ('mo_spend_12mo', 'Avg Spend (12mo)', 'mean'),
+        ('mo_items_12mo', 'Avg Items (12mo)', 'mean'),
+        ('mo_dep_count', 'Med Dep Ct', 'median'),
+        ('mo_dep_amt', 'Med Dep $', 'median'),
+        ('mo_dep_amt', 'Avg Dep $', 'mean'),
     ]:
         if col in _acct.columns:
-            _total[label] = _acct[col].median()
+            _total[label] = _acct[col].median() if agg == 'median' else _acct[col].mean()
     if 'dep_accel_amt' in _acct.columns:
         _total['Dep Accel'] = _acct['dep_accel_amt'].median()
     _rows.append(_total)
@@ -81,5 +87,6 @@ else:
     )
     display(_styled)
 
-    print(f"\n  Mo Dep = depAmt365/12 and depCount365/12")
+    print(f"\n  Swipes/Spend/Items = 12-month avg (matches 365d deposit window)")
+    print(f"  Mo Dep = depAmt365/12 and depCount365/12")
     print(f"  Dep Accel = DepAmt33 / DepAmt66 (>1.0 = accelerating)")
