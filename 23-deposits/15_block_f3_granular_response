@@ -17,14 +17,17 @@ else:
         if len(_g) == 0:
             continue
         _row = {'Group': label, 'N': len(_g)}
-        for col, metric in [
-            ('mo_swipes_3mo', 'Mo Swipes (3mo)'), ('mo_spend_3mo', 'Mo Spend (3mo)'),
-            ('mo_items_3mo', 'Mo Items (3mo)'),
-            
-            ('mo_dep_count', 'Mo Dep Ct'), ('mo_dep_amt', 'Mo Dep $'),
+        for col, metric, agg in [
+            ('mo_swipes_3mo', 'Avg Swipes (3mo)', 'mean'),
+            ('mo_spend_3mo', 'Avg Spend (3mo)', 'mean'),
+            ('mo_items_3mo', 'Avg Items (3mo)', 'mean'),
+            ('mo_dep_count', 'Med Dep Ct', 'median'),
+            ('mo_dep_count', 'Avg Dep Ct', 'mean'),
+            ('mo_dep_amt', 'Med Dep $', 'median'),
+            ('mo_dep_amt', 'Avg Dep $', 'mean'),
         ]:
             if col in _g.columns:
-                _row[metric] = _g[col].median()
+                _row[metric] = _g[col].median() if agg == 'median' else _g[col].mean()
         _rows.append(_row)
 
     _df = pd.DataFrame(_rows)

@@ -24,6 +24,7 @@ else:
                 ('mo_spend_3mo', 'Avg Spend', 'mean'),
                 ('mo_items_3mo', 'Avg Items', 'mean'),
                 ('mo_dep_count', 'Med Dep Ct', 'median'),
+                ('mo_dep_count', 'Avg Dep Ct', 'mean'),
                 ('mo_dep_amt', 'Med Dep $', 'median'),
                 ('mo_dep_amt', 'Avg Dep $', 'mean'),
             ]:
