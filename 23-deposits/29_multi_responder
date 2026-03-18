@@ -1,0 +1,92 @@
+# ===========================================================================
+# MULTI-RESPONDER DEEP DIVE: MR vs SR vs NR
+# ===========================================================================
+# Does responding multiple times compound the deposit effect?
+# Uses Response Grouping field: MR, SR, NR.
+#
+# Depends on: rewards_df, _acct (cell 13), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+elif '_acct' not in dir():
+    print("    Run cell 13 first.")
+else:
+    from IPython.display import display
+
+    if 'Response Grouping' not in rewards_df.columns:
+        print("    'Response Grouping' column not found.")
+    else:
+        _rg = rewards_df['Response Grouping'].astype(str).str.strip()
+
+        # Map to MR/SR/NR (match flexibly)
+        def _map_rg(val):
+            v = val.upper()
+            if 'MR' in v or 'MULTIPLE' in v: return 'Multi Resp'
+            if 'SR' in v or 'SINGLE RESP' in v: return 'Single Resp'
+            if 'SO' in v or 'SINGLE OFFER' in v: return 'Single Offer NR'
+            if 'NR' in v or 'NON RESP' in v or 'NON-RESP' in v: return 'Non-Resp'
+            return None
+
+        _acct_rg = _rg.apply(_map_rg)
+        _acct['resp_grouping'] = _acct_rg.reindex(_acct.index)
+
+        _RG_ORDER = ['Multi Resp', 'Single Resp', 'Single Offer NR', 'Non-Resp']
+        _RG_COLORS = {
+            'Multi Resp': GEN_COLORS['success'],
+            'Single Resp': GEN_COLORS['info'],
+            'Single Offer NR': GEN_COLORS['warning'],
+            'Non-Resp': GEN_COLORS['muted'],
+        }
+
+        _rows = []
+        for rg in _RG_ORDER:
+            _g = _acct[_acct['resp_grouping'] == rg]
+            if len(_g) == 0:
+                continue
+            _row = {'Group': rg, 'Accounts': len(_g)}
+            if 'mo_swipes' in _g.columns:
+                _row['Mo Swipes'] = _g['mo_swipes'].mean()
+            if 'mo_spend' in _g.columns:
+                _row['Mo Spend'] = _g['mo_spend'].mean()
+            if 'mo_dep_count' in _g.columns:
+                _row['Avg Mo Dep Ct'] = _g['mo_dep_count'].mean()
+            if 'mo_dep_amt' in _g.columns:
+                _row['Median Mo Dep $'] = _g['mo_dep_amt'].median()
+            _rows.append(_row)
+
+        _df = pd.DataFrame(_rows)
+
+        def _color_grp(col):
+            if col.name != 'Group':
+                return [''] * len(col)
+            return [f'color: {_RG_COLORS.get(v, "")}' for v in col]
+
+        _fmt = {
+            'Accounts': '{:,.0f}', 'Mo Swipes': '{:,.1f}',
+            'Mo Spend': '${:,.1f}', 'Avg Mo Dep Ct': '{:,.1f}',
+            'Median Mo Dep $': '${:,.1f}',
+        }
+
+        _styled = (
+            _df.style.hide(axis='index')
+            .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+            .apply(_color_grp)
+            .set_properties(**{'font-size': '14px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '10px 12px'})
+            .set_properties(subset=['Group'], **{'text-align': 'left'})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                    ('color', 'white'), ('font-size', '14px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '10px 12px')]},
+                {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                    ('padding-bottom', '12px')]},
+            ])
+            .set_caption("Multi-Responder Effect: Does Responding Again Compound Deposits?")
+        )
+        display(_styled)
+
+        _grp_counts = _acct_rg.value_counts()
+        print(f"\n  Response Grouping distribution:")
+        for rg in _RG_ORDER:
+            print(f"    {rg:<20s}: {_grp_counts.get(rg, 0):,}")

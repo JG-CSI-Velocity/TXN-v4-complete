@@ -1,0 +1,112 @@
+# ===========================================================================
+# SEGMENT MIGRATION: How Accounts Move Across Mailers
+# ===========================================================================
+# Tracks each account's segment assignment across the 12 Mail columns.
+# Shows: is the NU pool shrinking? Are accounts leveling up?
+#
+# Depends on: rewards_df (00-setup/08), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+else:
+    from IPython.display import display
+
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+    _SEG_ORDER = ['NU', 'TH-10', 'TH-15', 'TH-20', 'TH-25']
+
+    _mail_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
+        key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
+
+    def _parse_seg(val):
+        if pd.isna(val): return None
+        v = str(val).strip().upper()
+        if 'TH-25' in v or 'TH 25' in v or 'TH25' in v: return 'TH-25'
+        if 'TH-20' in v or 'TH 20' in v or 'TH20' in v: return 'TH-20'
+        if 'TH-15' in v or 'TH 15' in v or 'TH15' in v: return 'TH-15'
+        if 'TH-10' in v or 'TH 10' in v or 'TH10' in v: return 'TH-10'
+        if v.startswith('NU') or 'NON-USER' in v: return 'NU'
+        return None
+
+    # Build segment at each mailer per account
+    _seg_matrix = rewards_df[_mail_cols].apply(lambda col: col.apply(_parse_seg))
+    _mailer_labels = [c.replace(' Mail', '') for c in _mail_cols]
+    _seg_matrix.columns = _mailer_labels
+
+    # -----------------------------------------------------------------
+    # Table 1: Segment counts per mailer
+    # -----------------------------------------------------------------
+    _count_rows = []
+    for ml in _mailer_labels:
+        _vc = _seg_matrix[ml].dropna().value_counts()
+        _row = {'Mailer': ml, 'Mailed': _seg_matrix[ml].notna().sum()}
+        for seg in _SEG_ORDER:
+            _row[seg] = _vc.get(seg, 0)
+        _count_rows.append(_row)
+
+    _count_df = pd.DataFrame(_count_rows)
+
+    _fmt = {c: '{:,.0f}' for c in _count_df.columns if c != 'Mailer'}
+
+    _styled_counts = (
+        _count_df.style.hide(axis='index')
+        .format(_fmt, na_rep='--')
+        .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+        .set_properties(subset=['Mailer'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '8px 10px')]},
+            {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
+        ])
+        .set_caption("Segment Counts by Mailer")
+    )
+    display(_styled_counts)
+
+    # -----------------------------------------------------------------
+    # Table 2: First segment → Last segment migration
+    # -----------------------------------------------------------------
+    _first_seg = _seg_matrix.apply(lambda row: row.dropna().iloc[0]
+                                    if row.notna().any() else None, axis=1)
+    _last_seg = _seg_matrix.apply(lambda row: row.dropna().iloc[-1]
+                                   if row.notna().any() else None, axis=1)
+
+    # Only accounts mailed 2+ times
+    _mail_count = _seg_matrix.notna().sum(axis=1)
+    _multi = _mail_count >= 2
+    _first_m = _first_seg[_multi]
+    _last_m = _last_seg[_multi]
+
+    _migration = pd.crosstab(_first_m, _last_m, margins=True, margins_name='Total')
+    # Reorder
+    _idx_order = [s for s in _SEG_ORDER if s in _migration.index] + ['Total']
+    _col_order = [s for s in _SEG_ORDER if s in _migration.columns] + ['Total']
+    _migration = _migration.reindex(index=_idx_order, columns=_col_order, fill_value=0)
+
+    _styled_migration = (
+        _migration.style
+        .format('{:,.0f}')
+        .background_gradient(cmap='YlGnBu',
+                              subset=[c for c in _col_order if c != 'Total'],
+                              axis=None)
+        .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['info']),
+                ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '8px 10px')]},
+            {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
+        ])
+        .set_caption(f"Segment Migration: First Mail → Last Mail ({_multi.sum():,} accounts mailed 2+ times)")
+    )
+    display(_styled_migration)
+
+    # Summary
+    _moved_up = ((_first_m == 'NU') & (_last_m.isin(['TH-10', 'TH-15', 'TH-20', 'TH-25']))).sum()
+    _stayed = (_first_m == _last_m).sum()
+    print(f"\n  Accounts mailed 2+ times: {_multi.sum():,}")
+    print(f"  Stayed in same segment: {_stayed:,} ({_stayed/_multi.sum()*100:.1f}%)")
+    print(f"  NU → any TH: {_moved_up:,} ({_moved_up/_multi.sum()*100:.1f}%)")

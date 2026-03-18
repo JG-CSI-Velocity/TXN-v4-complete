@@ -1,0 +1,114 @@
+# ===========================================================================
+# DIRECT DEPOSIT FLAG: The Stickiest Relationship Signal
+# ===========================================================================
+# Cross-tab: Resp + DD vs Resp no DD vs NR + DD vs NR no DD.
+# Does having direct deposit amplify the responder advantage?
+#
+# Depends on: rewards_df, deposit_long, _acct (cell 13),
+#             DEPOSIT_JOIN_KEY_ODDD, DEPOSIT_JOIN_KEY_DEPOSIT,
+#             SNAPSHOT_ORDER, GEN_COLORS
+
+if '_acct' not in dir() or 'group' not in _acct.columns:
+    print("    Run cell 13 first.")
+elif 'deposit_long' not in dir() or len(deposit_long) == 0:
+    print("    deposit_long not available.")
+elif 'DEPOSIT_JOIN_KEY_DEPOSIT' not in dir():
+    print("    Join keys not established.")
+else:
+    from IPython.display import display
+
+    # Pull has_direct_deposit from latest snapshot
+    _latest_snap = SNAPSHOT_ORDER[-1] if 'SNAPSHOT_ORDER' in dir() else None
+
+    if not _latest_snap:
+        print("    No SNAPSHOT_ORDER.")
+    else:
+        _snap = deposit_long[deposit_long['snapshot'] == _latest_snap].copy()
+
+        if 'has_direct_deposit' not in _snap.columns:
+            print(f"    has_direct_deposit not in {_latest_snap} snapshot.")
+        elif DEPOSIT_JOIN_KEY_DEPOSIT not in _snap.columns:
+            print(f"    Join key not in snapshot.")
+        else:
+            _snap['_jk'] = _snap[DEPOSIT_JOIN_KEY_DEPOSIT].astype(str).str.strip()
+            _dd = (_snap[['_jk', 'has_direct_deposit']]
+                   .drop_duplicates(subset='_jk')
+                   .set_index('_jk'))
+
+            _acct_dd = _acct.join(_dd, on='_join_key', how='left')
+            _acct_dd['has_dd'] = _acct_dd['has_direct_deposit'].fillna(0).astype(bool)
+
+            # 4 groups
+            _acct_dd['dd_group'] = 'NR, No DD'
+            _acct_dd.loc[(_acct_dd['group'] == 'Responder') & _acct_dd['has_dd'],
+                          'dd_group'] = 'Resp + DD'
+            _acct_dd.loc[(_acct_dd['group'] == 'Responder') & ~_acct_dd['has_dd'],
+                          'dd_group'] = 'Resp, No DD'
+            _acct_dd.loc[(_acct_dd['group'] == 'Non-Responder') & _acct_dd['has_dd'],
+                          'dd_group'] = 'NR + DD'
+
+            _DD_ORDER = ['Resp + DD', 'Resp, No DD', 'NR + DD', 'NR, No DD']
+            _DD_COLORS = {
+                'Resp + DD': GEN_COLORS['success'],
+                'Resp, No DD': GEN_COLORS['info'],
+                'NR + DD': GEN_COLORS['warning'],
+                'NR, No DD': GEN_COLORS['muted'],
+            }
+
+            _rows = []
+            for ddg in _DD_ORDER:
+                _g = _acct_dd[_acct_dd['dd_group'] == ddg]
+                if len(_g) == 0:
+                    continue
+                _row = {'Group': ddg, 'Accounts': len(_g)}
+                if 'mo_swipes' in _g.columns:
+                    _row['Mo Swipes'] = _g['mo_swipes'].mean()
+                if 'mo_spend' in _g.columns:
+                    _row['Mo Spend'] = _g['mo_spend'].mean()
+                if 'mo_dep_count' in _g.columns:
+                    _row['Avg Mo Dep Ct'] = _g['mo_dep_count'].mean()
+                if 'mo_dep_amt' in _g.columns:
+                    _row['Median Mo Dep $'] = _g['mo_dep_amt'].median()
+                _rows.append(_row)
+
+            _df = pd.DataFrame(_rows)
+
+            def _color_grp(col):
+                if col.name != 'Group':
+                    return [''] * len(col)
+                return [f'color: {_DD_COLORS.get(v, "")}' for v in col]
+
+            _fmt = {
+                'Accounts': '{:,.0f}', 'Mo Swipes': '{:,.1f}',
+                'Mo Spend': '${:,.1f}', 'Avg Mo Dep Ct': '{:,.1f}',
+                'Median Mo Dep $': '${:,.1f}',
+            }
+
+            _styled = (
+                _df.style.hide(axis='index')
+                .format({k: v for k, v in _fmt.items() if k in _df.columns},
+                        na_rep='--')
+                .apply(_color_grp)
+                .set_properties(**{'font-size': '14px', 'font-weight': 'bold',
+                    'text-align': 'center', 'border': '1px solid #E9ECEF',
+                    'padding': '10px 12px'})
+                .set_properties(subset=['Group'], **{'text-align': 'left'})
+                .set_table_styles([
+                    {'selector': 'th', 'props': [
+                        ('background-color', GEN_COLORS['primary']),
+                        ('color', 'white'), ('font-size', '14px'),
+                        ('font-weight', 'bold'), ('text-align', 'center'),
+                        ('padding', '10px 12px')]},
+                    {'selector': 'caption', 'props': [
+                        ('font-size', '22px'), ('font-weight', 'bold'),
+                        ('color', GEN_COLORS['dark_text']),
+                        ('text-align', 'left'), ('padding-bottom', '12px')]},
+                ])
+                .set_caption("Direct Deposit: Does DD Amplify the Responder Advantage?")
+            )
+            display(_styled)
+
+            _dd_rate_resp = _acct_dd[_acct_dd['group'] == 'Responder']['has_dd'].mean() * 100
+            _dd_rate_nr = _acct_dd[_acct_dd['group'] == 'Non-Responder']['has_dd'].mean() * 100
+            print(f"\n  DD rate: Responders {_dd_rate_resp:.1f}% vs "
+                  f"Non-Responders {_dd_rate_nr:.1f}%")

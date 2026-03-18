@@ -1,0 +1,107 @@
+# ===========================================================================
+# TIME TO FIRST RESPONSE: Mailers Before First Hit
+# ===========================================================================
+# Of accounts that responded, how many mailers before first response?
+# Cross-tab with deposit behavior: faster = better deposits?
+#
+# Depends on: rewards_df, _acct (cell 13), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+elif '_acct' not in dir():
+    print("    Run cell 13 first.")
+else:
+    from IPython.display import display
+
+    _mail_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
+        key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
+    _resp_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Resp')],
+        key=lambda c: pd.to_datetime(c.replace(' Resp', ''), format='%b%y'))
+
+    def _is_success(val):
+        if pd.isna(val): return False
+        v = str(val).strip().upper()
+        if not v or v == 'NAN': return False
+        if 'NU' in v: return '5+' in v or '5 +' in v
+        return True
+
+    # For each account: which mailer number was their first response?
+    _acct_col = ('Acct Number' if 'Acct Number' in rewards_df.columns
+                  else ' Acct Number')
+
+    _first_resp_mailer = pd.Series(np.nan, index=rewards_df.index)
+    _mailers_before = pd.Series(np.nan, index=rewards_df.index)
+
+    for idx in rewards_df.index:
+        _mail_num = 0
+        _found = False
+        for mc in _mail_cols:
+            if pd.notna(rewards_df.loc[idx, mc]):
+                _mail_num += 1
+                _month = mc.replace(' Mail', '')
+                _rc = f"{_month} Resp"
+                if _rc in rewards_df.columns and _is_success(rewards_df.loc[idx, _rc]):
+                    _first_resp_mailer[idx] = _mail_num
+                    _mailers_before[idx] = _mail_num
+                    _found = True
+                    break
+
+    # Only responders
+    _resp_mask = _first_resp_mailer.notna()
+    print(f"  Responders with first-response data: {_resp_mask.sum():,}")
+
+    if _resp_mask.sum() > 0:
+        _vc = _first_resp_mailer[_resp_mask].astype(int).value_counts().sort_index()
+
+        _rows = []
+        for mailer_num in sorted(_vc.index):
+            _mask = _first_resp_mailer == mailer_num
+            _g = _acct[_mask.reindex(_acct.index, fill_value=False)]
+
+            _row = {
+                'First Resp at Mailer #': int(mailer_num),
+                'Accounts': _vc[mailer_num],
+                '% of Resp': _vc[mailer_num] / _resp_mask.sum() * 100,
+            }
+            if 'mo_swipes' in _g.columns:
+                _row['Mo Swipes'] = _g['mo_swipes'].mean()
+            if 'mo_spend' in _g.columns:
+                _row['Mo Spend'] = _g['mo_spend'].mean()
+            if 'mo_dep_count' in _g.columns:
+                _row['Avg Mo Dep Ct'] = _g['mo_dep_count'].mean()
+            if 'mo_dep_amt' in _g.columns:
+                _row['Median Mo Dep $'] = _g['mo_dep_amt'].median()
+            _rows.append(_row)
+
+        _df = pd.DataFrame(_rows)
+
+        _fmt = {
+            'Accounts': '{:,.0f}', '% of Resp': '{:.1f}%',
+            'Mo Swipes': '{:,.1f}', 'Mo Spend': '${:,.1f}',
+            'Avg Mo Dep Ct': '{:,.1f}', 'Median Mo Dep $': '${:,.1f}',
+        }
+
+        _styled = (
+            _df.style.hide(axis='index')
+            .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+            .bar(subset=['% of Resp'], color='rgba(46, 196, 182, 0.3)', vmin=0)
+            .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+            .set_properties(subset=['First Resp at Mailer #'], **{
+                'text-align': 'left', 'color': GEN_COLORS['primary']})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', GEN_COLORS['success']),
+                    ('color', 'white'), ('font-size', '14px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '10px 12px')]},
+                {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                    ('padding-bottom', '12px')]},
+            ])
+            .set_caption("Time to First Response: Deposit Behavior by Speed")
+        )
+        display(_styled)
+
+        print(f"\n  Median mailers to first response: "
+              f"{_first_resp_mailer[_resp_mask].median():.0f}")
