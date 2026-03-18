@@ -159,12 +159,15 @@ else:
                     'Count': _vc[val],
                     '% of Total': _vc[val] / len(rewards_df) * 100,
                 }
-                # Segment breakdown: total assignments across ALL mailers
-                if _seg_totals:
+                # Segment breakdown -- null for zero (never mailed)
+                if _seg_totals and int(val) > 0:
                     _mask = rewards_df['# of Offers'].apply(
                         lambda x: pd.to_numeric(x, errors='coerce')) == val
                     for seg in _SEG_GROUP_ORDER:
                         _row[seg] = _seg_totals[seg][_mask].sum()
+                elif _seg_totals:
+                    for seg in _SEG_GROUP_ORDER:
+                        _row[seg] = np.nan
                 _dist_rows.append(_row)
 
             _dist_df = pd.DataFrame(_dist_rows)
@@ -218,11 +221,15 @@ else:
                     'Count': _vc[val],
                     '% of Total': _vc[val] / len(rewards_df) * 100,
                 }
-                if _seg_totals:
+                # Segment breakdown -- null for zero (never responded)
+                if _seg_totals and int(val) > 0:
                     _mask = rewards_df['# of Responses'].apply(
                         lambda x: pd.to_numeric(x, errors='coerce')) == val
                     for seg in _SEG_GROUP_ORDER:
                         _row[seg] = _seg_totals[seg][_mask].sum()
+                elif _seg_totals:
+                    for seg in _SEG_GROUP_ORDER:
+                        _row[seg] = np.nan
                 _dist_rows.append(_row)
 
             _dist_df = pd.DataFrame(_dist_rows)
