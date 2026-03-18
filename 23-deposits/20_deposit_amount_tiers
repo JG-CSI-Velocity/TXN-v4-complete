@@ -1,5 +1,5 @@
 # ===========================================================================
-# DEPOSIT AMOUNT TIERS: Responder vs Non-Responder (Data Validation)
+# DEPOSIT AMOUNT TIERS (depAmt365 Brackets, 3mo Swipes/Spend)
 # ===========================================================================
 # Buckets accounts by annual deposit amount (depAmt365) into tiers,
 # then compares Responder vs Non-Responder behavior within each tier.

@@ -1,5 +1,5 @@
 # ===========================================================================
-# MTD ITEMS: Monthly Debit Transaction Activity by Group
+# MTD ITEMS (3mo and 12mo ODDD Monthly Avg)
 # ===========================================================================
 # 30 months of MTD data. Shows account activity (item count) by
 # Responder vs Non-Responder across swipe tiers.

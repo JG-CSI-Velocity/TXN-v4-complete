@@ -1,5 +1,5 @@
 # ===========================================================================
-# DELTA TABLE: Responder Advantage Over Non-Responder
+# DELTA TABLE: R minus NR (3mo Swipes/Spend, dep365/12 Z5)
 # ===========================================================================
 # One row per tier showing the DIFFERENCE (Resp minus NR) for each metric.
 # Positive = responders ahead. The cleanest proof format.

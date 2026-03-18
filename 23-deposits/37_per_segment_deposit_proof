@@ -1,5 +1,5 @@
 # ===========================================================================
-# PER-SEGMENT DEPOSIT PROOF: Same Challenge, Two Outcomes
+# PER-SEGMENT DEPOSIT PROOF (3mo Swipes/Spend, dep365/12 Z5)
 # ===========================================================================
 # Within each segment (NU, TH-10, TH-15, TH-20, TH-25), compare
 # Responder vs Non-Responder on deposits. The core same-challenge proof.

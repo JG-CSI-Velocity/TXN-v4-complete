@@ -1,5 +1,5 @@
 # ===========================================================================
-# DEPOSIT VELOCITY: 33/66/99/365-Day Windows Across Snapshots
+# DEPOSIT VELOCITY DATA (Z5 DepAmt/DepCount 33d/66d/99d/365d x 3 Snapshots)
 # ===========================================================================
 # Four views of deposit velocity from Z5 data:
 #   1. Velocity table -- daily deposit rate at each window

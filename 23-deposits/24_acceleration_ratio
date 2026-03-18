@@ -1,5 +1,5 @@
 # ===========================================================================
-# ACCELERATION RATIO: 33d Rate / 99d Rate
+# ACCELERATION RATIO (Z5 33d vs 99d Daily Rate x 3 Snapshots)
 # ===========================================================================
 # >1.0 = deposits accelerating (recent faster than historical)
 # <1.0 = decelerating

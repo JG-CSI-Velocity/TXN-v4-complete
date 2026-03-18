@@ -1,5 +1,5 @@
 # ===========================================================================
-# VELOCITY TREND CHART: 33-Day Rate Across Snapshots
+# VELOCITY TREND CHART (Z5 33d Daily Rate x 3 Snapshots)
 # ===========================================================================
 # Depends on: _velocity_data, _GROUPS, _GROUP_COLORS,
 #             _snap_dates (cell 22), SNAPSHOT_ORDER, GEN_COLORS

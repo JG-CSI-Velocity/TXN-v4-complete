@@ -1,5 +1,5 @@
 # ===========================================================================
-# SPEND + DEPOSIT CROSS-REFERENCE: ODDD 3-Month Activity vs Z5 Deposits
+# SPEND + DEPOSIT CROSS-REFERENCE (3mo Spend/Swipes, dep365 Z5)
 # ===========================================================================
 # Joins ODDD last-3-month spend/swipe behavior with Z5 deposit metrics
 # (depAmt365, depCount365) from the latest snapshot.

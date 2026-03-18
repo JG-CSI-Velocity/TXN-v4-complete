@@ -1,5 +1,5 @@
 # ===========================================================================
-# VELOCITY HEATMAP: Snapshots x Windows per Group
+# VELOCITY HEATMAP (Z5 33d/66d/99d/365d x 3 Snapshots)
 # ===========================================================================
 # One heatmap per group (Responder, Non-Responder).
 # Background color intensity shows daily deposit rate.
