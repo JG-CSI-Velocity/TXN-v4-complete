@@ -30,7 +30,7 @@ else:
         ('99d', 'DepAmt99', 'DepCount99', 99),
         ('365d', 'depAmt365', 'depCount365', 365),
     ]
-    _GROUPS = ['Total Open', 'Responder', 'Non-Responder']
+    _GROUPS = ['Responder', 'Non-Responder', 'Total Open']
     _GROUP_COLORS = {
         'Total Open': GEN_COLORS['primary'],
         'Responder': GEN_COLORS['success'],
@@ -99,5 +99,16 @@ else:
     print(f"  Snapshots: {list(SNAPSHOT_ORDER)}")
     print(f"  Data points: {len(_velocity_data)}")
 
-    # Velocity data built. Cells 23-25 use _velocity_data, _WINDOWS,
+    # Quick summary so you can see the data was built
+    for sk in SNAPSHOT_ORDER:
+        _label = _snap_labels.get(sk, sk)
+        for grp in _GROUPS:
+            _vel = _velocity_data.get((sk, grp), {})
+            if _vel:
+                _r33 = _vel.get('33d_daily_amt', 0)
+                _r365 = _vel.get('365d_daily_amt', 0)
+                print(f"    {_label} | {grp:<16s} | n={_vel.get('n',0):>6,} | "
+                      f"33d=${_r33:,.1f}/day | 365d=${_r365:,.1f}/day")
+
+    # Velocity data built. Cells 23-26 use _velocity_data, _WINDOWS,
     # _GROUPS, _GROUP_COLORS, _snap_labels, _snap_dates.
