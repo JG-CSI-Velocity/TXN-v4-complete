@@ -1,10 +1,10 @@
 # ===========================================================================
 # RESPONSE GROUPING DISTRIBUTION (Data Validation)
 # ===========================================================================
-# Distribution of the pre-computed "Response Grouping" field with
-# segment breakdown from Resp columns.
+# Uses the pre-computed "Response Grouping" field from the ODDD.
+# Simple distribution -- no derived segment columns.
 #
-# Custom order: MR, SR, SO, NO, NR
+# Custom order: MR, SR, SO, NR, NO
 #
 # Depends on: rewards_df (00-setup/08), GEN_COLORS
 
@@ -16,41 +16,6 @@ else:
     if 'Response Grouping' not in rewards_df.columns:
         print("    'Response Grouping' column not found.")
     else:
-        # Parse segment from Resp values
-        def _resp_segment(val):
-            if pd.isna(val):
-                return None
-            v = str(val).strip().upper()
-            if not v or v == 'NAN':
-                return None
-            if 'NU' in v and ('1-4' in v or '1 -4' in v):
-                return None
-            if 'NU' in v and '0' == v.replace('NU', '').strip():
-                return None
-            if 'NU' in v and ('5+' in v or '5 +' in v):
-                return 'NU'
-            if 'TH-25' in v or 'TH 25' in v or 'TH25' in v: return 'TH-25'
-            if 'TH-20' in v or 'TH 20' in v or 'TH20' in v: return 'TH-20'
-            if 'TH-15' in v or 'TH 15' in v or 'TH15' in v: return 'TH-15'
-            if 'TH-10' in v or 'TH 10' in v or 'TH10' in v: return 'TH-10'
-            return None
-
-        # Find Resp columns, exclude months with zero data
-        _resp_cols = sorted(
-            [c.strip() for c in rewards_df.columns if c.strip().endswith(' Resp')],
-            key=lambda c: pd.to_datetime(c.replace(' Resp', ''), format='%b%y'))
-
-        _valid_resp = [rc for rc in _resp_cols
-                        if rewards_df[rc].notna().sum() > 0]
-
-        # Last response segment per account
-        _acct_resp_seg = pd.Series(np.nan, index=rewards_df.index, dtype='object')
-        for rc in _valid_resp:
-            _parsed = rewards_df[rc].apply(_resp_segment)
-            _has_seg = _parsed.notna()
-            _acct_resp_seg = _acct_resp_seg.where(~_has_seg, _parsed)
-
-        # Custom order
         _RG_ORDER = ['MR', 'SR', 'SO', 'NR', 'NO']
         _RG_LABELS = {
             'MR': 'Multiple Response',
@@ -59,10 +24,12 @@ else:
             'NR': 'Non Response',
             'NO': 'No Offer',
         }
-        _SEG_ORDER = ['NU', 'TH-10', 'TH-15', 'TH-20', 'TH-25']
 
         _rg_vals = rewards_df['Response Grouping'].dropna().astype(str).str.strip()
         _vc = _rg_vals.value_counts()
+
+        # Print unique values for verification
+        print(f"  Response Grouping unique values: {sorted(_vc.index.tolist())}")
 
         _dist_rows = []
         _known = set()
@@ -81,41 +48,25 @@ else:
                 continue
 
             _known.add(_match)
-            _mask = _rg_vals == _match
             _row = {
                 'Grouping': _match,
                 'Accounts': _vc[_match],
                 '% of Total': _vc[_match] / len(rewards_df) * 100,
             }
-            # Segment from Resp -- null for NO/NR (never responded)
-            _has_responses = code in ('MR', 'SR')
-            if _has_responses:
-                for seg in _SEG_ORDER:
-                    _row[seg] = (_mask & (_acct_resp_seg == seg)).sum()
-            else:
-                for seg in _SEG_ORDER:
-                    _row[seg] = np.nan
             _dist_rows.append(_row)
 
-        # Append unmatched
-        for val in _vc.index:
+        # Append any values not matched by custom order
+        for val in sorted(_vc.index):
             if val not in _known:
-                _mask = _rg_vals == val
-                _row = {
+                _dist_rows.append({
                     'Grouping': val,
                     'Accounts': _vc[val],
                     '% of Total': _vc[val] / len(rewards_df) * 100,
-                }
-                for seg in _SEG_ORDER:
-                    _row[seg] = (_mask & (_acct_resp_seg == seg)).sum()
-                _dist_rows.append(_row)
+                })
 
         _dist_df = pd.DataFrame(_dist_rows)
 
         _fmt = {'Accounts': '{:,.0f}', '% of Total': '{:.1f}%'}
-        for seg in _SEG_ORDER:
-            if seg in _dist_df.columns:
-                _fmt[seg] = '{:,.0f}'
 
         _styled = (
             _dist_df.style
@@ -143,10 +94,9 @@ else:
                     ('text-align', 'left'), ('padding-bottom', '12px'),
                 ]},
             ])
-            .set_caption("Response Grouping Distribution (Segment from Resp columns)")
+            .set_caption("Response Grouping Distribution")
         )
         display(_styled)
 
-        print(f"\n  Segment columns show account counts from Resp columns only")
-        print(f"  NU = NU 5+ responses only (NU 1-4 excluded)")
-        print(f"  SO/NO/NR rows show -- (no response to derive segment from)")
+        print(f"\n  Total accounts: {len(rewards_df):,}")
+        print(f"  Source: pre-computed 'Response Grouping' field from ODDD")
