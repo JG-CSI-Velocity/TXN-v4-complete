@@ -1,0 +1,109 @@
+# ===========================================================================
+# COHORT DID: Pre/Post Deposit Connection by Mailer
+# ===========================================================================
+# THE DEPOSIT LAYER. For each mailer, shows deposit metrics for
+# Responder vs Non-Responder from the Z5 snapshot.
+#
+# Since Z5 is a single point-in-time, we can't do true pre/post on
+# deposits. Instead we show: at the snapshot, do accounts that
+# responded to each mailer have better deposit metrics?
+#
+# Depends on: rewards_df, _acct (cell 04), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+elif '_acct' not in dir():
+    print("    Run cell 04 first.")
+else:
+    from IPython.display import display
+
+    _mail_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
+        key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
+
+    def _is_success(val):
+        if pd.isna(val): return False
+        v = str(val).strip().upper()
+        if not v or v == 'NAN': return False
+        if 'NU' in v: return '5+' in v or '5 +' in v
+        return True
+
+    _eligible = rewards_df.reindex(_acct.index)
+
+    _rows = []
+    for mc in _mail_cols:
+        _month = mc.replace(' Mail', '')
+        _rc = f"{_month} Resp"
+        if _rc not in rewards_df.columns or rewards_df[_rc].notna().sum() == 0:
+            continue
+
+        _mailed = _eligible[mc].notna()
+        _responded = _eligible[_rc].apply(_is_success)
+        _r_mask = _mailed & _responded
+        _nr_mask = _mailed & ~_responded
+
+        if _r_mask.sum() == 0 or _nr_mask.sum() == 0:
+            continue
+
+        _row = {'Mailer': _month, 'R N': _r_mask.sum(), 'NR N': _nr_mask.sum()}
+
+        for col, label, agg in [
+            ('mo_dep_count', 'Med Dep Ct', 'median'),
+            ('mo_dep_count', 'Avg Dep Ct', 'mean'),
+            ('mo_dep_amt', 'Med Dep $', 'median'),
+            ('mo_dep_amt', 'Avg Dep $', 'mean'),
+        ]:
+            if col in _acct.columns:
+                _r_val = _acct.loc[_r_mask, col].median() if agg == 'median' else _acct.loc[_r_mask, col].mean()
+                _nr_val = _acct.loc[_nr_mask, col].median() if agg == 'median' else _acct.loc[_nr_mask, col].mean()
+                _row[f'R {label}'] = _r_val
+                _row[f'NR {label}'] = _nr_val
+
+        # Deposit acceleration
+        if 'dep_accel_amt' in _acct.columns:
+            _row['R Accel'] = _acct.loc[_r_mask, 'dep_accel_amt'].median()
+            _row['NR Accel'] = _acct.loc[_nr_mask, 'dep_accel_amt'].median()
+
+        _rows.append(_row)
+
+    if _rows:
+        _df = pd.DataFrame(_rows)
+        for _rc in _df.columns:
+            if _rc not in ('Mailer', 'R N', 'NR N') and _df[_rc].dtype in ('float64', 'float32'):
+                _df[_rc] = _df[_rc].round(1)
+
+        def _color_accel(col):
+            if 'Accel' not in col.name: return [''] * len(col)
+            return [f'color: {GEN_COLORS["success"]}' if pd.notna(v) and v > 1.05
+                    else f'color: {GEN_COLORS["accent"]}' if pd.notna(v) and v < 0.95
+                    else '' for v in col]
+
+        _fmt = {'R N': '{:,.0f}', 'NR N': '{:,.0f}'}
+        for c in _df.columns:
+            if c in ('Mailer', 'R N', 'NR N'): continue
+            elif 'Accel' in c: _fmt[c] = '{:.2f}x'
+            elif '$' in c: _fmt[c] = '${:,.1f}'
+            else: _fmt[c] = '{:,.1f}'
+
+        _styled = (
+            _df.style.hide(axis='index')
+            .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+            .apply(_color_accel)
+            .set_properties(**{'font-size': '12px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '7px 10px'})
+            .set_properties(subset=['Mailer'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', GEN_COLORS['success']),
+                    ('color', 'white'), ('font-size', '12px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '7px 10px')]},
+                {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
+            ])
+            .set_caption("Deposit Layer: Responder vs NR Deposit Metrics by Mailer")
+        )
+        display(_styled)
+
+        print(f"\n  Deposit metrics from Z5 snapshot (365d/12 monthly)")
+        print(f"  Accel = DepAmt33 / DepAmt66 (>1.0x = deposits accelerating)")
+    else:
+        print("    No mailers with deposit data.")

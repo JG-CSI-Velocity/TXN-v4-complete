@@ -1,0 +1,150 @@
+# ===========================================================================
+# DID SUMMARY: One-Page Proof Table
+# ===========================================================================
+# One row per mailer + ALL aggregate. DID for Swipes, Spend, Items.
+# The summary slide for the presentation.
+#
+# Depends on: rewards_df, _acct (cell 04), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+elif '_acct' not in dir():
+    print("    Run cell 04 first.")
+else:
+    from IPython.display import display
+
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+
+    def _find_cols(suffix):
+        return sorted(
+            [c.strip() for c in rewards_df.columns if c.strip().endswith(suffix)
+             and c.strip()[0].isupper()
+             and len(c.strip().split(' ')[0]) in (5, 6)
+             and c.strip().split(' ')[0][:3] in _VALID_MON],
+            key=lambda c: pd.to_datetime(c.strip().replace(suffix, ''), format='%b%y'))
+
+    _swipe_cols = _find_cols(' Swipes')
+    _spend_cols = _find_cols(' Spend')
+    _items_cols = _find_cols(' MTD')
+    _swipe_dates = [pd.to_datetime(c.replace(' Swipes', ''), format='%b%y') for c in _swipe_cols]
+    _spend_dates = [pd.to_datetime(c.replace(' Spend', ''), format='%b%y') for c in _spend_cols]
+    _items_dates = [pd.to_datetime(c.replace(' MTD', ''), format='%b%y') for c in _items_cols]
+
+    _mail_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
+        key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
+
+    def _is_success(val):
+        if pd.isna(val): return False
+        v = str(val).strip().upper()
+        if not v or v == 'NAN': return False
+        if 'NU' in v: return '5+' in v or '5 +' in v
+        return True
+
+    def _window_cols(cols, dates, ref, s, e):
+        return [c for c, d in zip(cols, dates)
+                if s <= (d.year - ref.year) * 12 + (d.month - ref.month) <= e]
+
+    _eligible = rewards_df.reindex(_acct.index)
+
+    _rows = []
+    _all_r_pre_swipe, _all_nr_pre_swipe = [], []
+    _all_r_post_swipe, _all_nr_post_swipe = [], []
+
+    for mc in _mail_cols:
+        _month = mc.replace(' Mail', '')
+        _rc = f"{_month} Resp"
+        if _rc not in rewards_df.columns or rewards_df[_rc].notna().sum() == 0:
+            continue
+
+        _wd = pd.to_datetime(_month, format='%b%y')
+        _mailed = _eligible[mc].notna()
+        _resp = _eligible[_rc].apply(_is_success)
+        _r = _mailed & _resp
+        _nr = _mailed & ~_resp
+        if _r.sum() == 0 or _nr.sum() == 0:
+            continue
+
+        _row = {'Mailer': _month, 'Mailed': _mailed.sum(),
+                'Responded': _r.sum(),
+                'Rate': _r.sum() / _mailed.sum() * 100}
+
+        for metric, cols, dates in [
+            ('Swipes', _swipe_cols, _swipe_dates),
+            ('Spend', _spend_cols, _spend_dates),
+            ('Items', _items_cols, _items_dates),
+        ]:
+            _pre = _window_cols(cols, dates, _wd, -3, -1)
+            _post = _window_cols(cols, dates, _wd, 1, 3)
+            if not _pre or not _post:
+                continue
+
+            _r_pre = _eligible.loc[_r, _pre].apply(pd.to_numeric, errors='coerce').fillna(0).mean(axis=1).mean()
+            _nr_pre = _eligible.loc[_nr, _pre].apply(pd.to_numeric, errors='coerce').fillna(0).mean(axis=1).mean()
+            _r_post = _eligible.loc[_r, _post].apply(pd.to_numeric, errors='coerce').fillna(0).mean(axis=1).mean()
+            _nr_post = _eligible.loc[_nr, _post].apply(pd.to_numeric, errors='coerce').fillna(0).mean(axis=1).mean()
+            _did = (_r_post - _r_pre) - (_nr_post - _nr_pre)
+            _row[f'{metric} DID'] = _did
+
+        _rows.append(_row)
+
+    # ALL MAILERS aggregate
+    if _rows:
+        _agg = {'Mailer': 'ALL MAILERS',
+                'Mailed': sum(r['Mailed'] for r in _rows),
+                'Responded': sum(r['Responded'] for r in _rows)}
+        _agg['Rate'] = _agg['Responded'] / _agg['Mailed'] * 100 if _agg['Mailed'] > 0 else 0
+        for metric in ['Swipes', 'Spend', 'Items']:
+            _vals = [r.get(f'{metric} DID') for r in _rows if pd.notna(r.get(f'{metric} DID'))]
+            _agg[f'{metric} DID'] = np.mean(_vals) if _vals else np.nan
+        _rows.append(_agg)
+
+    _df = pd.DataFrame(_rows)
+    _last = len(_df) - 1
+
+    for _rc in _df.columns:
+        if _rc not in ('Mailer', 'Mailed', 'Responded') and _df[_rc].dtype in ('float64', 'float32'):
+            _df[_rc] = _df[_rc].round(1)
+
+    def _style(row):
+        if row.name == _last:
+            return ['font-weight: bold; border-top: 2px solid #1B2A4A; '
+                    'background-color: rgba(27, 42, 74, 0.08)'] * len(row)
+        return [''] * len(row)
+
+    def _color_did(col):
+        if 'DID' not in col.name: return [''] * len(col)
+        return [f'color: {GEN_COLORS["success"]}' if pd.notna(v) and v > 0
+                else f'color: {GEN_COLORS["accent"]}' if pd.notna(v) and v < 0
+                else '' for v in col]
+
+    _fmt = {'Mailed': '{:,.0f}', 'Responded': '{:,.0f}', 'Rate': '{:.1f}%'}
+    for c in _df.columns:
+        if 'DID' in c:
+            if 'Spend' in c: _fmt[c] = '${:,.1f}'
+            else: _fmt[c] = '{:,.1f}'
+
+    _styled = (
+        _df.style.hide(axis='index')
+        .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+        .apply(_style, axis=1).apply(_color_did)
+        .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+        .set_properties(subset=['Mailer'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '8px 10px')]},
+            {'selector': 'caption', 'props': [('font-size', '24px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '14px')]},
+        ])
+        .set_caption("DID Summary: Program Proof by Mailer")
+    )
+    display(_styled)
+
+    # Consistency
+    if _rows:
+        for metric in ['Swipes', 'Spend', 'Items']:
+            _vals = [r.get(f'{metric} DID') for r in _rows[:-1] if pd.notna(r.get(f'{metric} DID'))]
+            _pos = sum(1 for v in _vals if v > 0)
+            print(f"  {metric} DID: {_pos}/{len(_vals)} mailers positive")
