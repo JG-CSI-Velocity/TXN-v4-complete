@@ -1,0 +1,192 @@
+# ===========================================================================
+# PORTFOLIO FUNNEL: Total Open -> Mailed -> Responded (Conference Edition)
+# ===========================================================================
+# Rich visual showing the funnel from total open accounts down to
+# responders, with key metrics at each stage.
+#
+# Depends on: rewards_df (00-setup/08), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available. Run 00-setup cells first.")
+else:
+    from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
+    import matplotlib.patheffects as pe
+
+    # -----------------------------------------------------------------
+    # Compute funnel counts
+    # -----------------------------------------------------------------
+    _total_open = len(rewards_df)
+
+    # Mailable
+    _mailable = 0
+    if 'Mailable?' in rewards_df.columns:
+        _mailable = (rewards_df['Mailable?'].astype(str).str.strip()
+                      .str.upper().isin(['Y', 'YES', '1', 'TRUE'])).sum()
+
+    # Has debit card
+    _has_debit = 0
+    if 'Debit?' in rewards_df.columns:
+        _has_debit = (rewards_df['Debit?'].astype(str).str.strip()
+                       .str.upper().isin(['Y', 'YES', '1', 'TRUE'])).sum()
+
+    # Total mailed (any Mail column non-null)
+    _mail_cols = [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')]
+    _mailed_mask = rewards_df[_mail_cols].notna().any(axis=1) if _mail_cols else pd.Series(False, index=rewards_df.index)
+    _total_mailed = _mailed_mask.sum()
+
+    # Unique accounts mailed (same as above for ODDD)
+    _never_mailed = _total_open - _total_mailed
+
+    # Offers and Responses from pre-computed fields
+    _offers_col = '# of Offers'
+    _resp_col = '# of Responses'
+    _total_offers = 0
+    _total_responses = 0
+    _resp_accts = 0
+
+    if _offers_col in rewards_df.columns:
+        _total_offers = pd.to_numeric(rewards_df[_offers_col], errors='coerce').fillna(0).sum()
+    if _resp_col in rewards_df.columns:
+        _resp_vals = pd.to_numeric(rewards_df[_resp_col], errors='coerce').fillna(0)
+        _total_responses = _resp_vals.sum()
+        _resp_accts = (_resp_vals > 0).sum()
+
+    # Multi-responders
+    _multi_resp = (_resp_vals >= 2).sum() if _resp_col in rewards_df.columns else 0
+
+    # -----------------------------------------------------------------
+    # Funnel stages
+    # -----------------------------------------------------------------
+    _stages = [
+        ('Total Open Accounts', _total_open, GEN_COLORS['primary']),
+        ('Mailable', _mailable, '#264653'),
+        ('Has Debit Card', _has_debit, GEN_COLORS['info']),
+        ('Mailed (at least once)', _total_mailed, '#20A39E'),
+        ('Responded (at least once)', _resp_accts, GEN_COLORS['success']),
+        ('Responded 2+ Times', _multi_resp, GEN_COLORS['warning']),
+    ]
+
+    # Filter out zero stages (except Total Open which is always shown)
+    _stages = [s for s in _stages if s[1] > 0 or s[0] == 'Total Open Accounts']
+
+    # -----------------------------------------------------------------
+    # Chart: Horizontal funnel bars
+    # -----------------------------------------------------------------
+    fig, ax = plt.subplots(figsize=(16, 8))
+
+    _n = len(_stages)
+    _y_positions = list(range(_n - 1, -1, -1))
+    _max_val = _stages[0][1]
+
+    for i, (label, count, color) in enumerate(_stages):
+        _y = _y_positions[i]
+        _width = count / _max_val if _max_val > 0 else 0
+
+        # Draw bar
+        bar = FancyBboxPatch(
+            (0, _y - 0.35), _width * 0.85, 0.7,
+            boxstyle="round,pad=0.02",
+            facecolor=color, edgecolor='white', linewidth=2,
+            alpha=0.9, zorder=3)
+        ax.add_patch(bar)
+
+        # Count label inside bar
+        _pct = count / _total_open * 100
+        _count_text = f"{count:,}"
+        _pct_text = f"({_pct:.1f}%)"
+
+        if _width > 0.15:
+            ax.text(_width * 0.85 - 0.02, _y,
+                    _count_text,
+                    ha='right', va='center', fontsize=20, fontweight='bold',
+                    color='white', zorder=5,
+                    path_effects=[pe.withStroke(linewidth=2, foreground='black',
+                                                alpha=0.15)])
+            ax.text(_width * 0.85 - 0.02, _y - 0.22,
+                    _pct_text,
+                    ha='right', va='center', fontsize=12,
+                    color='white', alpha=0.85, zorder=5)
+        else:
+            ax.text(_width * 0.85 + 0.02, _y,
+                    f"{_count_text}  {_pct_text}",
+                    ha='left', va='center', fontsize=14, fontweight='bold',
+                    color=color, zorder=5)
+
+        # Stage label on the left
+        ax.text(-0.02, _y,
+                label,
+                ha='right', va='center', fontsize=14, fontweight='bold',
+                color=GEN_COLORS['dark_text'])
+
+        # Drop-off arrow between stages
+        if i < _n - 1:
+            _next_count = _stages[i + 1][1]
+            _drop = count - _next_count
+            if _drop > 0 and count > 0:
+                _drop_pct = _drop / count * 100
+                ax.annotate('',
+                            xy=(0.01, _y - 0.45),
+                            xytext=(0.01, _y - 0.55),
+                            arrowprops=dict(arrowstyle='->', color=GEN_COLORS['muted'],
+                                            lw=1.5))
+
+    ax.set_xlim(-0.35, 1.0)
+    ax.set_ylim(-0.8, _n - 0.3)
+    ax.axis('off')
+
+    ax.text(-0.35, _n - 0.1,
+            "Portfolio Funnel",
+            fontsize=28, fontweight='bold',
+            color=GEN_COLORS['dark_text'], va='bottom')
+    ax.text(-0.35, _n - 0.35,
+            f"From total open accounts to multi-responders  |  "
+            f"{int(_total_offers):,} total offers sent  |  "
+            f"{int(_total_responses):,} total responses received",
+            fontsize=13, color=GEN_COLORS['muted'], style='italic',
+            va='top')
+
+    plt.tight_layout()
+    plt.show()
+
+    # -----------------------------------------------------------------
+    # Key metrics strip
+    # -----------------------------------------------------------------
+    _metrics = [
+        ('Total Open', f"{_total_open:,}", GEN_COLORS['primary']),
+        ('Mailed', f"{_total_mailed:,}", '#20A39E'),
+        ('Responded', f"{_resp_accts:,}", GEN_COLORS['success']),
+        ('Never Mailed', f"{_never_mailed:,}", GEN_COLORS['muted']),
+        ('Response Rate',
+         f"{_resp_accts / _total_mailed * 100:.1f}%" if _total_mailed > 0 else '--',
+         GEN_COLORS['warning']),
+        ('Multi-Resp',
+         f"{_multi_resp:,} ({_multi_resp / _resp_accts * 100:.0f}%)" if _resp_accts > 0 else '--',
+         GEN_COLORS['accent']),
+    ]
+
+    _n_metrics = len(_metrics)
+    fig, axes = plt.subplots(1, _n_metrics, figsize=(3 * _n_metrics, 2.5))
+
+    for ax, (label, val_str, color) in zip(axes, _metrics):
+        ax.set_xlim(0, 10)
+        ax.set_ylim(0, 10)
+        ax.axis('off')
+
+        card = FancyBboxPatch(
+            (0.3, 0.3), 9.4, 9.4,
+            boxstyle="round,pad=0.3",
+            facecolor=color, edgecolor='white', linewidth=2)
+        ax.add_patch(card)
+
+        ax.text(5, 6.8, label,
+                ha='center', va='center', fontsize=11, fontweight='bold',
+                color='white', alpha=0.85)
+        ax.text(5, 3.8, val_str,
+                ha='center', va='center', fontsize=20, fontweight='bold',
+                color='white',
+                path_effects=[pe.withStroke(linewidth=2, foreground='black',
+                                            alpha=0.15)])
+
+    fig.suptitle("")
+    plt.tight_layout()
+    plt.show()
