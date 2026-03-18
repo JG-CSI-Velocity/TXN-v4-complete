@@ -1,0 +1,377 @@
+Columns:
+  Acct ID
+  Acct Number
+  Acct Mask
+  Branch
+  Dec25 Elig
+  Dec25 Prog
+  Mailable?
+  Prod Code
+  Prod Desc
+  Business?
+  Stat Code
+  Stat Desc
+  Jul23 Reg E Code
+  Jul23 Reg E Desc
+  Aug23 Reg E Code
+  Aug23 Reg E Desc
+  Sep23 Reg E Code
+  Sep23 Reg E Desc
+  Oct23 Reg E Code
+  Oct23 Reg E Desc
+  Nov23 Reg E Code
+  Nov23 Reg E Desc
+  Dec23 Reg E Code
+  Dec23 Reg E Desc
+  Jan24 Reg E Code
+  Jan24 Reg E Desc
+  Feb24 Reg E Code
+  Feb24 Reg E Desc
+  Mar24 Reg E Code
+  Mar24 Reg E Desc
+  Apr24 Reg E Code
+  Apr24 Reg E Desc
+  May24 Reg E Code
+  May24 Reg E Desc
+  Jun24 Reg E Code
+  Jun24 Reg E Desc
+  Jul24 Reg E Code
+  Jul24 Reg E Desc
+  Aug24 Reg E Code
+  Aug24 Reg E Desc
+  Sep24 Reg E Code
+  Sep24 Reg E Desc
+  Oct24 Reg E Code
+  Oct24 Reg E Desc
+  Nov24 Reg E Code
+  Nov24 Reg E Desc
+  Dec24 Reg E Code
+  Dec24 Reg E Desc
+  Jan25 Reg E Code
+  Jan25 Reg E Desc
+  Feb25 Reg E Code
+  Feb25 Reg E Desc
+  Mar25 Reg E Code
+  Mar25 Reg E Desc
+  Apr25 Reg E Code
+  Apr25 Reg E Desc
+  May25 Reg E Code
+  May25 Reg E Desc
+  Jun25 Reg E Code
+  Jun25 Reg E Desc
+  Jul25 Reg E Code
+  Jul25 Reg E Desc
+  Aug25 Reg E Code
+  Aug25 Reg E Desc
+  Sep25 Reg E Code
+  Sep25 Reg E Desc
+  Oct25 Reg E Code
+  Oct25 Reg E Desc
+  Nov25 Reg E Code
+  Nov25 Reg E Desc
+  Dec25 Reg E Code
+  Dec25 Reg E Desc
+  Jul23 OD Limit
+  Aug23 OD Limit
+  Sep23 OD Limit
+  Oct23 OD Limit
+  Nov23 OD Limit
+  Dec23 OD Limit
+  Jan24 OD Limit
+  Feb24 OD Limit
+  Mar24 OD Limit
+  Apr24 OD Limit
+  May24 OD Limit
+  Jun24 OD Limit
+  Jul24 OD Limit
+  Aug24 OD Limit
+  Sep24 OD Limit
+  Oct24 OD Limit
+  Nov24 OD Limit
+  Dec24 OD Limit
+  Jan25 OD Limit
+  Feb25 OD Limit
+  Mar25 OD Limit
+  Apr25 OD Limit
+  May25 OD Limit
+  Jun25 OD Limit
+  Jul25 OD Limit
+  Aug25 OD Limit
+  Sep25 OD Limit
+  Oct25 OD Limit
+  Nov25 OD Limit
+  Dec25 OD Limit
+  DOB
+  Date Opened
+  Date Closed
+  Avg Bal
+  Curr Bal
+  Debit?
+  Feb24 Mail
+  Apr24 Mail
+  Jun24 Mail
+  Aug24 Mail
+  Oct24 Mail
+  Dec24 Mail
+  Feb25 Mail
+  Apr25 Mail
+  Jun25 Mail
+  Aug25 Mail
+  Oct25 Mail
+  Dec25 Mail
+  Feb24 Resp
+  Apr24 Resp
+  Jun24 Resp
+  Aug24 Resp
+  Oct24 Resp
+  Dec24 Resp
+  Feb25 Resp
+  Apr25 Resp
+  Jun25 Resp
+  Aug25 Resp
+  Oct25 Resp
+  Dec25 Resp
+  Jul23 PIN $
+  Aug23 PIN $
+  Sep23 PIN $
+  Oct23 PIN $
+  Nov23 PIN $
+  Dec23 PIN $
+  Jan24 PIN $
+  Feb24 PIN $
+  Mar24 PIN $
+  Apr24 PIN $
+  May24 PIN $
+  Jun24 PIN $
+  Jul24 PIN $
+  Aug24 PIN $
+  Sep24 PIN $
+  Oct24 PIN $
+  Nov24 PIN $
+  Dec24 PIN $
+  Jan25 PIN $
+  Feb25 PIN $
+  Mar25 PIN $
+  Apr25 PIN $
+  May25 PIN $
+  Jun25 PIN $
+  Jul25 PIN $
+  Aug25 PIN $
+  Sep25 PIN $
+  Oct25 PIN $
+  Nov25 PIN $
+  Dec25 PIN $
+  Jul23 Sig $
+  Aug23 Sig $
+  Sep23 Sig $
+  Oct23 Sig $
+  Nov23 Sig $
+  Dec23 Sig $
+  Jan24 Sig $
+  Feb24 Sig $
+  Mar24 Sig $
+  Apr24 Sig $
+  May24 Sig $
+  Jun24 Sig $
+  Jul24 Sig $
+  Aug24 Sig $
+  Sep24 Sig $
+  Oct24 Sig $
+  Nov24 Sig $
+  Dec24 Sig $
+  Jan25 Sig $
+  Feb25 Sig $
+  Mar25 Sig $
+  Apr25 Sig $
+  May25 Sig $
+  Jun25 Sig $
+  Jul25 Sig $
+  Aug25 Sig $
+  Sep25 Sig $
+  Oct25 Sig $
+  Nov25 Sig $
+  Dec25 Sig $
+  Jul23 PIN #
+  Aug23 PIN #
+  Sep23 PIN #
+  Oct23 PIN #
+  Nov23 PIN #
+  Dec23 PIN #
+  Jan24 PIN #
+  Feb24 PIN #
+  Mar24 PIN #
+  Apr24 PIN #
+  May24 PIN #
+  Jun24 PIN #
+  Jul24 PIN #
+  Aug24 PIN #
+  Sep24 PIN #
+  Oct24 PIN #
+  Nov24 PIN #
+  Dec24 PIN #
+  Jan25 PIN #
+  Feb25 PIN #
+  Mar25 PIN #
+  Apr25 PIN #
+  May25 PIN #
+  Jun25 PIN #
+  Jul25 PIN #
+  Aug25 PIN #
+  Sep25 PIN #
+  Oct25 PIN #
+  Nov25 PIN #
+  Dec25 PIN #
+  Jul23 Sig #
+  Aug23 Sig #
+  Sep23 Sig #
+  Oct23 Sig #
+  Nov23 Sig #
+  Dec23 Sig #
+  Jan24 Sig #
+  Feb24 Sig #
+  Mar24 Sig #
+  Apr24 Sig #
+  May24 Sig #
+  Jun24 Sig #
+  Jul24 Sig #
+  Aug24 Sig #
+  Sep24 Sig #
+  Oct24 Sig #
+  Nov24 Sig #
+  Dec24 Sig #
+  Jan25 Sig #
+  Feb25 Sig #
+  Mar25 Sig #
+  Apr25 Sig #
+  May25 Sig #
+  Jun25 Sig #
+  Jul25 Sig #
+  Aug25 Sig #
+  Sep25 Sig #
+  Oct25 Sig #
+  Nov25 Sig #
+  Dec25 Sig #
+  Jul23 MTD
+  Aug23 MTD
+  Sep23 MTD
+  Oct23 MTD
+  Nov23 MTD
+  Dec23 MTD
+  Jan24 MTD
+  Feb24 MTD
+  Mar24 MTD
+  Apr24 MTD
+  May24 MTD
+  Jun24 MTD
+  Jul24 MTD
+  Aug24 MTD
+  Sep24 MTD
+  Oct24 MTD
+  Nov24 MTD
+  Dec24 MTD
+  Jan25 MTD
+  Feb25 MTD
+  Mar25 MTD
+  Apr25 MTD
+  May25 MTD
+  Jun25 MTD
+  Jul25 MTD
+  Aug25 MTD
+  Sep25 MTD
+  Oct25 MTD
+  Nov25 MTD
+  Dec25 MTD
+  Total Spend
+  Total Swipes
+  last 3-mon spend
+  last 3-mon swipes
+  last 12-mon spend
+  last 12-mon swipes
+  Total Items
+  Last 12-mon Items
+  Last 3-mon Items
+  MonthlySwipes12
+  MonthlySwipes3
+  MonthlySpend12
+  MonthlySpend3
+  MonthlyItems12
+  MonthlyItems3
+  SwipeCat12
+  SwipeCat3
+  Jul23 Spend
+  Aug23 Spend
+  Sep23 Spend
+  Oct23 Spend
+  Nov23 Spend
+  Dec23 Spend
+  Jan24 Spend
+  Feb24 Spend
+  Mar24 Spend
+  Apr24 Spend
+  May24 Spend
+  Jun24 Spend
+  Jul24 Spend
+  Aug24 Spend
+  Sep24 Spend
+  Oct24 Spend
+  Nov24 Spend
+  Dec24 Spend
+  Jan25 Spend
+  Feb25 Spend
+  Mar25 Spend
+  Apr25 Spend
+  May25 Spend
+  Jun25 Spend
+  Jul25 Spend
+  Aug25 Spend
+  Sep25 Spend
+  Oct25 Spend
+  Nov25 Spend
+  Dec25 Spend
+  Jul23 Swipes
+  Aug23 Swipes
+  Sep23 Swipes
+  Oct23 Swipes
+  Nov23 Swipes
+  Dec23 Swipes
+  Jan24 Swipes
+  Feb24 Swipes
+  Mar24 Swipes
+  Apr24 Swipes
+  May24 Swipes
+  Jun24 Swipes
+  Jul24 Swipes
+  Aug24 Swipes
+  Sep24 Swipes
+  Oct24 Swipes
+  Nov24 Swipes
+  Dec24 Swipes
+  Jan25 Swipes
+  Feb25 Swipes
+  Mar25 Swipes
+  Apr25 Swipes
+  May25 Swipes
+  Jun25 Swipes
+  Jul25 Swipes
+  Aug25 Swipes
+  Sep25 Swipes
+  Oct25 Swipes
+  Nov25 Swipes
+  Dec25 Swipes
+  Account Holder Age
+  Account Age
+  # of Offers
+  # of Responses
+  Response Grouping
+  Feb24 Segmentation
+  Apr24 Segmentation
+  Jun24 Segmentation
+  Aug24 Segmentation
+  Oct24 Segmentation
+  Dec24 Segmentation
+  Feb25 Segmentation
+  Apr25 Segmentation
+  Jun25 Segmentation
+  Aug25 Segmentation
+  Oct25 Segmentation
+  Dec25 Segmentation
