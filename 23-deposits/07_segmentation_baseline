@@ -114,12 +114,16 @@ else:
         display(_styled_seg)
 
     # -----------------------------------------------------------------
-    # Build segment totals per account from RESP columns
-    # Resp columns contain response values with segment identifiers
+    # Build segment totals per account: Mail for segment, Resp for response
+    # Exclude any month where Resp has zero data (e.g., Dec25 not yet in)
     # -----------------------------------------------------------------
     _SEG_GROUP_ORDER = ['NU', 'TH-10', 'TH-15', 'TH-20', 'TH-25']
-    _seg_totals = {}
+    _seg_totals_mailed = {}   # segment counts from all Mail columns (offered)
+    _seg_totals_responded = {}  # segment counts where Resp is non-null (responded)
 
+    _mail_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
+        key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
     _resp_cols = sorted(
         [c.strip() for c in rewards_df.columns if c.strip().endswith(' Resp')],
         key=lambda c: pd.to_datetime(c.replace(' Resp', ''), format='%b%y'))
@@ -135,15 +139,36 @@ else:
         if v.startswith('NU') or 'NON-USER' in v or 'NON USER' in v: return 'NU'
         return None
 
-    if _resp_cols:
-        for seg in _SEG_GROUP_ORDER:
-            _count = pd.Series(0, index=rewards_df.index)
-            for rc in _resp_cols:
-                _parsed = rewards_df[rc].apply(_extract_segment)
-                _count += (_parsed == seg).astype(int)
-            _seg_totals[seg] = _count
+    # Pair Mail/Resp columns by month, exclude months with zero Resp data
+    _valid_pairs = []
+    _excluded_months = []
+    for mc in _mail_cols:
+        _month = mc.replace(' Mail', '')
+        _rc = f"{_month} Resp"
+        if _rc not in rewards_df.columns:
+            continue
+        _resp_count = rewards_df[_rc].notna().sum()
+        if _resp_count == 0:
+            _excluded_months.append(_month)
+            continue
+        _valid_pairs.append((mc, _rc, _month))
 
-        print(f"  Segment counts from {len(_resp_cols)} Resp columns")
+    if _excluded_months:
+        print(f"  Excluded months with zero Resp data: {', '.join(_excluded_months)}")
+    print(f"  Using {len(_valid_pairs)} Mail/Resp pairs for segment counts")
+
+    # Count segments from Mail (all mailed) and from Mail where Resp non-null (responded)
+    for seg in _SEG_GROUP_ORDER:
+        _mailed_count = pd.Series(0, index=rewards_df.index)
+        _resp_count = pd.Series(0, index=rewards_df.index)
+        for mc, rc, _ in _valid_pairs:
+            _seg_parsed = rewards_df[mc].apply(_extract_segment)
+            _is_seg = (_seg_parsed == seg)
+            _mailed_count += _is_seg.astype(int)
+            _responded = rewards_df[rc].notna()
+            _resp_count += (_is_seg & _responded).astype(int)
+        _seg_totals_mailed[seg] = _mailed_count
+        _seg_totals_responded[seg] = _resp_count
 
     # -----------------------------------------------------------------
     # 2. # of Offers -- sorted numerically
@@ -159,13 +184,13 @@ else:
                     'Count': _vc[val],
                     '% of Total': _vc[val] / len(rewards_df) * 100,
                 }
-                # Segment breakdown -- null for zero (never mailed)
-                if _seg_totals and int(val) > 0:
+                # Segment breakdown from MAIL cols -- null for zero (never mailed)
+                if _seg_totals_mailed and int(val) > 0:
                     _mask = rewards_df['# of Offers'].apply(
                         lambda x: pd.to_numeric(x, errors='coerce')) == val
                     for seg in _SEG_GROUP_ORDER:
-                        _row[seg] = _seg_totals[seg][_mask].sum()
-                elif _seg_totals:
+                        _row[seg] = _seg_totals_mailed[seg][_mask].sum()
+                elif _seg_totals_mailed:
                     for seg in _SEG_GROUP_ORDER:
                         _row[seg] = np.nan
                 _dist_rows.append(_row)
@@ -221,13 +246,13 @@ else:
                     'Count': _vc[val],
                     '% of Total': _vc[val] / len(rewards_df) * 100,
                 }
-                # Segment breakdown -- null for zero (never responded)
-                if _seg_totals and int(val) > 0:
+                # Segment breakdown from RESP cols -- null for zero
+                if _seg_totals_responded and int(val) > 0:
                     _mask = rewards_df['# of Responses'].apply(
                         lambda x: pd.to_numeric(x, errors='coerce')) == val
                     for seg in _SEG_GROUP_ORDER:
-                        _row[seg] = _seg_totals[seg][_mask].sum()
-                elif _seg_totals:
+                        _row[seg] = _seg_totals_responded[seg][_mask].sum()
+                elif _seg_totals_responded:
                     for seg in _SEG_GROUP_ORDER:
                         _row[seg] = np.nan
                 _dist_rows.append(_row)
@@ -314,10 +339,10 @@ else:
                         'Count': _vc[_match],
                         '% of Total': _vc[_match] / len(rewards_df) * 100,
                     }
-                    if _seg_totals:
+                    if _seg_totals_mailed:
                         _mask = _vals == _match
                         for seg in _SEG_GROUP_ORDER:
-                            _row[seg] = _seg_totals[seg][_mask].sum()
+                            _row[seg] = _seg_totals_mailed[seg][_mask].sum()
                     _dist_rows.append(_row)
 
             # Append any values not matched by custom order
@@ -328,10 +353,10 @@ else:
                         'Count': _vc[val],
                         '% of Total': _vc[val] / len(rewards_df) * 100,
                     }
-                    if _seg_totals:
+                    if _seg_totals_mailed:
                         _mask = _vals == val
                         for seg in _SEG_GROUP_ORDER:
-                            _row[seg] = _seg_totals[seg][_mask].sum()
+                            _row[seg] = _seg_totals_mailed[seg][_mask].sum()
                     _dist_rows.append(_row)
 
             _dist_df = pd.DataFrame(_dist_rows)
