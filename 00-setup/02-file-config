@@ -6,8 +6,8 @@ import re
 # ============================================================
 # CLIENT CONFIGURATION -- Update these for each client
 # ============================================================
-CLIENT_ID = '1776'
-CLIENT_NAME = 'CoastHills'
+CLIENT_ID = '1673'
+CLIENT_NAME = 'Neighborhood'
 FILE_EXTENSION = 'txt'  # 'txt' or 'csv' for transaction files
 
 # ============================================================
@@ -15,20 +15,17 @@ FILE_EXTENSION = 'txt'  # 'txt' or 'csv' for transaction files
 # ============================================================
 
 # 1. ODDD file (rewards/campaign data)
-ODD_FILE = Path(r"M:\ARS\Incoming\ODDD Files\JamesG\2026.02\1776\1776-2026-02-CoastHills CU-ODD.xlsx")
+ODD_FILE = Path(r"C:\Users\james.gilmore\analysis-platform\data\1673 - Neighborhood\1673-2026-03-Neighborhood CU-ODD.csv")
 
 # 2. Z Accounts / Deposit snapshots directory
 #    Contains zaccounts CSV/TXT files with dates in the filename
 #    Set to None to auto-discover from ODDD directory
-# IMPORTANT: Set to directory containing BOTH Z5 snapshot files (Mar25 + Mar26).
-# Cell 01 auto-discovers all *zaccounts*.csv files in this directory and
-# parses dates from filenames. Both files must be here for deposit deltas.
-# If None, auto-discovers from ODDD directory only (may miss a second snapshot).
-ZACCOUNTS_DIR = Path(r"M:\ARS\Incoming\ODDD Files\JamesG\zaccounts\1776")  # UPDATE: path containing both Z5 CSVs
+ZACCOUNTS_DIR = Path(r"C:\Users\james.gilmore\analysis-platform\data\1673 - Neighborhood")
 
 # 3. Transaction files directory (debit card transactions)
 #    Set to None if not using transaction data (deposits-only analysis)
-TRANSACTION_DIR = Path(r"M:\ARS\Incoming\Transaction Files") / f"{CLIENT_ID} - {CLIENT_NAME}"
+TRANSACTION_DIR = None
+#Path(r"M:\ARS\Incoming\Transaction Files") / f"{CLIENT_ID} - {CLIENT_NAME}"
 
 # Number of recent transaction months to consider
 RECENT_MONTHS = 13
