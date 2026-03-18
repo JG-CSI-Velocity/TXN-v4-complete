@@ -1,0 +1,147 @@
+# ===========================================================================
+# EXECUTIVE SUMMARY: Key Findings and Recommendations
+# ===========================================================================
+# Pulls headline numbers from previous cells and presents them
+# in a conference-ready format.
+#
+# Depends on: rewards_df, _acct (cell 13), GEN_COLORS
+
+if '_acct' not in dir() or 'group' not in _acct.columns:
+    print("    Run cell 13 first.")
+else:
+    from IPython.display import display
+    from matplotlib.patches import FancyBboxPatch
+    import matplotlib.patheffects as pe
+
+    _r = _acct[_acct['group'] == 'Responder']
+    _nr = _acct[_acct['group'] == 'Non-Responder']
+
+    # Headline KPIs
+    _total = len(_acct)
+    _n_resp = len(_r)
+    _n_nr = len(_nr)
+
+    _r_swipes = _r['mo_swipes'].mean() if 'mo_swipes' in _r.columns else 0
+    _nr_swipes = _nr['mo_swipes'].mean() if 'mo_swipes' in _nr.columns else 0
+    _r_spend = _r['mo_spend'].mean() if 'mo_spend' in _r.columns else 0
+    _nr_spend = _nr['mo_spend'].mean() if 'mo_spend' in _nr.columns else 0
+    _r_dep = _r['mo_dep_amt'].median() if 'mo_dep_amt' in _r.columns else 0
+    _nr_dep = _nr['mo_dep_amt'].median() if 'mo_dep_amt' in _nr.columns else 0
+
+    _swipe_lift = ((_r_swipes - _nr_swipes) / _nr_swipes * 100
+                    if _nr_swipes > 0 else 0)
+    _spend_lift = ((_r_spend - _nr_spend) / _nr_spend * 100
+                    if _nr_spend > 0 else 0)
+    _dep_lift = ((_r_dep - _nr_dep) / _nr_dep * 100
+                  if _nr_dep > 0 else 0)
+
+    # -----------------------------------------------------------------
+    # KPI Cards
+    # -----------------------------------------------------------------
+    _cards = [
+        ('Responders', f"{_n_resp:,}", GEN_COLORS['success']),
+        ('Swipe Lift', f"+{_swipe_lift:.0f}%", GEN_COLORS['info']),
+        ('Spend Lift', f"+{_spend_lift:.0f}%", '#20A39E'),
+        ('Deposit Lift', f"+{_dep_lift:.0f}%", GEN_COLORS['primary']),
+    ]
+
+    fig, axes = plt.subplots(1, 4, figsize=(16, 3))
+    for ax, (label, val, color) in zip(axes, _cards):
+        ax.set_xlim(0, 10)
+        ax.set_ylim(0, 10)
+        ax.axis('off')
+        card = FancyBboxPatch((0.2, 0.2), 9.6, 9.6,
+                               boxstyle="round,pad=0.3",
+                               facecolor=color, edgecolor='white', linewidth=2)
+        ax.add_patch(card)
+        ax.text(5, 7, label, ha='center', va='center', fontsize=13,
+                fontweight='bold', color='white', alpha=0.85)
+        ax.text(5, 3.5, val, ha='center', va='center', fontsize=26,
+                fontweight='bold', color='white',
+                path_effects=[pe.withStroke(linewidth=2, foreground='black', alpha=0.15)])
+
+    plt.tight_layout()
+    plt.show()
+
+    # -----------------------------------------------------------------
+    # Findings table
+    # -----------------------------------------------------------------
+    _findings = [
+        ('Swipers deposit more',
+         'Accounts in the 26+ swipe tier deposit significantly more than inactive accounts',
+         'Cell 11, 39'),
+        ('Responders outperform NR on every metric',
+         f"Swipes +{_swipe_lift:.0f}%, Spend +{_spend_lift:.0f}%, Deposits +{_dep_lift:.0f}%",
+         'Cell 41'),
+        ('Same-segment proof holds',
+         'Within each challenge level (NU through TH-25), responders > non-responders',
+         'Cell 37'),
+        ('Multi-responders compound the effect',
+         'Accounts that responded to multiple mailers show highest deposits',
+         'Cell 29'),
+        ('2024 responders still ahead in 2025',
+         'Long-term behavioral change, not just a short-term spike',
+         'Cell 21'),
+        ('Direct deposit amplifies the advantage',
+         'Responders with DD show the strongest deposit behavior',
+         'Cell 30'),
+        ('Non-responders close accounts more',
+         'Higher attrition rate among those who never responded',
+         'Cell 31'),
+        ('Deposit velocity accelerating for responders',
+         '33-day deposit rate growing faster than 99-day rate',
+         'Cell 24'),
+    ]
+
+    _f_df = pd.DataFrame(_findings, columns=['Finding', 'Detail', 'Source'])
+
+    _styled = (
+        _f_df.style.hide(axis='index')
+        .set_properties(**{'font-size': '13px',
+            'text-align': 'left', 'border': '1px solid #E9ECEF', 'padding': '10px 12px'})
+        .set_properties(subset=['Finding'], **{
+            'font-weight': 'bold', 'color': GEN_COLORS['primary']})
+        .set_properties(subset=['Source'], **{
+            'text-align': 'center', 'color': GEN_COLORS['muted'], 'font-size': '11px'})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '14px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '10px 12px')]},
+            {'selector': 'caption', 'props': [('font-size', '24px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                ('padding-bottom', '14px')]},
+        ])
+        .set_caption("Executive Summary: Key Findings")
+    )
+    display(_styled)
+
+    # -----------------------------------------------------------------
+    # Recommendations
+    # -----------------------------------------------------------------
+    _recs = [
+        'Continue the debit card rewards program -- it drives measurable deposit growth',
+        'Focus future mailers on accounts with direct deposit (highest ROI)',
+        'Increase mailing frequency for non-responders in TH-10/TH-15 tiers',
+        'Track deposit velocity (33-day rate) as a leading indicator',
+        'Use multi-responder data to build a "loyalty tier" for the program',
+        'Monitor account closure rates -- early intervention for at-risk NR accounts',
+    ]
+
+    _r_df = pd.DataFrame({'Recommendation': _recs})
+
+    _styled_r = (
+        _r_df.style.hide(axis='index')
+        .set_properties(**{'font-size': '14px', 'font-weight': 'bold',
+            'text-align': 'left', 'border': '1px solid #E9ECEF', 'padding': '12px 14px',
+            'color': GEN_COLORS['dark_text']})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['success']),
+                ('color', 'white'), ('font-size', '14px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '10px 14px')]},
+            {'selector': 'caption', 'props': [('font-size', '24px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                ('padding-bottom', '14px')]},
+        ])
+        .set_caption("Recommended Actions")
+    )
+    display(_styled_r)

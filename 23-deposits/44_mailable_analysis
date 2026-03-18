@@ -1,0 +1,74 @@
+# ===========================================================================
+# MAILABLE ANALYSIS: Who Wasn't Mailable and Why?
+# ===========================================================================
+# Depends on: rewards_df, _acct (cell 13), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+elif '_acct' not in dir():
+    print("    Run cell 13 first.")
+elif 'Mailable?' not in rewards_df.columns:
+    print("    'Mailable?' column not found.")
+else:
+    from IPython.display import display
+
+    _mailable = rewards_df['Mailable?'].astype(str).str.strip().str.upper()
+    _is_mailable = _mailable.isin(['Y', 'YES', '1', 'TRUE'])
+
+    _rows = []
+    for mtype, mask in [('Mailable', _is_mailable), ('Not Mailable', ~_is_mailable)]:
+        _g = _acct.reindex(rewards_df.index[mask])
+        _row = {
+            'Status': mtype,
+            'Accounts': mask.sum(),
+            '% of Total': mask.sum() / len(rewards_df) * 100,
+        }
+        if 'mo_swipes' in _g.columns and len(_g) > 0:
+            _row['Mo Swipes'] = _g['mo_swipes'].mean()
+        if 'mo_spend' in _g.columns and len(_g) > 0:
+            _row['Mo Spend'] = _g['mo_spend'].mean()
+        if 'mo_dep_count' in _g.columns and len(_g) > 0:
+            _row['Avg Mo Dep Ct'] = _g['mo_dep_count'].mean()
+        if 'mo_dep_amt' in _g.columns and len(_g) > 0:
+            _row['Med Mo Dep $'] = _g['mo_dep_amt'].median()
+        _rows.append(_row)
+
+    _df = pd.DataFrame(_rows)
+
+    _fmt = {
+        'Accounts': '{:,.0f}', '% of Total': '{:.1f}%',
+        'Mo Swipes': '{:,.1f}', 'Mo Spend': '${:,.1f}',
+        'Avg Mo Dep Ct': '{:,.1f}', 'Med Mo Dep $': '${:,.1f}',
+    }
+
+    _styled = (
+        _df.style.hide(axis='index')
+        .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+        .set_properties(**{'font-size': '14px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '10px 12px'})
+        .set_properties(subset=['Status'], **{
+            'text-align': 'left', 'color': GEN_COLORS['primary']})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '14px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '10px 12px')]},
+            {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                ('padding-bottom', '12px')]},
+        ])
+        .set_caption("Mailable vs Not Mailable: Who Are We Missing?")
+    )
+    display(_styled)
+
+    # Not mailable reasons -- check Stat Desc, Debit?
+    _not_m = rewards_df[~_is_mailable]
+    if 'Stat Desc' in _not_m.columns:
+        _stat_vc = _not_m['Stat Desc'].astype(str).str.strip().value_counts().head(10)
+        print(f"\n  Not Mailable -- Top Status Descriptions:")
+        for val, cnt in _stat_vc.items():
+            print(f"    {val}: {cnt:,}")
+
+    if 'Debit?' in _not_m.columns:
+        _debit = _not_m['Debit?'].astype(str).str.strip().str.upper()
+        _no_debit = (~_debit.isin(['Y', 'YES', '1', 'TRUE'])).sum()
+        print(f"\n  Not Mailable without debit card: {_no_debit:,} / {len(_not_m):,}")

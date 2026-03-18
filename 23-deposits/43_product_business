@@ -1,0 +1,150 @@
+# ===========================================================================
+# PRODUCT & BUSINESS: Response and Deposit by Account Type
+# ===========================================================================
+# Depends on: rewards_df, _acct (cell 13), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+elif '_acct' not in dir():
+    print("    Run cell 13 first.")
+else:
+    from IPython.display import display
+
+    _group = _acct['group'].reindex(rewards_df.index).fillna('Not Mailed')
+    _GROUPS = ['Responder', 'Non-Responder']
+
+    # -----------------------------------------------------------------
+    # Business vs Personal
+    # -----------------------------------------------------------------
+    if 'Business?' in rewards_df.columns:
+        _biz = rewards_df['Business?'].astype(str).str.strip().str.upper()
+        _is_biz = _biz.isin(['Y', 'YES', '1', 'TRUE'])
+
+        _rows = []
+        for btype, mask in [('Personal', ~_is_biz), ('Business', _is_biz)]:
+            for grp in _GROUPS:
+                _g_mask = mask & (_group == grp)
+                _g = _acct.reindex(rewards_df.index[_g_mask])
+                if len(_g) == 0:
+                    continue
+                _row = {'Type': btype, 'Group': grp, 'N': len(_g)}
+                if 'mo_swipes' in _g.columns:
+                    _row['Mo Swipes'] = _g['mo_swipes'].mean()
+                if 'mo_spend' in _g.columns:
+                    _row['Mo Spend'] = _g['mo_spend'].mean()
+                if 'mo_dep_amt' in _g.columns:
+                    _row['Med Mo Dep $'] = _g['mo_dep_amt'].median()
+                _rows.append(_row)
+
+        _df = pd.DataFrame(_rows)
+
+        _type_breaks = set()
+        _prev = None
+        for i, row in _df.iterrows():
+            if row['Type'] != _prev and _prev is not None:
+                _type_breaks.add(i)
+            _prev = row['Type']
+
+        def _style(row):
+            parts = []
+            if _df.loc[row.name, 'Group'] == 'Responder':
+                parts.append('background-color: rgba(46, 196, 182, 0.08)')
+            if row.name in _type_breaks:
+                parts.append('border-top: 2px solid #1B2A4A')
+            return ['; '.join(parts) if parts else ''] * len(row)
+
+        def _color_grp(col):
+            if col.name != 'Group': return [''] * len(col)
+            return [f'color: {GEN_COLORS["success"]}' if v == 'Responder'
+                    else f'color: {GEN_COLORS["muted"]}' for v in col]
+
+        _fmt = {
+            'N': '{:,.0f}', 'Mo Swipes': '{:,.1f}',
+            'Mo Spend': '${:,.1f}', 'Med Mo Dep $': '${:,.1f}',
+        }
+
+        _styled = (
+            _df.style.hide(axis='index')
+            .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+            .apply(_style, axis=1).apply(_color_grp)
+            .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+            .set_properties(subset=['Type'], **{
+                'text-align': 'left', 'color': GEN_COLORS['primary']})
+            .set_properties(subset=['Group'], **{'text-align': 'left'})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                    ('color', 'white'), ('font-size': '13px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '8px 10px')]},
+                {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                    ('padding-bottom', '12px')]},
+            ])
+            .set_caption("Business vs Personal: Resp vs NR")
+        )
+        display(_styled)
+
+    # -----------------------------------------------------------------
+    # Product Code
+    # -----------------------------------------------------------------
+    if 'Prod Desc' in rewards_df.columns:
+        _prod = rewards_df['Prod Desc'].astype(str).str.strip()
+        _top_prods = _prod.value_counts().head(10).index.tolist()
+
+        _rows = []
+        for prod in _top_prods:
+            _p_mask = _prod == prod
+            for grp in _GROUPS:
+                _g_mask = _p_mask & (_group == grp)
+                _g = _acct.reindex(rewards_df.index[_g_mask])
+                if len(_g) < 5:
+                    continue
+                _row = {'Product': prod[:30], 'Group': grp, 'N': len(_g)}
+                if 'mo_swipes' in _g.columns:
+                    _row['Mo Swipes'] = _g['mo_swipes'].mean()
+                if 'mo_dep_amt' in _g.columns:
+                    _row['Med Mo Dep $'] = _g['mo_dep_amt'].median()
+                _rows.append(_row)
+
+        if _rows:
+            _df_p = pd.DataFrame(_rows)
+
+            _prod_breaks = set()
+            _prev = None
+            for i, row in _df_p.iterrows():
+                if row['Product'] != _prev and _prev is not None:
+                    _prod_breaks.add(i)
+                _prev = row['Product']
+
+            def _style_p(row):
+                parts = []
+                if _df_p.loc[row.name, 'Group'] == 'Responder':
+                    parts.append('background-color: rgba(46, 196, 182, 0.08)')
+                if row.name in _prod_breaks:
+                    parts.append('border-top: 1px solid #adb5bd')
+                return ['; '.join(parts) if parts else ''] * len(row)
+
+            _fmt_p = {
+                'N': '{:,.0f}', 'Mo Swipes': '{:,.1f}', 'Med Mo Dep $': '${:,.1f}',
+            }
+
+            _styled_p = (
+                _df_p.style.hide(axis='index')
+                .format({k: v for k, v in _fmt_p.items() if k in _df_p.columns}, na_rep='--')
+                .apply(_style_p, axis=1).apply(_color_grp)
+                .set_properties(**{'font-size': '12px', 'font-weight': 'bold',
+                    'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '7px 10px'})
+                .set_properties(subset=['Product'], **{
+                    'text-align': 'left', 'color': GEN_COLORS['primary']})
+                .set_properties(subset=['Group'], **{'text-align': 'left'})
+                .set_table_styles([
+                    {'selector': 'th', 'props': [('background-color', GEN_COLORS['info']),
+                        ('color', 'white'), ('font-size': '12px'), ('font-weight', 'bold'),
+                        ('text-align', 'center'), ('padding', '7px 10px')]},
+                    {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                        ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                        ('padding-bottom', '12px')]},
+                ])
+                .set_caption("Top 10 Products: Resp vs NR")
+            )
+            display(_styled_p)

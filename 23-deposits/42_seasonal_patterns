@@ -1,0 +1,122 @@
+# ===========================================================================
+# SEASONAL PATTERNS: Monthly Swipe/Spend/Items by Group
+# ===========================================================================
+# 30 months of data. Are there seasonal patterns? Does the responder
+# advantage vary by quarter?
+#
+# Depends on: rewards_df, _acct (cell 13), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+elif '_acct' not in dir():
+    print("    Run cell 13 first.")
+else:
+    from IPython.display import display
+
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+    _group = _acct['group'].reindex(rewards_df.index).fillna('Not Mailed')
+    _GROUPS = ['Responder', 'Non-Responder']
+    _GRP_COLORS = {
+        'Responder': GEN_COLORS['success'],
+        'Non-Responder': GEN_COLORS['muted'],
+    }
+
+    _spend_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Spend')
+         and c.strip()[0].isupper()
+         and len(c.strip().split(' ')[0]) in (5, 6)
+         and c.strip().split(' ')[0][:3] in _VALID_MON],
+        key=lambda c: pd.to_datetime(c.strip().replace(' Spend', ''), format='%b%y'))
+
+    if len(_spend_cols) == 0:
+        print("    No Spend columns.")
+    else:
+        _dates = [pd.to_datetime(c.replace(' Spend', ''), format='%b%y')
+                   for c in _spend_cols]
+
+        # Chart: monthly spend by group
+        fig, ax = plt.subplots(figsize=(16, 7))
+
+        for grp in _GROUPS:
+            _mask = _group == grp
+            _vals = [pd.to_numeric(rewards_df.loc[_mask, c], errors='coerce')
+                      .fillna(0).mean() for c in _spend_cols]
+            ax.plot(_dates, _vals, color=_GRP_COLORS[grp], linewidth=2.5,
+                    marker='o', markersize=5, markeredgecolor='white',
+                    markeredgewidth=1, label=f"{grp} ({_mask.sum():,})", zorder=5)
+
+        # Mark Q1 of each year
+        for yr in [2024, 2025]:
+            _q1 = pd.Timestamp(f'{yr}-01-01')
+            if _dates[0] <= _q1 <= _dates[-1]:
+                ax.axvline(x=_q1, color=GEN_COLORS['primary'],
+                           linewidth=1, linestyle='--', alpha=0.4)
+                ax.text(_q1, ax.get_ylim()[1] * 0.98, f'Q1 {yr}',
+                        ha='left', va='top', fontsize=10,
+                        color=GEN_COLORS['primary'], alpha=0.6)
+
+        ax.set_ylabel("Avg Monthly Spend ($)", fontsize=14,
+                       fontweight='bold', labelpad=10)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+        gen_clean_axes(ax)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+        ax.legend(fontsize=12, loc='upper left', frameon=True,
+                  facecolor='white', edgecolor=GEN_COLORS['grid'])
+        ax.set_title("Monthly Spend: Responder vs Non-Responder",
+                      fontsize=22, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=15, loc='left')
+        fig.autofmt_xdate(rotation=45)
+        plt.tight_layout()
+        plt.show()
+
+        # Quarterly summary table
+        _q_rows = []
+        for c, d in zip(_spend_cols, _dates):
+            _q = f"Q{(d.month-1)//3+1} {d.year}"
+            _vals_data = pd.to_numeric(rewards_df[c], errors='coerce').fillna(0)
+            for grp in _GROUPS:
+                _mask = _group == grp
+                _q_rows.append({
+                    'Quarter': _q, 'Month': d.strftime('%b%y'),
+                    'Group': grp,
+                    'Avg Spend': _vals_data[_mask].mean(),
+                })
+
+        _q_df = pd.DataFrame(_q_rows)
+        _q_pivot = _q_df.pivot_table(
+            index='Quarter', columns='Group', values='Avg Spend', aggfunc='mean')
+        _q_pivot = _q_pivot[_GROUPS]
+
+        if 'Responder' in _q_pivot.columns and 'Non-Responder' in _q_pivot.columns:
+            _q_pivot['R - NR Gap'] = _q_pivot['Responder'] - _q_pivot['Non-Responder']
+
+        _fmt = {c: '${:,.1f}' for c in _q_pivot.columns}
+        if 'R - NR Gap' in _q_pivot.columns:
+            _fmt['R - NR Gap'] = lambda v: (f"+${v:,.1f}" if pd.notna(v) and v >= 0
+                                             else f"-${abs(v):,.1f}" if pd.notna(v)
+                                             else '--')
+
+        def _color_gap(col):
+            if col.name != 'R - NR Gap': return [''] * len(col)
+            return [f'color: {GEN_COLORS["success"]}' if pd.notna(v) and v > 0
+                    else f'color: {GEN_COLORS["accent"]}' if pd.notna(v) and v < 0
+                    else '' for v in col]
+
+        _styled = (
+            _q_pivot.style
+            .format(_fmt, na_rep='--')
+            .apply(_color_gap)
+            .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                    ('color', 'white'), ('font-size': '13px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '8px 10px')]},
+                {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                    ('padding-bottom', '12px')]},
+            ])
+            .set_caption("Quarterly Avg Spend: Responder vs Non-Responder")
+        )
+        display(_styled)
