@@ -8,43 +8,40 @@ if '_acct' not in dir():
 else:
     from IPython.display import display
 
+    _metrics = [
+        ('mo_swipes_3mo', 'Avg Swipes (3mo)', 'mean'),
+        ('mo_spend_3mo', 'Avg Spend (3mo)', 'mean'),
+        ('mo_items_3mo', 'Avg Items (3mo)', 'mean'),
+        ('mo_dep_count', 'Med Dep Ct', 'median'),
+        ('mo_dep_amt', 'Med Dep $', 'median'),
+        ('mo_dep_amt', 'Avg Dep $', 'mean'),
+    ]
+
     _rows = []
     for seg in PROGRAM_SEG_ORDER:
         _g = _acct[_acct['program_segment'] == seg]
         if len(_g) == 0:
             continue
         _row = {'Segment': seg, 'Accounts': len(_g)}
-        for col, label in [
-            ('mo_swipes_3mo', 'Mo Swipes (3mo)'), ('mo_spend_3mo', 'Mo Spend (3mo)'),
-            ('mo_items_3mo', 'Mo Items (3mo)'),
-            ('mo_dep_count_365d', 'Dep Ct (365d)'), ('mo_dep_amt_365d', 'Dep $ (365d)'),
-        ]:
+        for col, label, agg in _metrics:
             if col in _g.columns:
-                _row[label] = _g[col].median()
+                _row[label] = _g[col].median() if agg == 'median' else _g[col].mean()
         _rows.append(_row)
 
     # Not Mailed
     _nm = _acct[_acct['program_segment'].isna()]
     if len(_nm) > 0:
         _row = {'Segment': 'Not Mailed', 'Accounts': len(_nm)}
-        for col, label in [
-            ('mo_swipes_3mo', 'Mo Swipes (3mo)'), ('mo_spend_3mo', 'Mo Spend (3mo)'),
-            ('mo_items_3mo', 'Mo Items (3mo)'),
-            ('mo_dep_count_365d', 'Dep Ct (365d)'), ('mo_dep_amt_365d', 'Dep $ (365d)'),
-        ]:
+        for col, label, agg in _metrics:
             if col in _nm.columns:
-                _row[label] = _nm[col].median()
+                _row[label] = _nm[col].median() if agg == 'median' else _nm[col].mean()
         _rows.append(_row)
 
     # TOTAL
     _total = {'Segment': 'TOTAL', 'Accounts': len(_acct)}
-    for col, label in [
-        ('mo_swipes_3mo', 'Mo Swipes (3mo)'), ('mo_spend_3mo', 'Mo Spend (3mo)'),
-        ('mo_items_3mo', 'Mo Items (3mo)'),
-        ('mo_dep_count_365d', 'Dep Ct (365d)'), ('mo_dep_amt_365d', 'Dep $ (365d)'),
-    ]:
+    for col, label, agg in _metrics:
         if col in _acct.columns:
-            _total[label] = _acct[col].median()
+            _total[label] = _acct[col].median() if agg == 'median' else _acct[col].mean()
     _rows.append(_total)
 
     _df = pd.DataFrame(_rows)
