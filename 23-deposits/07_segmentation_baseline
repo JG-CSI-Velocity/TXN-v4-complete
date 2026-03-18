@@ -157,7 +157,21 @@ else:
         print(f"  Excluded months with zero Resp data: {', '.join(_excluded_months)}")
     print(f"  Using {len(_valid_pairs)} Mail/Resp pairs for segment counts")
 
-    # Count segments from Mail (all mailed) and from Mail where Resp non-null (responded)
+    # Determine if a Resp value is a SUCCESSFUL response
+    # NU 1-4 is a near miss -- only NU 5+ counts as a response
+    def _is_success(resp_val):
+        if pd.isna(resp_val):
+            return False
+        v = str(resp_val).strip().upper()
+        if not v or v == 'NAN':
+            return False
+        # NU near-misses: 1-4, 0 -- NOT a response
+        if 'NU' in v:
+            return '5+' in v or '5 +' in v
+        # TH accounts: any non-null Resp = hit their threshold
+        return True
+
+    # Count segments from Mail (all mailed) and from Mail where response succeeded
     for seg in _SEG_GROUP_ORDER:
         _mailed_count = pd.Series(0, index=rewards_df.index)
         _resp_count = pd.Series(0, index=rewards_df.index)
@@ -165,7 +179,7 @@ else:
             _seg_parsed = rewards_df[mc].apply(_extract_segment)
             _is_seg = (_seg_parsed == seg)
             _mailed_count += _is_seg.astype(int)
-            _responded = rewards_df[rc].notna()
+            _responded = rewards_df[rc].apply(_is_success)
             _resp_count += (_is_seg & _responded).astype(int)
         _seg_totals_mailed[seg] = _mailed_count
         _seg_totals_responded[seg] = _resp_count
