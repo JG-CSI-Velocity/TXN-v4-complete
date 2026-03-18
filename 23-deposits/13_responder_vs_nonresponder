@@ -1,0 +1,239 @@
+# ===========================================================================
+# RESPONDER vs NON-RESPONDER: Swipe, Spend, Deposit Comparison
+# ===========================================================================
+# Same swipe tier structure as cells 11/12, but split into two tables:
+# one for Responders, one for Non-Responders. Shows whether the
+# swipe-to-deposit relationship differs between the two groups.
+#
+# Responder = at least one successful response (NU 5+ or TH hit)
+# Non-Responder = mailed at least once, never responded
+#
+# Uses 3-month swipe/spend window + 99-day deposit values.
+# Program-eligible accounts only.
+#
+# Depends on: rewards_df (00-setup/08), deposit_long (23/01),
+#             DEPOSIT_JOIN_KEY_ODDD, DEPOSIT_JOIN_KEY_DEPOSIT,
+#             SNAPSHOT_ORDER, GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available. Run 00-setup cells first.")
+elif 'deposit_long' not in dir() or len(deposit_long) == 0:
+    print("    deposit_long not available. Run cell 01 first.")
+elif 'DEPOSIT_JOIN_KEY_ODDD' not in dir():
+    print("    Join keys not established. Run cell 01 first.")
+else:
+    from IPython.display import display
+
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+
+    # -----------------------------------------------------------------
+    # 1. Build account-level data (same as cell 11)
+    # -----------------------------------------------------------------
+    _swipe_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Swipes')
+         and c.strip()[0].isupper()
+         and len(c.strip().split(' ')[0]) in (5, 6)
+         and c.strip().split(' ')[0][:3] in _VALID_MON],
+        key=lambda c: pd.to_datetime(c.strip().replace(' Swipes', ''), format='%b%y'))
+
+    _spend_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Spend')
+         and c.strip()[0].isupper()
+         and len(c.strip().split(' ')[0]) in (5, 6)
+         and c.strip().split(' ')[0][:3] in _VALID_MON],
+        key=lambda c: pd.to_datetime(c.strip().replace(' Spend', ''), format='%b%y'))
+
+    _last3_swipe = _swipe_cols[-3:] if len(_swipe_cols) >= 3 else _swipe_cols
+    _last3_spend = _spend_cols[-3:] if len(_spend_cols) >= 3 else _spend_cols
+
+    # Eligibility filter
+    _elig_col = None
+    for c in rewards_df.columns:
+        if 'elig' in c.lower():
+            _elig_col = c.strip()
+            break
+
+    if _elig_col:
+        _elig_mask = (rewards_df[_elig_col].astype(str).str.strip()
+                       .str.upper().isin(['Y', 'YES', '1', 'TRUE']))
+        _eligible = rewards_df[_elig_mask].copy()
+        print(f"  Eligible: {len(_eligible):,} / {len(rewards_df):,}")
+    else:
+        _eligible = rewards_df.copy()
+
+    _acct = pd.DataFrame(index=_eligible.index)
+    _acct['_join_key'] = _eligible[DEPOSIT_JOIN_KEY_ODDD].astype(str).str.strip()
+
+    _acct['mo_swipes'] = _eligible[_last3_swipe].apply(
+        pd.to_numeric, errors='coerce').fillna(0).mean(axis=1)
+    _acct['mo_spend'] = _eligible[_last3_spend].apply(
+        pd.to_numeric, errors='coerce').fillna(0).mean(axis=1)
+
+    # Z5 deposit metrics (99-day)
+    _latest_snap = SNAPSHOT_ORDER[-1] if 'SNAPSHOT_ORDER' in dir() else None
+    if _latest_snap:
+        _snap = deposit_long[deposit_long['snapshot'] == _latest_snap].copy()
+        if DEPOSIT_JOIN_KEY_DEPOSIT in _snap.columns:
+            _snap['_join_key'] = _snap[DEPOSIT_JOIN_KEY_DEPOSIT].astype(str).str.strip()
+            _dep_cols = [c for c in ['DepAmt99', 'DepCount99', 'balance']
+                          if c in _snap.columns]
+            if _dep_cols:
+                _dep = (_snap[['_join_key'] + _dep_cols]
+                        .drop_duplicates(subset='_join_key')
+                        .set_index('_join_key'))
+                _acct = _acct.join(_dep, on='_join_key', how='left')
+
+    if 'DepCount99' in _acct.columns:
+        _acct['mo_dep_count'] = _acct['DepCount99'] / 3.3
+    if 'DepAmt99' in _acct.columns:
+        _acct['mo_dep_amt'] = _acct['DepAmt99'] / 3.3
+
+    # -----------------------------------------------------------------
+    # 2. Classify Responder vs Non-Responder from Resp columns
+    # -----------------------------------------------------------------
+    _resp_cols = sorted(
+        [c.strip() for c in _eligible.columns if c.strip().endswith(' Resp')],
+        key=lambda c: pd.to_datetime(c.replace(' Resp', ''), format='%b%y'))
+
+    # Exclude months with zero data
+    _valid_resp = [rc for rc in _resp_cols
+                    if _eligible[rc].notna().sum() > 0]
+
+    def _is_success(val):
+        if pd.isna(val):
+            return False
+        v = str(val).strip().upper()
+        if not v or v == 'NAN':
+            return False
+        if 'NU' in v:
+            return '5+' in v or '5 +' in v
+        return True
+
+    _acct['ever_responded'] = False
+    for rc in _valid_resp:
+        _acct['ever_responded'] |= _eligible[rc].apply(_is_success)
+
+    # Mailed = any Mail column non-null
+    _mail_cols = [c.strip() for c in _eligible.columns if c.strip().endswith(' Mail')]
+    _acct['was_mailed'] = _eligible[_mail_cols].notna().any(axis=1)
+
+    _acct['group'] = 'Not Mailed'
+    _acct.loc[_acct['was_mailed'] & ~_acct['ever_responded'], 'group'] = 'Non-Responder'
+    _acct.loc[_acct['ever_responded'], 'group'] = 'Responder'
+
+    _grp_counts = _acct['group'].value_counts()
+    print(f"  Responder: {_grp_counts.get('Responder', 0):,}")
+    print(f"  Non-Responder: {_grp_counts.get('Non-Responder', 0):,}")
+    print(f"  Not Mailed: {_grp_counts.get('Not Mailed', 0):,}")
+
+    # -----------------------------------------------------------------
+    # 3. Swipe tiers
+    # -----------------------------------------------------------------
+    _TIERS = [
+        ('0', 0, 0),
+        ('1-5', 0.01, 5),
+        ('6-10', 5.01, 10),
+        ('11-15', 10.01, 15),
+        ('16-20', 15.01, 20),
+        ('21-25', 20.01, 25),
+        ('26+', 25.01, float('inf')),
+    ]
+    _tier_order = [t[0] for t in _TIERS]
+
+    _acct['swipe_tier'] = '0'
+    for tier_name, lo, hi in _TIERS:
+        _mask = (_acct['mo_swipes'] >= lo) & (_acct['mo_swipes'] <= hi)
+        _acct.loc[_mask, 'swipe_tier'] = tier_name
+
+    # -----------------------------------------------------------------
+    # 4. Build tables for each group
+    # -----------------------------------------------------------------
+    _metric_defs = [
+        ('Accounts', 'count', None),
+        ('Mo Swipes', 'mean', 'mo_swipes'),
+        ('Mo Spend', 'mean', 'mo_spend'),
+        ('Median Mo Dep Count', 'median', 'mo_dep_count'),
+        ('Median Mo Dep Amt', 'median', 'mo_dep_amt'),
+        ('Median Balance', 'median', 'balance'),
+    ]
+
+    _fmt = {
+        'Accounts': '{:,.0f}',
+        'Mo Swipes': '{:,.1f}',
+        'Mo Spend': '${:,.1f}',
+        'Median Mo Dep Count': '{:,.1f}',
+        'Median Mo Dep Amt': '${:,.1f}',
+        'Median Balance': '${:,.1f}',
+    }
+
+    for _grp_name, _grp_color, _caption in [
+        ('Responder', GEN_COLORS['success'],
+         'Responders: Swipe Tiers vs Deposit Behavior'),
+        ('Non-Responder', GEN_COLORS['muted'],
+         'Non-Responders: Swipe Tiers vs Deposit Behavior'),
+        ('Not Mailed', GEN_COLORS['warning'],
+         'Not Mailed (Control): Swipe Tiers vs Deposit Behavior'),
+    ]:
+        _g = _acct[_acct['group'] == _grp_name]
+        if len(_g) == 0:
+            continue
+
+        _rows = []
+        for tier in _tier_order:
+            _t = _g[_g['swipe_tier'] == tier]
+            if len(_t) == 0:
+                continue
+            _row = {'Tier': tier, 'Accounts': len(_t)}
+            for label, agg, col in _metric_defs:
+                if col and col in _t.columns:
+                    _row[label] = (_t[col].median() if agg == 'median'
+                                    else _t[col].mean())
+            _rows.append(_row)
+
+        # Total row
+        _total = {'Tier': 'TOTAL', 'Accounts': len(_g)}
+        for label, agg, col in _metric_defs:
+            if col and col in _g.columns:
+                _total[label] = (_g[col].median() if agg == 'median'
+                                  else _g[col].mean())
+        _rows.append(_total)
+
+        _df = pd.DataFrame(_rows)
+        _total_idx = set(_df[_df['Tier'] == 'TOTAL'].index)
+
+        def _style_rows(row, _tidx=_total_idx):
+            if row.name in _tidx:
+                return ['font-weight: bold; background-color: rgba(27, 42, 74, 0.08); '
+                        'border-top: 2px solid #1B2A4A'] * len(row)
+            return [''] * len(row)
+
+        _styled = (
+            _df.style
+            .hide(axis='index')
+            .format({k: v for k, v in _fmt.items() if k in _df.columns},
+                    na_rep='--')
+            .apply(_style_rows, axis=1)
+            .set_properties(**{
+                'font-size': '13px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF',
+                'padding': '8px 10px',
+            })
+            .set_properties(subset=['Tier'], **{
+                'text-align': 'left', 'color': GEN_COLORS['primary'],
+            })
+            .set_table_styles([
+                {'selector': 'th', 'props': [
+                    ('background-color', _grp_color),
+                    ('color', 'white'), ('font-size', '14px'),
+                    ('font-weight', 'bold'), ('text-align', 'center'),
+                    ('padding', '10px 12px'),
+                ]},
+                {'selector': 'caption', 'props': [
+                    ('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']),
+                    ('text-align', 'left'), ('padding-bottom', '12px'),
+                ]},
+            ])
+            .set_caption(f"{_caption}  ({len(_g):,} accounts)")
+        )
+        display(_styled)
