@@ -142,13 +142,13 @@ else:
         print("  No Z5 data to join")
 
     # -----------------------------------------------------------------
-    # 4. Summary table by Segment
+    # 4. Summary table: Total Open first, then by Segment
     # -----------------------------------------------------------------
     _SEG_ORDER = ['NU', 'TH-10', 'TH-15', 'TH-20', 'TH-25']
     _summary_rows = []
 
-    # Add "All Mailed" and "Not Mailed" groups
-    _groups = [('All Mailed', _joined['Segment'].notna())]
+    _groups = [('Total Open', pd.Series(True, index=_joined.index))]
+    _groups.append(('All Mailed', _joined['Segment'].notna()))
     for seg in _SEG_ORDER:
         _groups.append((seg, _joined['Segment'] == seg))
     _groups.append(('Not Mailed', _joined['Segment'].isna()))
@@ -179,12 +179,16 @@ else:
                 _fmt[mc] = '${:,.0f}'
 
     _agg_idx = set(_summary_df[
-        _summary_df['Group'].isin(['All Mailed', 'Not Mailed'])].index)
+        _summary_df['Group'].isin(['Total Open', 'All Mailed', 'Not Mailed'])].index)
 
     def _style_rows(row):
-        if row.name in _agg_idx:
-            return ['font-weight: bold; border-top: 2px solid #1B2A4A; '
-                    'background-color: rgba(27, 42, 74, 0.05)'] * len(row)
+        _grp = _summary_df.loc[row.name, 'Group'] if row.name in _summary_df.index else ''
+        if _grp == 'Total Open':
+            return ['font-weight: bold; background-color: rgba(27, 42, 74, 0.08); '
+                    'border-bottom: 2px solid #1B2A4A'] * len(row)
+        if _grp in ('All Mailed', 'Not Mailed'):
+            return ['font-weight: bold; border-top: 1px solid #adb5bd; '
+                    'background-color: rgba(27, 42, 74, 0.03)'] * len(row)
         return [''] * len(row)
 
     _styled = (
