@@ -197,69 +197,50 @@ else:
     display(_styled)
 
     # =================================================================
-    # 3. Bar chart: Dose-response pattern
+    # 3. Bar chart: Deposits by activation level
     # =================================================================
-    _dep_col = 'Dep $/mo' if 'Dep $/mo' in _df.columns else None
-    _bal_col = 'Median Balance' if 'Median Balance' in _df.columns else None
-
-    _chart_metrics = []
-    if _dep_col:
-        _chart_metrics.append((_dep_col, 'Median Monthly Deposits ($)', True))
-    if _bal_col:
-        _chart_metrics.append((_bal_col, 'Median Balance ($)', True))
-    if 'Swipes/mo (3mo)' in _df.columns:
-        _chart_metrics.append(('Swipes/mo (3mo)', 'Median Swipes/mo (Recent 3mo)', False))
-
-    if _chart_metrics:
-        _n_charts = len(_chart_metrics)
-        fig, axes = plt.subplots(1, _n_charts,
-                                  figsize=(5.5 * _n_charts, 6))
-        if _n_charts == 1:
-            axes = [axes]
+    if 'Dep $/mo' in _df.columns:
+        fig, ax = plt.subplots(figsize=(10, 6))
 
         _bar_colors = [GEN_COLORS['success'], GEN_COLORS['warning'],
                         GEN_COLORS['muted']]
-        _bar_labels = ['NU 5+', 'NU 1-4', 'NU 0']
+        _bar_labels = ['NU 5+\n(Converted)', 'NU 1-4\n(Partial)', 'NU 0\n(Never Activated)']
+        _vals = _df['Dep $/mo'].tolist()
+        _x = np.arange(len(_vals))
 
-        for ax, (col, ylabel, is_dollar) in zip(axes, _chart_metrics):
-            _vals = _df[col].tolist()
-            _x = np.arange(len(_vals))
+        bars = ax.bar(_x, _vals, color=_bar_colors[:len(_vals)],
+                      edgecolor='white', linewidth=1.5, width=0.5,
+                      zorder=3)
 
-            bars = ax.bar(_x, _vals, color=_bar_colors[:len(_vals)],
-                          edgecolor='white', linewidth=1.5, width=0.55,
-                          zorder=3)
+        for bar, val, color in zip(bars, _vals, _bar_colors):
+            if pd.notna(val) and val > 0:
+                ax.text(bar.get_x() + bar.get_width() / 2,
+                        bar.get_height() + bar.get_height() * 0.02,
+                        f'${val:,.0f}/mo', ha='center', va='bottom',
+                        fontsize=15, fontweight='bold', color=color)
 
-            for bar, val, color in zip(bars, _vals, _bar_colors):
-                if pd.notna(val) and val > 0:
-                    _label = f'${val:,.0f}' if is_dollar else f'{val:.1f}'
-                    ax.text(bar.get_x() + bar.get_width() / 2,
-                            bar.get_height() + bar.get_height() * 0.02,
-                            _label, ha='center', va='bottom',
-                            fontsize=13, fontweight='bold', color=color)
+        ax.set_xticks(_x)
+        ax.set_xticklabels(_bar_labels[:len(_vals)],
+                            fontsize=14, fontweight='bold')
+        ax.set_ylabel("Median Monthly Deposits ($)", fontsize=14,
+                       fontweight='bold', labelpad=10)
+        ax.yaxis.set_major_formatter(
+            mticker.FuncFormatter(gen_fmt_dollar))
+        gen_clean_axes(ax)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'],
+                      linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
 
-            ax.set_xticks(_x)
-            ax.set_xticklabels(_bar_labels[:len(_vals)],
-                                fontsize=12, fontweight='bold')
-            ax.set_ylabel(ylabel, fontsize=12, fontweight='bold', labelpad=8)
-            if is_dollar:
-                ax.yaxis.set_major_formatter(
-                    mticker.FuncFormatter(gen_fmt_dollar))
-            gen_clean_axes(ax)
-            ax.yaxis.grid(True, color=GEN_COLORS['grid'],
-                          linewidth=0.5, alpha=0.7)
-            ax.set_axisbelow(True)
-
-        fig.suptitle("NU Dose-Response: More Activation = Better Relationship",
+        ax.set_title("Card Activation Drives Deposits",
                       fontsize=22, fontweight='bold',
-                      color=GEN_COLORS['dark_text'], y=1.02)
-        fig.text(0.5, 0.98,
-                 "All accounts started as non-card-users  |  "
-                 "Only difference is how they responded to the mailer",
-                 ha='center', fontsize=12,
-                 color=GEN_COLORS['muted'], style='italic')
+                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                "All accounts started as non-card-users  |  "
+                "Only difference is how they responded to the mailer",
+                transform=ax.transAxes, fontsize=12,
+                color=GEN_COLORS['muted'], style='italic')
 
         plt.tight_layout()
-        plt.subplots_adjust(top=0.86)
         plt.show()
 
     # =================================================================
