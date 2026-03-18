@@ -1,0 +1,112 @@
+# ===========================================================================
+# ACCOUNT CLOSURE: Do Non-Responders Attrit Faster?
+# ===========================================================================
+# Uses Date Closed from ODDD. Compares closure rates and pre-close
+# behavior between Responder, Non-Responder, Not Mailed.
+#
+# Depends on: rewards_df, _acct (cell 13), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+elif '_acct' not in dir():
+    print("    Run cell 13 first.")
+else:
+    from IPython.display import display
+
+    if 'Date Closed' not in rewards_df.columns:
+        print("    'Date Closed' column not found.")
+    else:
+        _closed = pd.to_datetime(rewards_df['Date Closed'], errors='coerce')
+        _is_closed = _closed.notna()
+
+        _group = _acct['group'].reindex(rewards_df.index).fillna('Not Mailed')
+
+        _GROUPS = ['Responder', 'Non-Responder', 'Not Mailed']
+        _GRP_COLORS = {
+            'Responder': GEN_COLORS['success'],
+            'Non-Responder': GEN_COLORS['muted'],
+            'Not Mailed': GEN_COLORS['warning'],
+        }
+
+        # -----------------------------------------------------------------
+        # Table 1: Closure rates by group
+        # -----------------------------------------------------------------
+        _rows = []
+        for grp in _GROUPS:
+            _mask = _group == grp
+            _total = _mask.sum()
+            _n_closed = (_mask & _is_closed).sum()
+            _rate = _n_closed / _total * 100 if _total > 0 else 0
+
+            _row = {'Group': grp, 'Total': _total,
+                    'Closed': _n_closed, 'Closure Rate': _rate}
+
+            # Pre-close spend for closed accounts
+            _closed_idx = rewards_df.index[_mask & _is_closed]
+            if len(_closed_idx) > 0 and '_acct' in dir():
+                _ca = _acct.reindex(_closed_idx)
+                if 'mo_swipes' in _ca.columns:
+                    _row['Closed Avg Swipes'] = _ca['mo_swipes'].mean()
+                if 'mo_spend' in _ca.columns:
+                    _row['Closed Avg Spend'] = _ca['mo_spend'].mean()
+                if 'mo_dep_amt' in _ca.columns:
+                    _row['Closed Med Dep $'] = _ca['mo_dep_amt'].median()
+
+            # Open account metrics for comparison
+            _open_idx = rewards_df.index[_mask & ~_is_closed]
+            if len(_open_idx) > 0:
+                _oa = _acct.reindex(_open_idx)
+                if 'mo_swipes' in _oa.columns:
+                    _row['Open Avg Swipes'] = _oa['mo_swipes'].mean()
+                if 'mo_spend' in _oa.columns:
+                    _row['Open Avg Spend'] = _oa['mo_spend'].mean()
+                if 'mo_dep_amt' in _oa.columns:
+                    _row['Open Med Dep $'] = _oa['mo_dep_amt'].median()
+
+            _rows.append(_row)
+
+        _df = pd.DataFrame(_rows)
+
+        def _color_rate(col):
+            if col.name != 'Closure Rate':
+                return [''] * len(col)
+            return [
+                f'color: {GEN_COLORS["accent"]}' if pd.notna(v) and v > 5
+                else f'color: {GEN_COLORS["success"]}' if pd.notna(v) and v < 2
+                else '' for v in col
+            ]
+
+        def _color_grp(col):
+            if col.name != 'Group':
+                return [''] * len(col)
+            return [f'color: {_GRP_COLORS.get(v, "")}' for v in col]
+
+        _fmt = {
+            'Total': '{:,.0f}', 'Closed': '{:,.0f}', 'Closure Rate': '{:.1f}%',
+            'Closed Avg Swipes': '{:,.1f}', 'Closed Avg Spend': '${:,.1f}',
+            'Closed Med Dep $': '${:,.1f}',
+            'Open Avg Swipes': '{:,.1f}', 'Open Avg Spend': '${:,.1f}',
+            'Open Med Dep $': '${:,.1f}',
+        }
+
+        _styled = (
+            _df.style.hide(axis='index')
+            .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+            .apply(_color_rate).apply(_color_grp)
+            .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+            .set_properties(subset=['Group'], **{'text-align': 'left'})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                    ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '8px 10px')]},
+                {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                    ('padding-bottom', '12px')]},
+            ])
+            .set_caption("Account Closure: Rates and Pre-Close vs Open Behavior")
+        )
+        display(_styled)
+
+        print(f"\n  Total closed: {_is_closed.sum():,} / {len(rewards_df):,} "
+              f"({_is_closed.sum()/len(rewards_df)*100:.1f}%)")

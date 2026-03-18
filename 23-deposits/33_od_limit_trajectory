@@ -1,0 +1,97 @@
+# ===========================================================================
+# OD LIMIT TRAJECTORY: Overdraft Limit Over Time by Group
+# ===========================================================================
+# 30 months of OD Limit. Do responders get higher limits over time?
+#
+# Depends on: rewards_df, _acct (cell 13), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+elif '_acct' not in dir():
+    print("    Run cell 13 first.")
+else:
+    from IPython.display import display
+
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+
+    _od_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' OD Limit')],
+        key=lambda c: pd.to_datetime(c.replace(' OD Limit', ''), format='%b%y'))
+
+    if len(_od_cols) == 0:
+        print("    No OD Limit columns found.")
+    else:
+        _od_labels = [c.replace(' OD Limit', '') for c in _od_cols]
+        print(f"  OD Limit columns: {len(_od_cols)} ({_od_labels[0]} to {_od_labels[-1]})")
+
+        _group = _acct['group'].reindex(rewards_df.index).fillna('Not Mailed')
+        _GROUPS = ['Responder', 'Non-Responder']
+        _GRP_COLORS = {
+            'Responder': GEN_COLORS['success'],
+            'Non-Responder': GEN_COLORS['muted'],
+        }
+
+        # Median OD Limit per month per group
+        _rows = []
+        for oc, ml in zip(_od_cols, _od_labels):
+            _vals = pd.to_numeric(rewards_df[oc], errors='coerce')
+            _row = {'Month': ml}
+            for grp in _GROUPS:
+                _mask = _group == grp
+                _grp_vals = _vals[_mask].dropna()
+                _row[f'{grp[:4]} Med OD Limit'] = _grp_vals.median() if len(_grp_vals) > 0 else np.nan
+                _row[f'{grp[:4]} Avg OD Limit'] = _grp_vals.mean() if len(_grp_vals) > 0 else np.nan
+            _rows.append(_row)
+
+        _df = pd.DataFrame(_rows)
+
+        # Show median columns
+        _med_cols = [c for c in _df.columns if 'Med' in c]
+        _display_df = _df[['Month'] + _med_cols]
+
+        _fmt = {c: '${:,.0f}' for c in _med_cols}
+
+        _styled = (
+            _display_df.style.hide(axis='index')
+            .format({k: v for k, v in _fmt.items() if k in _display_df.columns}, na_rep='--')
+            .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '7px 10px'})
+            .set_properties(subset=['Month'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                    ('color', 'white'), ('font-size': '13px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '8px 10px')]},
+                {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                    ('padding-bottom', '12px')]},
+            ])
+            .set_caption("OD Limit Trajectory: Median by Month")
+        )
+        display(_styled)
+
+        # Chart
+        fig, ax = plt.subplots(figsize=(14, 6))
+        _dates = [pd.to_datetime(ml, format='%b%y') for ml in _od_labels]
+
+        for grp in _GROUPS:
+            _col = f'{grp[:4]} Med OD Limit'
+            if _col in _df.columns:
+                _vals = _df[_col].values
+                ax.plot(_dates, _vals, color=_GRP_COLORS[grp], linewidth=2.5,
+                        marker='o', markersize=5, markeredgecolor='white',
+                        markeredgewidth=1, label=grp, zorder=5)
+
+        ax.set_ylabel("Median OD Limit ($)", fontsize=14,
+                       fontweight='bold', labelpad=10)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+        gen_clean_axes(ax)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+        ax.legend(fontsize=12, loc='best', frameon=True,
+                  facecolor='white', edgecolor=GEN_COLORS['grid'])
+        ax.set_title("OD Limit: Responder vs Non-Responder",
+                      fontsize=22, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=15, loc='left')
+        fig.autofmt_xdate(rotation=45)
+        plt.tight_layout()
+        plt.show()
