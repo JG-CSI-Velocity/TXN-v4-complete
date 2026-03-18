@@ -1,11 +1,11 @@
 # ===========================================================================
 # Z5 VALIDATION 2: Deposit Fields Deep Dive
 # ===========================================================================
-# Detailed distribution for every deposit-related field:
-# DepAmt33/66/99, depAmt365, DepCount33/66/99, depCount365, balance
-#
-# Shows percentiles, histograms in print, and cross-checks between
-# windows (e.g., DepAmt99 should be >= DepAmt66 >= DepAmt33).
+# 33/66/99 are NON-OVERLAPPING 33-day windows (33-day cycle):
+#   DepAmt33 = deposits in days 1-33 (most recent)
+#   DepAmt66 = deposits in days 34-66 (prior period)
+#   DepAmt99 = deposits in days 67-99 (two periods ago)
+# depAmt365 = full 365-day rollup
 #
 # Depends on: deposit_long (cell 01), SNAPSHOT_ORDER, GEN_COLORS
 
@@ -15,22 +15,18 @@ else:
     from IPython.display import display
 
     _DEP_FIELDS = [
-        ('DepAmt33', '33-day deposit amount'),
-        ('DepAmt66', '66-day deposit amount'),
-        ('DepAmt99', '99-day deposit amount'),
-        ('depAmt365', '365-day deposit amount'),
-        ('DepCount33', '33-day deposit count'),
-        ('DepCount66', '66-day deposit count'),
-        ('DepCount99', '99-day deposit count'),
-        ('depCount365', '365-day deposit count'),
-        ('balance', 'Current balance'),
+        ('DepAmt33', 'Deposits $ in days 1-33 (most recent 33d)'),
+        ('DepAmt66', 'Deposits $ in days 34-66 (prior 33d)'),
+        ('DepAmt99', 'Deposits $ in days 67-99 (two periods ago)'),
+        ('depAmt365', '365-day deposit $ rollup (full year)'),
+        ('DepCount33', 'Deposit count in days 1-33'),
+        ('DepCount66', 'Deposit count in days 34-66'),
+        ('DepCount99', 'Deposit count in days 67-99'),
+        ('depCount365', '365-day deposit count (full year)'),
     ]
 
     _snaps = deposit_long['snapshot'].unique() if 'snapshot' in deposit_long.columns else ['all']
 
-    # -----------------------------------------------------------------
-    # Table 1: Per-snapshot percentile distribution for each field
-    # -----------------------------------------------------------------
     _pctiles = [0, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99, 1.0]
     _pctile_labels = ['Min', 'P10', 'P25', 'Median', 'P75', 'P90', 'P95', 'P99', 'Max']
 

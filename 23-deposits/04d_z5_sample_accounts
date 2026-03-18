@@ -12,7 +12,7 @@ else:
     from IPython.display import display
 
     _dep_fields = [c for c in [
-        'balance', 'DepAmt33', 'DepAmt66', 'DepAmt99', 'depAmt365',
+        'DepAmt33', 'DepAmt66', 'DepAmt99', 'depAmt365',
         'DepCount33', 'DepCount66', 'DepCount99', 'depCount365',
         'has_direct_deposit', 'avgdaysbetweendeposits',
     ] if c in deposit_df.columns]
@@ -43,7 +43,7 @@ else:
         _fmt = {}
         for c in _sample_df.columns:
             if c == 'Sample': continue
-            elif 'Amt' in c or 'amt' in c or 'balance' in c:
+            elif 'Amt' in c or 'amt' in c:
                 _fmt[c] = '${:,.0f}'
             elif 'Count' in c or 'count' in c:
                 _fmt[c] = '{:,.0f}'
@@ -72,8 +72,8 @@ else:
         display(_styled)
 
         print(f"\n  Samples pulled from depAmt365 quantiles (Min through Max)")
-        print(f"  Verify: do the 33d/66d/99d/365d amounts make sense together?")
-        print(f"  Verify: does balance relate to deposit amounts?")
-        print(f"  Verify: do deposit counts seem reasonable?")
+        print(f"  33d/66d/99d are NON-OVERLAPPING 33-day windows (33d = most recent)")
+        print(f"  33d > 66d = deposits accelerating (recent period stronger)")
+        print(f"  365d = full year rollup (should be >> sum of 33+66+99)")
     else:
         print("    depAmt365 not found in deposit_df.")

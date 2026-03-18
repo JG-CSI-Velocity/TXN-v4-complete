@@ -20,8 +20,8 @@ else:
         for col, metric in [
             ('mo_swipes_3mo', 'Mo Swipes (3mo)'), ('mo_spend_3mo', 'Mo Spend (3mo)'),
             ('mo_items_3mo', 'Mo Items (3mo)'),
-            ('mo_dep_count_99d', 'Dep Ct (99d)'), ('mo_dep_amt_99d', 'Dep $ (99d)'),
-            ('mo_dep_count_365d', 'Dep Ct (365d)'), ('mo_dep_amt_365d', 'Dep $ (365d)'),
+            
+            ('mo_dep_count', 'Mo Dep Ct'), ('mo_dep_amt', 'Mo Dep $'),
         ]:
             if col in _g.columns:
                 _row[metric] = _g[col].median()

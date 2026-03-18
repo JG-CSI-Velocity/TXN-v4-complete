@@ -20,10 +20,10 @@ else:
         ('mo_spend_12mo', 'Mo Spend (12mo)'),
         ('mo_items_3mo', 'Mo Items (3mo)'),
         ('mo_items_12mo', 'Mo Items (12mo)'),
-        ('mo_dep_count_99d', 'Mo Dep Ct (99d)'),
-        ('mo_dep_count_365d', 'Mo Dep Ct (365d)'),
-        ('mo_dep_amt_99d', 'Mo Dep $ (99d)'),
-        ('mo_dep_amt_365d', 'Mo Dep $ (365d)'),
+        
+        ('mo_dep_count', 'Mo Dep Ct'),
+        
+        ('mo_dep_amt', 'Mo Dep $'),
     ]:
         if col in _acct.columns:
             _row[label] = _acct[col].median()
@@ -59,4 +59,4 @@ else:
     display(_styled)
 
     print(f"\n  {len(_acct):,} eligible accounts")
-    print(f"  ODDD windows: 3mo, 12mo  |  Z5 windows: 99d, 365d")
+    print(f"  ODDD windows: 3mo, 12mo  |  Z5 deposits: 365d/12 for monthly")

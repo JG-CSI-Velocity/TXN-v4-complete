@@ -96,7 +96,13 @@ else:
           f"12mo={len(_last12_swipe)} months")
 
     # -----------------------------------------------------------------
-    # Z5 deposit metrics: 99d and 365d
+    # Z5 deposit metrics
+    # -----------------------------------------------------------------
+    # 33/66/99 are THREE NON-OVERLAPPING 33-day windows:
+    #   DepAmt33 = deposits in days 1-33 (most recent)
+    #   DepAmt66 = deposits in days 34-66
+    #   DepAmt99 = deposits in days 67-99
+    # depAmt365 = full 365-day rollup (use for monthly averages)
     # -----------------------------------------------------------------
     if ('deposit_long' in dir() and len(deposit_long) > 0
             and 'DEPOSIT_JOIN_KEY_DEPOSIT' in dir()
@@ -105,7 +111,9 @@ else:
         _snap = deposit_long[deposit_long['snapshot'] == _latest_snap].copy()
         if DEPOSIT_JOIN_KEY_DEPOSIT in _snap.columns:
             _snap['_join_key'] = _snap[DEPOSIT_JOIN_KEY_DEPOSIT].astype(str).str.strip()
-            _dep_cols = [c for c in ['DepAmt99', 'DepCount99', 'depAmt365', 'depCount365']
+            _dep_cols = [c for c in ['DepAmt33', 'DepAmt66', 'DepAmt99',
+                                      'DepCount33', 'DepCount66', 'DepCount99',
+                                      'depAmt365', 'depCount365']
                           if c in _snap.columns]
             if _dep_cols:
                 _dep = (_snap[['_join_key'] + _dep_cols]
@@ -114,15 +122,24 @@ else:
                 _acct = _acct.join(_dep, on='_join_key', how='left')
                 print(f"  Z5: {_latest_snap}, matched {_acct[_dep_cols[0]].notna().sum():,}")
 
-    # Normalize deposit metrics to monthly
-    if 'DepCount99' in _acct.columns:
-        _acct['mo_dep_count_99d'] = _acct['DepCount99'] / 3.3
-    if 'DepAmt99' in _acct.columns:
-        _acct['mo_dep_amt_99d'] = _acct['DepAmt99'] / 3.3
+    # Monthly averages from 365-day rollup ONLY
     if 'depCount365' in _acct.columns:
-        _acct['mo_dep_count_365d'] = _acct['depCount365'] / 12
+        _acct['mo_dep_count'] = _acct['depCount365'] / 12
     if 'depAmt365' in _acct.columns:
-        _acct['mo_dep_amt_365d'] = _acct['depAmt365'] / 12
+        _acct['mo_dep_amt'] = _acct['depAmt365'] / 12
+
+    # Deposit acceleration: 33d vs 66d (most recent period vs prior)
+    # > 1.0 = accelerating, < 1.0 = decelerating
+    if 'DepAmt33' in _acct.columns and 'DepAmt66' in _acct.columns:
+        _acct['dep_accel_amt'] = np.where(
+            _acct['DepAmt66'] > 0,
+            _acct['DepAmt33'] / _acct['DepAmt66'],
+            np.nan)
+    if 'DepCount33' in _acct.columns and 'DepCount66' in _acct.columns:
+        _acct['dep_accel_count'] = np.where(
+            _acct['DepCount66'] > 0,
+            _acct['DepCount33'] / _acct['DepCount66'],
+            np.nan)
 
     # -----------------------------------------------------------------
     # SEG 1: Swipe tiers (program tiers)
@@ -169,16 +186,15 @@ else:
     ]
     DEP_AMT_TIER_ORDER = [t[0] for t in _DEP_AMT_TIERS]
 
-    for src, suffix in [('DepAmt99', '99d'), ('depAmt365', '365d')]:
-        tier_col = f'dep_amt_tier_{suffix}'
-        if src in _acct.columns:
-            _acct[tier_col] = 'No Data'
-            for name, lo, hi in _DEP_AMT_TIERS:
-                _mask = (_acct[src] >= lo) & (_acct[src] <= hi)
-                _acct.loc[_mask, tier_col] = name
+    # Deposit amount tiers from 365d rollup only
+    if 'depAmt365' in _acct.columns:
+        _acct['dep_amt_tier'] = 'No Data'
+        for name, lo, hi in _DEP_AMT_TIERS:
+            _mask = (_acct['depAmt365'] >= lo) & (_acct['depAmt365'] <= hi)
+            _acct.loc[_mask, 'dep_amt_tier'] = name
 
     # -----------------------------------------------------------------
-    # SEG 4: Deposit count tiers
+    # SEG 4: Deposit count tiers (365d rollup only)
     # -----------------------------------------------------------------
     _DEP_CT_TIERS = [
         ('0', 0, 0), ('1-3', 0.01, 3), ('4-10', 3.01, 10),
@@ -186,13 +202,11 @@ else:
     ]
     DEP_CT_TIER_ORDER = [t[0] for t in _DEP_CT_TIERS]
 
-    for src, suffix in [('DepCount99', '99d'), ('depCount365', '365d')]:
-        tier_col = f'dep_ct_tier_{suffix}'
-        if src in _acct.columns:
-            _acct[tier_col] = 'No Data'
-            for name, lo, hi in _DEP_CT_TIERS:
-                _mask = (_acct[src] >= lo) & (_acct[src] <= hi)
-                _acct.loc[_mask, tier_col] = name
+    if 'depCount365' in _acct.columns:
+        _acct['dep_ct_tier'] = 'No Data'
+        for name, lo, hi in _DEP_CT_TIERS:
+            _mask = (_acct['depCount365'] >= lo) & (_acct['depCount365'] <= hi)
+            _acct.loc[_mask, 'dep_ct_tier'] = name
 
     # -----------------------------------------------------------------
     # SEG 5: Items/MTD tiers

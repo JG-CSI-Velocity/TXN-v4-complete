@@ -1,13 +1,12 @@
 # ===========================================================================
-# Z5 VALIDATION 3: Cross-Checks -- Do the Numbers Make Sense?
+# Z5 VALIDATION 3: Cross-Checks (Corrected for 33-Day Cycle)
 # ===========================================================================
-# Logical checks:
-#   1. DepAmt99 >= DepAmt66 >= DepAmt33 (rolling windows should nest)
-#   2. depAmt365 >= DepAmt99 (365d should be >= 99d)
-#   3. Same for counts
-#   4. depAmt365 / 12 should be reasonable monthly deposit ($100-$10K typical)
-#   5. Balance vs deposit amount relationship
-#   6. Accounts with zero deposits but positive balance
+# 33/66/99 are NON-OVERLAPPING 33-day windows, NOT cumulative.
+# Checks:
+#   1. Acceleration: 33d vs 66d (is recent period stronger?)
+#   2. Sum(33+66+99) vs 365d (should be ~27% of the year)
+#   3. Monthly reasonableness from 365d rollup
+#   4. Zero deposit accounts per window
 #
 # Depends on: deposit_long (cell 01), GEN_COLORS
 
@@ -19,199 +18,97 @@ else:
     _snaps = deposit_long['snapshot'].unique() if 'snapshot' in deposit_long.columns else ['all']
 
     # -----------------------------------------------------------------
-    # Check 1: Window nesting (99d >= 66d >= 33d, 365d >= 99d)
+    # Check 1: Deposit acceleration (33d vs 66d)
     # -----------------------------------------------------------------
-    _nest_checks = [
-        ('DepAmt33', 'DepAmt66', '33d <= 66d (amount)'),
-        ('DepAmt66', 'DepAmt99', '66d <= 99d (amount)'),
-        ('DepAmt99', 'depAmt365', '99d <= 365d (amount)'),
-        ('DepCount33', 'DepCount66', '33d <= 66d (count)'),
-        ('DepCount66', 'DepCount99', '66d <= 99d (count)'),
-        ('DepCount99', 'depCount365', '99d <= 365d (count)'),
-    ]
-
-    _nest_rows = []
+    _accel_rows = []
     for snap in _snaps:
         _sdata = deposit_long[deposit_long['snapshot'] == snap] if 'snapshot' in deposit_long.columns else deposit_long
 
-        for small_col, big_col, desc in _nest_checks:
-            if small_col not in _sdata.columns or big_col not in _sdata.columns:
+        for field_prefix, label in [('DepAmt', 'Amount $'), ('DepCount', 'Count #')]:
+            _c33 = f'{field_prefix}33'
+            _c66 = f'{field_prefix}66'
+            if _c33 not in _sdata.columns or _c66 not in _sdata.columns:
                 continue
-            _small = pd.to_numeric(_sdata[small_col], errors='coerce')
-            _big = pd.to_numeric(_sdata[big_col], errors='coerce')
-            _both = _small.notna() & _big.notna()
-            _n = _both.sum()
-            if _n == 0:
+
+            _v33 = pd.to_numeric(_sdata[_c33], errors='coerce')
+            _v66 = pd.to_numeric(_sdata[_c66], errors='coerce')
+            _both = _v33.notna() & _v66.notna() & (_v66 > 0)
+            if _both.sum() == 0:
                 continue
-            _violations = (_small[_both] > _big[_both]).sum()
-            _nest_rows.append({
-                'Snapshot': snap,
-                'Check': desc,
-                'N': _n,
-                'Violations': _violations,
-                '% Violated': _violations / _n * 100,
-                'Status': 'PASS' if _violations == 0 else f'FAIL ({_violations:,})',
+
+            _ratio = _v33[_both] / _v66[_both]
+            _accel_rows.append({
+                'Snapshot': snap, 'Metric': label, 'N': _both.sum(),
+                'Med 33d': _v33[_both].median(), 'Med 66d': _v66[_both].median(),
+                'Med Ratio': _ratio.median(),
+                'Accelerating': (_ratio > 1.0).sum(),
+                'Decelerating': (_ratio < 1.0).sum(),
             })
 
-    if _nest_rows:
-        _nest_df = pd.DataFrame(_nest_rows)
+    if _accel_rows:
+        _adf = pd.DataFrame(_accel_rows)
+        def _cr(col):
+            if col.name != 'Med Ratio': return [''] * len(col)
+            return [f'color: {GEN_COLORS["success"]}' if pd.notna(v) and v > 1.05
+                    else f'color: {GEN_COLORS["accent"]}' if pd.notna(v) and v < 0.95
+                    else '' for v in col]
 
-        def _color_status(col):
-            if col.name != 'Status': return [''] * len(col)
-            return [f'color: {GEN_COLORS["success"]}' if 'PASS' in str(v)
-                    else f'color: {GEN_COLORS["accent"]}' for v in col]
-
-        _styled_nest = (
-            _nest_df.style.hide(axis='index')
-            .format({'N': '{:,.0f}', 'Violations': '{:,.0f}', '% Violated': '{:.1f}%'})
-            .apply(_color_status)
+        _styled = (
+            _adf.style.hide(axis='index')
+            .format({'N': '{:,.0f}', 'Med 33d': '{:,.1f}', 'Med 66d': '{:,.1f}',
+                     'Med Ratio': '{:.2f}x', 'Accelerating': '{:,.0f}',
+                     'Decelerating': '{:,.0f}'}, na_rep='--')
+            .apply(_cr)
             .set_properties(**{'font-size': '12px', 'font-weight': 'bold',
                 'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '7px 10px'})
-            .set_properties(subset=['Check'], **{'text-align': 'left'})
-            .set_properties(subset=['Snapshot'], **{
-                'text-align': 'left', 'color': GEN_COLORS['primary']})
+            .set_properties(subset=['Snapshot'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
             .set_table_styles([
                 {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
                     ('color', 'white'), ('font-size', '12px'), ('font-weight', 'bold'),
                     ('text-align', 'center'), ('padding', '7px 10px')]},
                 {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
-                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
-                    ('padding-bottom', '12px')]},
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
             ])
-            .set_caption("Check 1: Window Nesting (smaller window <= larger window)")
+            .set_caption("Check 1: Deposit Acceleration (33d vs 66d, >1.0x = growing)")
         )
-        display(_styled_nest)
+        display(_styled)
 
     # -----------------------------------------------------------------
-    # Check 2: Monthly deposit reasonableness
+    # Check 2: Sum(33+66+99) vs 365d
     # -----------------------------------------------------------------
-    _reason_rows = []
     for snap in _snaps:
         _sdata = deposit_long[deposit_long['snapshot'] == snap] if 'snapshot' in deposit_long.columns else deposit_long
-
-        for field, days, label in [
-            ('DepAmt99', 3.3, 'Monthly from 99d'),
-            ('depAmt365', 12, 'Monthly from 365d'),
-        ]:
-            if field not in _sdata.columns:
-                continue
-            _vals = pd.to_numeric(_sdata[field], errors='coerce').dropna()
-            if len(_vals) == 0:
-                continue
-            _monthly = _vals / days
-            _reason_rows.append({
-                'Snapshot': snap,
-                'Source': label,
-                'N': len(_monthly),
-                'Median Monthly': _monthly.median(),
-                'Mean Monthly': _monthly.mean(),
-                '< $100/mo': (_monthly < 100).sum(),
-                '% < $100/mo': (_monthly < 100).sum() / len(_monthly) * 100,
-                '> $10K/mo': (_monthly > 10000).sum(),
-                '% > $10K/mo': (_monthly > 10000).sum() / len(_monthly) * 100,
-            })
-
-    if _reason_rows:
-        _reason_df = pd.DataFrame(_reason_rows)
-
-        _fmt_r = {
-            'N': '{:,.0f}',
-            'Median Monthly': '${:,.0f}', 'Mean Monthly': '${:,.0f}',
-            '< $100/mo': '{:,.0f}', '% < $100/mo': '{:.1f}%',
-            '> $10K/mo': '{:,.0f}', '% > $10K/mo': '{:.1f}%',
-        }
-
-        _styled_reason = (
-            _reason_df.style.hide(axis='index')
-            .format({k: v for k, v in _fmt_r.items() if k in _reason_df.columns}, na_rep='--')
-            .set_properties(**{'font-size': '12px', 'font-weight': 'bold',
-                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '7px 10px'})
-            .set_properties(subset=['Snapshot'], **{
-                'text-align': 'left', 'color': GEN_COLORS['primary']})
-            .set_properties(subset=['Source'], **{'text-align': 'left'})
-            .set_table_styles([
-                {'selector': 'th', 'props': [('background-color', GEN_COLORS['warning']),
-                    ('color', 'white'), ('font-size', '12px'), ('font-weight', 'bold'),
-                    ('text-align', 'center'), ('padding', '7px 10px')]},
-                {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
-                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
-                    ('padding-bottom', '12px')]},
-            ])
-            .set_caption("Check 2: Monthly Deposit Reasonableness (99d vs 365d)")
-        )
-        display(_styled_reason)
+        if all(c in _sdata.columns for c in ['DepAmt33', 'DepAmt66', 'DepAmt99', 'depAmt365']):
+            _sum99 = (pd.to_numeric(_sdata['DepAmt33'], errors='coerce').fillna(0) +
+                      pd.to_numeric(_sdata['DepAmt66'], errors='coerce').fillna(0) +
+                      pd.to_numeric(_sdata['DepAmt99'], errors='coerce').fillna(0))
+            _a365 = pd.to_numeric(_sdata['depAmt365'], errors='coerce').fillna(0)
+            _both = _a365 > 0
+            _ratio = _sum99[_both] / _a365[_both]
+            print(f"\n  {snap}: Sum(33+66+99) / 365d ratio (expected ~0.27):")
+            print(f"    Median: {_ratio.median():.3f}  Mean: {_ratio.mean():.3f}")
+            print(f"    N: {_both.sum():,}")
 
     # -----------------------------------------------------------------
-    # Check 3: Zero deposit accounts
+    # Check 3: Monthly reasonableness from 365d
     # -----------------------------------------------------------------
-    _zero_rows = []
+    for snap in _snaps:
+        _sdata = deposit_long[deposit_long['snapshot'] == snap] if 'snapshot' in deposit_long.columns else deposit_long
+        if 'depAmt365' in _sdata.columns:
+            _vals = pd.to_numeric(_sdata['depAmt365'], errors='coerce').dropna()
+            _monthly = _vals / 12
+            print(f"\n  {snap}: Monthly deposit (depAmt365/12):")
+            print(f"    Median: ${_monthly.median():,.0f}  Mean: ${_monthly.mean():,.0f}")
+            print(f"    < $100/mo: {(_monthly < 100).sum():,} ({(_monthly < 100).sum()/len(_monthly)*100:.1f}%)")
+
+    # -----------------------------------------------------------------
+    # Check 4: Zero deposit accounts
+    # -----------------------------------------------------------------
     for snap in _snaps:
         _sdata = deposit_long[deposit_long['snapshot'] == snap] if 'snapshot' in deposit_long.columns else deposit_long
         _n = len(_sdata)
-
-        _row = {'Snapshot': snap, 'Total': _n}
-        for field, label in [
-            ('DepAmt99', 'Zero Dep99'), ('depAmt365', 'Zero Dep365'),
-            ('DepCount99', 'Zero Ct99'), ('depCount365', 'Zero Ct365'),
-        ]:
+        print(f"\n  {snap}: Zero deposits:")
+        for field in ['DepAmt33', 'DepAmt66', 'DepAmt99', 'depAmt365']:
             if field in _sdata.columns:
-                _v = pd.to_numeric(_sdata[field], errors='coerce')
-                _z = (_v == 0).sum()
-                _row[label] = _z
-                _row[f'% {label}'] = _z / _n * 100 if _n > 0 else 0
-
-        # Accounts with zero deposits but positive balance
-        if 'depAmt365' in _sdata.columns and 'balance' in _sdata.columns:
-            _dep = pd.to_numeric(_sdata['depAmt365'], errors='coerce')
-            _bal = pd.to_numeric(_sdata['balance'], errors='coerce')
-            _zero_dep_pos_bal = ((_dep == 0) & (_bal > 0)).sum()
-            _row['Zero Dep + Pos Bal'] = _zero_dep_pos_bal
-
-        _zero_rows.append(_row)
-
-    if _zero_rows:
-        _zero_df = pd.DataFrame(_zero_rows)
-
-        _fmt_z = {}
-        for c in _zero_df.columns:
-            if c == 'Snapshot': continue
-            elif '%' in c: _fmt_z[c] = '{:.1f}%'
-            else: _fmt_z[c] = '{:,.0f}'
-
-        _styled_zero = (
-            _zero_df.style.hide(axis='index')
-            .format({k: v for k, v in _fmt_z.items() if k in _zero_df.columns}, na_rep='--')
-            .set_properties(**{'font-size': '12px', 'font-weight': 'bold',
-                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '7px 10px'})
-            .set_properties(subset=['Snapshot'], **{
-                'text-align': 'left', 'color': GEN_COLORS['primary']})
-            .set_table_styles([
-                {'selector': 'th', 'props': [('background-color', GEN_COLORS['accent']),
-                    ('color', 'white'), ('font-size', '11px'), ('font-weight', 'bold'),
-                    ('text-align', 'center'), ('padding', '6px 8px')]},
-                {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
-                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
-                    ('padding-bottom', '12px')]},
-            ])
-            .set_caption("Check 3: Zero Deposit Accounts + Anomalies")
-        )
-        display(_styled_zero)
-
-    # -----------------------------------------------------------------
-    # Check 4: 99d vs 365d ratio -- should be roughly 99/365 = 0.27
-    # -----------------------------------------------------------------
-    for snap in _snaps:
-        _sdata = deposit_long[deposit_long['snapshot'] == snap] if 'snapshot' in deposit_long.columns else deposit_long
-
-        if 'DepAmt99' in _sdata.columns and 'depAmt365' in _sdata.columns:
-            _a99 = pd.to_numeric(_sdata['DepAmt99'], errors='coerce')
-            _a365 = pd.to_numeric(_sdata['depAmt365'], errors='coerce')
-            _both = (_a99 > 0) & (_a365 > 0)
-            if _both.sum() > 0:
-                _ratio = (_a99[_both] / _a365[_both])
-                print(f"\n  {snap}: DepAmt99 / depAmt365 ratio (expected ~0.27):")
-                print(f"    Median: {_ratio.median():.3f}")
-                print(f"    Mean:   {_ratio.mean():.3f}")
-                print(f"    P25:    {_ratio.quantile(0.25):.3f}")
-                print(f"    P75:    {_ratio.quantile(0.75):.3f}")
-                print(f"    Accounts: {_both.sum():,}")
+                _z = (pd.to_numeric(_sdata[field], errors='coerce') == 0).sum()
+                print(f"    {field}: {_z:,} ({_z/_n*100:.1f}%)")

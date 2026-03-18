@@ -18,8 +18,8 @@ else:
         for col, label in [
             ('mo_swipes_12mo', 'Mo Swipes'), ('mo_spend_12mo', 'Mo Spend'),
             ('mo_items_12mo', 'Mo Items'),
-            ('mo_dep_count_99d', 'Dep Ct (99d)'), ('mo_dep_amt_99d', 'Dep $ (99d)'),
-            ('mo_dep_count_365d', 'Dep Ct (365d)'), ('mo_dep_amt_365d', 'Dep $ (365d)'),
+            
+            ('mo_dep_count', 'Mo Dep Ct'), ('mo_dep_amt', 'Mo Dep $'),
         ]:
             if col in _g.columns:
                 _row[label] = _g[col].median()
@@ -29,8 +29,8 @@ else:
     for col, label in [
         ('mo_swipes_12mo', 'Mo Swipes'), ('mo_spend_12mo', 'Mo Spend'),
         ('mo_items_12mo', 'Mo Items'),
-        ('mo_dep_count_99d', 'Dep Ct (99d)'), ('mo_dep_amt_99d', 'Dep $ (99d)'),
-        ('mo_dep_count_365d', 'Dep Ct (365d)'), ('mo_dep_amt_365d', 'Dep $ (365d)'),
+        
+        ('mo_dep_count', 'Mo Dep Ct'), ('mo_dep_amt', 'Mo Dep $'),
     ]:
         if col in _acct.columns:
             _total[label] = _acct[col].median()
