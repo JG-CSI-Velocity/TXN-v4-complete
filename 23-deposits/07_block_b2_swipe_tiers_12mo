@@ -1,0 +1,73 @@
+# ===========================================================================
+# BLOCK B2: SWIPE SEGMENTATION (12-Month) -- All Metrics by Tier
+# ===========================================================================
+# Depends on: _acct (cell 04), SWIPE_TIER_ORDER, GEN_COLORS
+
+if '_acct' not in dir():
+    print("    Run cell 04 first.")
+else:
+    from IPython.display import display
+
+    _tier_col = 'swipe_tier_12mo'
+    _rows = []
+    for tier in SWIPE_TIER_ORDER:
+        _g = _acct[_acct[_tier_col] == tier]
+        if len(_g) == 0:
+            continue
+        _row = {'Tier': tier, 'Accounts': len(_g)}
+        for col, label in [
+            ('mo_swipes_12mo', 'Mo Swipes'), ('mo_spend_12mo', 'Mo Spend'),
+            ('mo_items_12mo', 'Mo Items'),
+            ('mo_dep_count_99d', 'Dep Ct (99d)'), ('mo_dep_amt_99d', 'Dep $ (99d)'),
+            ('mo_dep_count_365d', 'Dep Ct (365d)'), ('mo_dep_amt_365d', 'Dep $ (365d)'),
+        ]:
+            if col in _g.columns:
+                _row[label] = _g[col].median()
+        _rows.append(_row)
+
+    _total = {'Tier': 'TOTAL', 'Accounts': len(_acct)}
+    for col, label in [
+        ('mo_swipes_12mo', 'Mo Swipes'), ('mo_spend_12mo', 'Mo Spend'),
+        ('mo_items_12mo', 'Mo Items'),
+        ('mo_dep_count_99d', 'Dep Ct (99d)'), ('mo_dep_amt_99d', 'Dep $ (99d)'),
+        ('mo_dep_count_365d', 'Dep Ct (365d)'), ('mo_dep_amt_365d', 'Dep $ (365d)'),
+    ]:
+        if col in _acct.columns:
+            _total[label] = _acct[col].median()
+    _rows.append(_total)
+
+    _df = pd.DataFrame(_rows)
+    for _rc in _df.columns:
+        if _rc not in ('Tier', 'Accounts') and _df[_rc].dtype in ('float64', 'float32'):
+            _df[_rc] = _df[_rc].round(1)
+
+    _last = len(_df) - 1
+    def _style(row):
+        if row.name == _last:
+            return ['font-weight: bold; border-top: 2px solid #1B2A4A; '
+                    'background-color: rgba(27, 42, 74, 0.08)'] * len(row)
+        return [''] * len(row)
+
+    _fmt = {'Accounts': '{:,.0f}'}
+    for c in _df.columns:
+        if c in ('Tier', 'Accounts'): continue
+        elif '$' in c or 'Spend' in c: _fmt[c] = '${:,.1f}'
+        else: _fmt[c] = '{:,.1f}'
+
+    _styled = (
+        _df.style.hide(axis='index')
+        .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+        .apply(_style, axis=1)
+        .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+        .set_properties(subset=['Tier'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size': '13px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '8px 10px')]},
+            {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
+        ])
+        .set_caption("Block B2: Swipe Segmentation (12-Month Avg)")
+    )
+    display(_styled)

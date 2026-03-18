@@ -1,0 +1,84 @@
+# ===========================================================================
+# BLOCK F1: PROGRAM SEGMENT -- NU, TH-10, TH-15, TH-20, TH-25
+# ===========================================================================
+# Depends on: _acct (cell 04), PROGRAM_SEG_ORDER, GEN_COLORS
+
+if '_acct' not in dir():
+    print("    Run cell 04 first.")
+else:
+    from IPython.display import display
+
+    _rows = []
+    for seg in PROGRAM_SEG_ORDER:
+        _g = _acct[_acct['program_segment'] == seg]
+        if len(_g) == 0:
+            continue
+        _row = {'Segment': seg, 'Accounts': len(_g)}
+        for col, label in [
+            ('mo_swipes_3mo', 'Mo Swipes (3mo)'), ('mo_spend_3mo', 'Mo Spend (3mo)'),
+            ('mo_items_3mo', 'Mo Items (3mo)'),
+            ('mo_dep_count_365d', 'Dep Ct (365d)'), ('mo_dep_amt_365d', 'Dep $ (365d)'),
+        ]:
+            if col in _g.columns:
+                _row[label] = _g[col].median()
+        _rows.append(_row)
+
+    # Not Mailed
+    _nm = _acct[_acct['program_segment'].isna()]
+    if len(_nm) > 0:
+        _row = {'Segment': 'Not Mailed', 'Accounts': len(_nm)}
+        for col, label in [
+            ('mo_swipes_3mo', 'Mo Swipes (3mo)'), ('mo_spend_3mo', 'Mo Spend (3mo)'),
+            ('mo_items_3mo', 'Mo Items (3mo)'),
+            ('mo_dep_count_365d', 'Dep Ct (365d)'), ('mo_dep_amt_365d', 'Dep $ (365d)'),
+        ]:
+            if col in _nm.columns:
+                _row[label] = _nm[col].median()
+        _rows.append(_row)
+
+    # TOTAL
+    _total = {'Segment': 'TOTAL', 'Accounts': len(_acct)}
+    for col, label in [
+        ('mo_swipes_3mo', 'Mo Swipes (3mo)'), ('mo_spend_3mo', 'Mo Spend (3mo)'),
+        ('mo_items_3mo', 'Mo Items (3mo)'),
+        ('mo_dep_count_365d', 'Dep Ct (365d)'), ('mo_dep_amt_365d', 'Dep $ (365d)'),
+    ]:
+        if col in _acct.columns:
+            _total[label] = _acct[col].median()
+    _rows.append(_total)
+
+    _df = pd.DataFrame(_rows)
+    for _rc in _df.columns:
+        if _rc not in ('Segment', 'Accounts') and _df[_rc].dtype in ('float64', 'float32'):
+            _df[_rc] = _df[_rc].round(1)
+
+    _last = len(_df) - 1
+    def _style(row):
+        if row.name == _last:
+            return ['font-weight: bold; border-top: 2px solid #1B2A4A; '
+                    'background-color: rgba(27, 42, 74, 0.08)'] * len(row)
+        return [''] * len(row)
+
+    _fmt = {'Accounts': '{:,.0f}'}
+    for c in _df.columns:
+        if c in ('Segment', 'Accounts'): continue
+        elif '$' in c or 'Spend' in c: _fmt[c] = '${:,.1f}'
+        else: _fmt[c] = '{:,.1f}'
+
+    _styled = (
+        _df.style.hide(axis='index')
+        .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+        .apply(_style, axis=1)
+        .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+        .set_properties(subset=['Segment'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size': '14px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '10px 12px')]},
+            {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
+        ])
+        .set_caption("Block F1: Program Segment (NU, TH-10 through TH-25)")
+    )
+    display(_styled)

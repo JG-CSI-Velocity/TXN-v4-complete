@@ -1,0 +1,62 @@
+# ===========================================================================
+# BLOCK A: PORTFOLIO BASELINE -- Total Open Summary
+# ===========================================================================
+# Total open accounts with all metrics. The starting point before
+# any segmentation is applied.
+#
+# Depends on: _acct (cell 04), GEN_COLORS
+
+if '_acct' not in dir():
+    print("    Run cell 04 first.")
+else:
+    from IPython.display import display
+
+    _row = {'Group': 'Total Open', 'Accounts': len(_acct)}
+
+    for col, label in [
+        ('mo_swipes_3mo', 'Mo Swipes (3mo)'),
+        ('mo_swipes_12mo', 'Mo Swipes (12mo)'),
+        ('mo_spend_3mo', 'Mo Spend (3mo)'),
+        ('mo_spend_12mo', 'Mo Spend (12mo)'),
+        ('mo_items_3mo', 'Mo Items (3mo)'),
+        ('mo_items_12mo', 'Mo Items (12mo)'),
+        ('mo_dep_count_99d', 'Mo Dep Ct (99d)'),
+        ('mo_dep_count_365d', 'Mo Dep Ct (365d)'),
+        ('mo_dep_amt_99d', 'Mo Dep $ (99d)'),
+        ('mo_dep_amt_365d', 'Mo Dep $ (365d)'),
+    ]:
+        if col in _acct.columns:
+            _row[label] = _acct[col].median()
+
+    _df = pd.DataFrame([_row])
+
+    _fmt = {'Accounts': '{:,.0f}'}
+    for c in _df.columns:
+        if c in ('Group', 'Accounts'):
+            continue
+        elif '$' in c or 'Spend' in c or 'Dep $' in c:
+            _fmt[c] = '${:,.1f}'
+        else:
+            _fmt[c] = '{:,.1f}'
+
+    _styled = (
+        _df.style.hide(axis='index')
+        .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+        .set_properties(**{'font-size': '14px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '10px 12px'})
+        .set_properties(subset=['Group'], **{
+            'text-align': 'left', 'color': GEN_COLORS['primary'], 'font-size': '16px'})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '14px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '10px 12px')]},
+            {'selector': 'caption', 'props': [('font-size', '24px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                ('padding-bottom', '14px')]},
+        ])
+        .set_caption("Block A: Portfolio Baseline -- All Metrics, All Windows")
+    )
+    display(_styled)
+
+    print(f"\n  {len(_acct):,} eligible accounts")
+    print(f"  ODDD windows: 3mo, 12mo  |  Z5 windows: 99d, 365d")

@@ -1,0 +1,82 @@
+# ===========================================================================
+# BLOCK D1: DEPOSIT AMOUNT SEGMENTATION (99d + 365d) -- by Tier
+# ===========================================================================
+# Depends on: _acct (cell 04), DEP_AMT_TIER_ORDER, GEN_COLORS
+
+if '_acct' not in dir():
+    print("    Run cell 04 first.")
+else:
+    from IPython.display import display
+
+    for suffix, label_suffix, header_color in [
+        ('99d', '99-Day', GEN_COLORS['success']),
+        ('365d', '365-Day', GEN_COLORS['primary']),
+    ]:
+        _tier_col = f'dep_amt_tier_{suffix}'
+        if _tier_col not in _acct.columns:
+            print(f"    {_tier_col} not in _acct. Z5 data may be missing.")
+            continue
+
+        _rows = []
+        for tier in DEP_AMT_TIER_ORDER:
+            _g = _acct[_acct[_tier_col] == tier]
+            if len(_g) == 0:
+                continue
+            _row = {'Tier': tier, 'Accounts': len(_g)}
+            for col, label in [
+                ('mo_swipes_3mo', 'Mo Swipes (3mo)'), ('mo_spend_3mo', 'Mo Spend (3mo)'),
+                ('mo_items_3mo', 'Mo Items (3mo)'),
+                (f'mo_dep_count_{suffix}', f'Dep Ct ({suffix})'),
+                (f'mo_dep_amt_{suffix}', f'Dep $ ({suffix})'),
+            ]:
+                if col in _g.columns:
+                    _row[label] = _g[col].median()
+            _rows.append(_row)
+
+        _total = {'Tier': 'TOTAL', 'Accounts': len(_acct)}
+        for col, label in [
+            ('mo_swipes_3mo', 'Mo Swipes (3mo)'), ('mo_spend_3mo', 'Mo Spend (3mo)'),
+            ('mo_items_3mo', 'Mo Items (3mo)'),
+            (f'mo_dep_count_{suffix}', f'Dep Ct ({suffix})'),
+            (f'mo_dep_amt_{suffix}', f'Dep $ ({suffix})'),
+        ]:
+            if col in _acct.columns:
+                _total[label] = _acct[col].median()
+        _rows.append(_total)
+
+        _df = pd.DataFrame(_rows)
+        for _rc in _df.columns:
+            if _rc not in ('Tier', 'Accounts') and _df[_rc].dtype in ('float64', 'float32'):
+                _df[_rc] = _df[_rc].round(1)
+
+        _last = len(_df) - 1
+        def _style(row, _l=_last):
+            if row.name == _l:
+                return ['font-weight: bold; border-top: 2px solid #1B2A4A; '
+                        'background-color: rgba(27, 42, 74, 0.08)'] * len(row)
+            return [''] * len(row)
+
+        _fmt = {'Accounts': '{:,.0f}'}
+        for c in _df.columns:
+            if c in ('Tier', 'Accounts'): continue
+            elif '$' in c or 'Spend' in c: _fmt[c] = '${:,.1f}'
+            else: _fmt[c] = '{:,.1f}'
+
+        _styled = (
+            _df.style.hide(axis='index')
+            .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+            .apply(_style, axis=1)
+            .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+            .set_properties(subset=['Tier'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', header_color),
+                    ('color', 'white'), ('font-size': '13px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '8px 10px')]},
+                {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                    ('padding-bottom', '12px')]},
+            ])
+            .set_caption(f"Block D1: Deposit Amount Segmentation ({label_suffix})")
+        )
+        display(_styled)

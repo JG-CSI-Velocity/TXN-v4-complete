@@ -1,0 +1,82 @@
+# ===========================================================================
+# BLOCK F3: GRANULAR RESPONSE -- Within Each Segment: R vs NR
+# ===========================================================================
+# The same-challenge proof: NU Resp vs NU NR, TH-10 Resp vs TH-10 NR.
+# NU 5+ = Responder. NU 1-4 = Non-Responder.
+#
+# Depends on: _acct (cell 04), GRANULAR_ORDER, PROGRAM_SEG_ORDER, GEN_COLORS
+
+if '_acct' not in dir():
+    print("    Run cell 04 first.")
+else:
+    from IPython.display import display
+
+    _rows = []
+    for label in GRANULAR_ORDER:
+        _g = _acct[_acct['granular_response'] == label]
+        if len(_g) == 0:
+            continue
+        _row = {'Group': label, 'N': len(_g)}
+        for col, metric in [
+            ('mo_swipes_3mo', 'Mo Swipes (3mo)'), ('mo_spend_3mo', 'Mo Spend (3mo)'),
+            ('mo_items_3mo', 'Mo Items (3mo)'),
+            ('mo_dep_count_99d', 'Dep Ct (99d)'), ('mo_dep_amt_99d', 'Dep $ (99d)'),
+            ('mo_dep_count_365d', 'Dep Ct (365d)'), ('mo_dep_amt_365d', 'Dep $ (365d)'),
+        ]:
+            if col in _g.columns:
+                _row[metric] = _g[col].median()
+        _rows.append(_row)
+
+    _df = pd.DataFrame(_rows)
+    for _rc in _df.columns:
+        if _rc not in ('Group', 'N') and _df[_rc].dtype in ('float64', 'float32'):
+            _df[_rc] = _df[_rc].round(1)
+
+    # Style: Resp rows tinted, segment separators
+    _seg_breaks = set()
+    _prev_seg = None
+    for i, row in _df.iterrows():
+        _seg = row['Group'].replace(' Resp', '').replace(' NR', '')
+        if _seg != _prev_seg and _prev_seg is not None:
+            _seg_breaks.add(i)
+        _prev_seg = _seg
+
+    def _style(row):
+        parts = []
+        if 'Resp' in _df.loc[row.name, 'Group']:
+            parts.append('background-color: rgba(46, 196, 182, 0.08)')
+        if row.name in _seg_breaks:
+            parts.append('border-top: 2px solid #1B2A4A')
+        return ['; '.join(parts) if parts else ''] * len(row)
+
+    def _color_grp(col):
+        if col.name != 'Group': return [''] * len(col)
+        return [f'color: {GEN_COLORS["success"]}' if 'Resp' in v
+                else f'color: {GEN_COLORS["muted"]}' for v in col]
+
+    _fmt = {'N': '{:,.0f}'}
+    for c in _df.columns:
+        if c in ('Group', 'N'): continue
+        elif '$' in c or 'Spend' in c: _fmt[c] = '${:,.1f}'
+        else: _fmt[c] = '{:,.1f}'
+
+    _styled = (
+        _df.style.hide(axis='index')
+        .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+        .apply(_style, axis=1).apply(_color_grp)
+        .set_properties(**{'font-size': '12px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '7px 10px'})
+        .set_properties(subset=['Group'], **{'text-align': 'left'})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['accent']),
+                ('color', 'white'), ('font-size': '12px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '7px 10px')]},
+            {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
+        ])
+        .set_caption("Block F3: Granular Response -- Same Challenge, Two Outcomes")
+    )
+    display(_styled)
+
+    print(f"\n  NU 5+ = Responder. NU 1-4 / NU 0 = Non-Responder.")
+    print(f"  Compare within each segment, never across segments.")
