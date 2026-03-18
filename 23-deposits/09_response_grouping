@@ -51,7 +51,7 @@ else:
             _acct_resp_seg = _acct_resp_seg.where(~_has_seg, _parsed)
 
         # Custom order
-        _RG_ORDER = ['MR', 'SR', 'SO', 'NO', 'NR']
+        _RG_ORDER = ['MR', 'SR', 'SO', 'NR', 'NO']
         _RG_LABELS = {
             'MR': 'Multiple Response',
             'SR': 'Single Response',
