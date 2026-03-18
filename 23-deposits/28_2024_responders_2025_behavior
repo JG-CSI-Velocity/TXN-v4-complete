@@ -58,7 +58,9 @@ else:
     # Use the HIGHEST tier they responded at
     _SEG_RANK = {'NU': 1, 'TH-10': 2, 'TH-15': 3, 'TH-20': 4, 'TH-25': 5}
     _resp_segment_2024 = pd.Series(np.nan, index=_acct.index, dtype='object')
+    _acct_seg_2024 = pd.Series(np.nan, index=_acct.index, dtype='object')
     _mailed_2024 = pd.Series(False, index=_acct.index)
+    _acct_resp_2024 = pd.Series(False, index=_acct.index)
 
     for mc in _mail_2024:
         _month = mc.replace(' Mail', '')
@@ -70,6 +72,11 @@ else:
         _mailed_2024 |= _mailed
         _resp = _eligible[_rc].apply(_is_success)
         _seg = _eligible[mc].apply(_parse_seg)
+
+        # Track segment assignment (latest mailer wins)
+        _has_seg = _mailed & _seg.notna()
+        _acct_seg_2024[_has_seg] = _seg[_has_seg]
+        _acct_resp_2024 |= (_mailed & _resp)
 
         for idx in _eligible.index[_mailed & _resp]:
             _new_seg = _seg[idx]
@@ -102,15 +109,17 @@ else:
     print(f"  2025 data: {len(_swipe_2025)} Swipes, {len(_spend_2025)} Spend, "
           f"{len(_items_2025)} MTD months")
 
-    # Build table
+    # Build table -- responders then non-responders, both by segment
     _groups = []
     for seg in PROGRAM_SEG_ORDER:
         _mask = _resp_segment_2024 == seg
         if _mask.sum() > 0:
             _groups.append((f'{seg} Resp', _mask))
 
-    _nr_mask = _mailed_2024 & ~_responded_2024
-    _groups.append(('Non-Responder', _nr_mask))
+    for seg in PROGRAM_SEG_ORDER:
+        _seg_nr = (_acct_seg_2024 == seg) & ~_acct_resp_2024
+        if _seg_nr.sum() > 0:
+            _groups.append((f'{seg} NR', _seg_nr))
 
     _rows = []
     for label, mask in _groups:
@@ -146,6 +155,20 @@ else:
         if _rc not in ('Group', 'N') and _df[_rc].dtype in ('float64', 'float32'):
             _df[_rc] = _df[_rc].round(1)
 
+    # Find where NR rows start for separator
+    _nr_start = None
+    for i, row in _df.iterrows():
+        if 'NR' in str(row['Group']) and _nr_start is None:
+            _nr_start = i
+
+    def _style_rows(row):
+        parts = []
+        if 'Resp' in str(_df.loc[row.name, 'Group']):
+            parts.append('background-color: rgba(46, 196, 182, 0.08)')
+        if row.name == _nr_start:
+            parts.append('border-top: 2px solid #1B2A4A')
+        return ['; '.join(parts) if parts else ''] * len(row)
+
     def _color_grp(col):
         if col.name != 'Group': return [''] * len(col)
         return [f'color: {GEN_COLORS["success"]}' if 'Resp' in str(v)
@@ -160,6 +183,7 @@ else:
     _styled = (
         _df.style.hide(axis='index')
         .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+        .apply(_style_rows, axis=1)
         .apply(_color_grp)
         .set_properties(**{'font-size': '14px', 'font-weight': 'bold',
             'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '10px 12px'})
