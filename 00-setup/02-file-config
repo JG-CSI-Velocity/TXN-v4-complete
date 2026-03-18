@@ -20,7 +20,11 @@ ODD_FILE = Path(r"M:\ARS\Incoming\ODDD Files\JamesG\2026.02\1776\1776-2026-02-Co
 # 2. Z Accounts / Deposit snapshots directory
 #    Contains zaccounts CSV/TXT files with dates in the filename
 #    Set to None to auto-discover from ODDD directory
-ZACCOUNTS_DIR = None  # e.g., Path(r"C:\Users\james.gilmore\analysis-platform\data\1673 - Neighborhood")
+# IMPORTANT: Set to directory containing BOTH Z5 snapshot files (Mar25 + Mar26).
+# Cell 01 auto-discovers all *zaccounts*.csv files in this directory and
+# parses dates from filenames. Both files must be here for deposit deltas.
+# If None, auto-discovers from ODDD directory only (may miss a second snapshot).
+ZACCOUNTS_DIR = Path(r"M:\ARS\Incoming\ODDD Files\JamesG\zaccounts\1776")  # UPDATE: path containing both Z5 CSVs
 
 # 3. Transaction files directory (debit card transactions)
 #    Set to None if not using transaction data (deposits-only analysis)
