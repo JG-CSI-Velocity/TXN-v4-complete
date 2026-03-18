@@ -1,0 +1,92 @@
+# ===========================================================================
+# STACKED DETAIL: Full Metrics by Tier x Group
+# ===========================================================================
+# Every tier has 3 rows (Resp / NR / Not Mailed) with all metrics.
+# Most detailed view. Color-tinted by group.
+#
+# Depends on: _acct (cell 13), GEN_COLORS
+
+if '_acct' not in dir() or 'group' not in _acct.columns:
+    print("    Run cell 13 first.")
+else:
+    from IPython.display import display
+
+    _TIERS = ['0', '1-5', '6-10', '11-15', '16-20', '21-25', '26+']
+    _GROUPS = ['Responder', 'Non-Responder', 'Not Mailed']
+    _GRP_COLORS = {
+        'Responder': GEN_COLORS['success'],
+        'Non-Responder': GEN_COLORS['muted'],
+        'Not Mailed': GEN_COLORS['warning'],
+    }
+
+    _rows = []
+    for tier in _TIERS + ['TOTAL']:
+        for grp in _GROUPS:
+            _g = (_acct[(_acct['swipe_tier'] == tier) & (_acct['group'] == grp)]
+                  if tier != 'TOTAL'
+                  else _acct[_acct['group'] == grp])
+            if len(_g) == 0:
+                continue
+            _row = {'Tier': tier, 'Group': grp, 'N': len(_g)}
+            _row['Mo Swipes'] = _g['mo_swipes'].mean()
+            _row['Mo Spend'] = _g['mo_spend'].mean()
+            if 'mo_dep_count' in _g.columns:
+                _row['Med Dep Ct'] = _g['mo_dep_count'].median()
+            if 'mo_dep_amt' in _g.columns:
+                _row['Med Dep $'] = _g['mo_dep_amt'].median()
+            if 'balance' in _g.columns:
+                _row['Med Bal'] = _g['balance'].median()
+            _rows.append(_row)
+
+    _df = pd.DataFrame(_rows)
+
+    _tier_breaks = set()
+    _prev = None
+    for i, row in _df.iterrows():
+        if row['Tier'] != _prev and _prev is not None:
+            _tier_breaks.add(i)
+        _prev = row['Tier']
+
+    _total_idx = set(_df[_df['Tier'] == 'TOTAL'].index)
+
+    def _style_rows(row):
+        parts = []
+        _grp = _df.loc[row.name, 'Group']
+        if _grp == 'Responder':
+            parts.append('background-color: rgba(46, 196, 182, 0.08)')
+        elif _grp == 'Not Mailed':
+            parts.append('background-color: rgba(255, 159, 28, 0.06)')
+        if row.name in _tier_breaks:
+            parts.append('border-top: 2px solid #1B2A4A')
+        if row.name in _total_idx:
+            parts.append('font-weight: bold')
+        return ['; '.join(parts) if parts else ''] * len(row)
+
+    def _color_grp(col):
+        if col.name != 'Group':
+            return [''] * len(col)
+        return [f'color: {_GRP_COLORS.get(v, "")}' for v in col]
+
+    _fmt = {
+        'N': '{:,.0f}', 'Mo Swipes': '{:,.1f}', 'Mo Spend': '${:,.1f}',
+        'Med Dep Ct': '{:,.1f}', 'Med Dep $': '${:,.1f}', 'Med Bal': '${:,.1f}',
+    }
+
+    _styled = (
+        _df.style.hide(axis='index')
+        .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+        .apply(_style_rows, axis=1).apply(_color_grp)
+        .set_properties(**{'font-size': '12px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '6px 8px'})
+        .set_properties(subset=['Tier'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+        .set_properties(subset=['Group'], **{'text-align': 'left'})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '12px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '7px 8px')]},
+            {'selector': 'caption', 'props': [('font-size', '20px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '10px')]},
+        ])
+        .set_caption("Stacked Detail: Full Metrics by Tier x Group")
+    )
+    display(_styled)
