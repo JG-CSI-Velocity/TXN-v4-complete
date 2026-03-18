@@ -1,0 +1,55 @@
+# ===========================================================================
+# VELOCITY HEATMAP: Snapshots x Windows per Group
+# ===========================================================================
+# One heatmap per group (Responder, Non-Responder).
+# Background color intensity shows daily deposit rate.
+#
+# Depends on: _velocity_data, _WINDOWS, _GROUP_COLORS,
+#             _snap_labels (cell 22), SNAPSHOT_ORDER, GEN_COLORS
+
+if '_velocity_data' not in dir():
+    print("    Run cell 22 first.")
+else:
+    from IPython.display import display
+
+    for grp in ['Responder', 'Non-Responder']:
+        _heat_rows = []
+        for sk in SNAPSHOT_ORDER:
+            _vel = _velocity_data.get((sk, grp), {})
+            if not _vel:
+                continue
+            _row = {'Snapshot': _snap_labels.get(sk, sk)}
+            for wlabel, _, _, _ in _WINDOWS:
+                _row[wlabel] = _vel.get(f'{wlabel}_daily_amt', np.nan)
+            _heat_rows.append(_row)
+
+        if not _heat_rows:
+            continue
+
+        _heat_df = pd.DataFrame(_heat_rows)
+        _win_cols = [w[0] for w in _WINDOWS if w[0] in _heat_df.columns]
+
+        _styled = (
+            _heat_df.style.hide(axis='index')
+            .background_gradient(cmap='YlGnBu', subset=_win_cols, axis=None)
+            .format({w: '${:,.1f}/day' for w in _win_cols}, na_rep='--')
+            .set_properties(**{'font-size': '14px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF',
+                'padding': '10px 14px'})
+            .set_properties(subset=['Snapshot'], **{
+                'text-align': 'left', 'color': GEN_COLORS['primary'],
+                'font-size': '15px'})
+            .set_table_styles([
+                {'selector': 'th', 'props': [
+                    ('background-color', _GROUP_COLORS[grp]),
+                    ('color', 'white'), ('font-size', '14px'),
+                    ('font-weight', 'bold'), ('text-align', 'center'),
+                    ('padding', '10px 14px')]},
+                {'selector': 'caption', 'props': [
+                    ('font-size', '20px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']),
+                    ('text-align', 'left'), ('padding-bottom', '10px')]},
+            ])
+            .set_caption(f"{grp}: Daily Deposit Rate Heatmap ($/day)")
+        )
+        display(_styled)

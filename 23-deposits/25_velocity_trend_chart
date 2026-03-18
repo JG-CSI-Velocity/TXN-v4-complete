@@ -1,0 +1,51 @@
+# ===========================================================================
+# VELOCITY TREND CHART: 33-Day Rate Across Snapshots
+# ===========================================================================
+# Depends on: _velocity_data, _GROUPS, _GROUP_COLORS,
+#             _snap_dates (cell 22), SNAPSHOT_ORDER, GEN_COLORS
+
+if '_velocity_data' not in dir():
+    print("    Run cell 22 first.")
+else:
+    fig, ax = plt.subplots(figsize=(14, 7))
+
+    for grp in _GROUPS:
+        _dates = []
+        _vals = []
+        for sk in SNAPSHOT_ORDER:
+            _vel = _velocity_data.get((sk, grp), {})
+            _r = _vel.get('33d_daily_amt', np.nan)
+            if pd.notna(_r) and sk in _snap_dates:
+                _dates.append(_snap_dates[sk])
+                _vals.append(_r)
+
+        if _vals:
+            _lw = 3 if grp == 'Total Open' else 2.5
+            _ls = '--' if grp == 'Total Open' else '-'
+            ax.plot(_dates, _vals, color=_GROUP_COLORS[grp], linewidth=_lw,
+                    linestyle=_ls, marker='o', markersize=9,
+                    markeredgecolor='white', markeredgewidth=2,
+                    label=grp, zorder=5)
+            for d, v in zip(_dates, _vals):
+                ax.text(d, v, f"${v:,.1f}",
+                        ha='center', va='bottom', fontsize=11,
+                        fontweight='bold', color=_GROUP_COLORS[grp])
+
+    ax.set_ylabel("Median Daily Deposit Rate ($/day)", fontsize=14,
+                   fontweight='bold', labelpad=10)
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+    gen_clean_axes(ax)
+    ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax.set_axisbelow(True)
+    ax.legend(fontsize=12, loc='upper left', frameon=True,
+              facecolor='white', edgecolor=GEN_COLORS['grid'])
+    ax.set_title("33-Day Deposit Velocity Across Snapshots",
+                  fontsize=22, fontweight='bold',
+                  color=GEN_COLORS['dark_text'], pad=15, loc='left')
+    ax.text(0.0, 1.02, "Most recent 33-day window at each snapshot -- "
+            "shows short-term deposit momentum",
+            transform=ax.transAxes, fontsize=12,
+            color=GEN_COLORS['muted'], style='italic')
+    fig.autofmt_xdate(rotation=45)
+    plt.tight_layout()
+    plt.show()

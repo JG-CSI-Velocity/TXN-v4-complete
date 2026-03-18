@@ -1,0 +1,67 @@
+# ===========================================================================
+# VELOCITY TABLE: Daily Deposit Rate by Window
+# ===========================================================================
+# Depends on: _velocity_data, _WINDOWS, _GROUPS, _GROUP_COLORS,
+#             _snap_labels (cell 22), SNAPSHOT_ORDER, GEN_COLORS
+
+if '_velocity_data' not in dir():
+    print("    Run cell 22 first.")
+else:
+    from IPython.display import display
+
+    _rows = []
+    for sk in SNAPSHOT_ORDER:
+        for grp in _GROUPS:
+            _vel = _velocity_data.get((sk, grp), {})
+            if not _vel:
+                continue
+            _row = {'Snapshot': _snap_labels.get(sk, sk), 'Group': grp,
+                    'N': _vel.get('n', 0)}
+            for wlabel, _, _, _ in _WINDOWS:
+                _row[f'{wlabel} $/day'] = _vel.get(f'{wlabel}_daily_amt', np.nan)
+            _rows.append(_row)
+
+    _df = pd.DataFrame(_rows)
+
+    _snap_breaks = set()
+    _prev = None
+    for i, row in _df.iterrows():
+        if row['Snapshot'] != _prev and _prev is not None:
+            _snap_breaks.add(i)
+        _prev = row['Snapshot']
+
+    def _style(row):
+        parts = []
+        _grp = _df.loc[row.name, 'Group']
+        if _grp == 'Responder':
+            parts.append('background-color: rgba(46, 196, 182, 0.08)')
+        if _grp == 'Total Open':
+            parts.append('font-weight: bold')
+        if row.name in _snap_breaks:
+            parts.append('border-top: 2px solid #1B2A4A')
+        return ['; '.join(parts) if parts else ''] * len(row)
+
+    _fmt = {'N': '{:,.0f}'}
+    for w in _WINDOWS:
+        _fmt[f'{w[0]} $/day'] = '${:,.1f}'
+
+    _styled = (
+        _df.style.hide(axis='index')
+        .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+        .apply(_style, axis=1)
+        .apply(lambda col: [f'color: {_GROUP_COLORS.get(v, "")}' for v in col]
+               if col.name == 'Group' else [''] * len(col))
+        .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+        .set_properties(subset=['Snapshot'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+        .set_properties(subset=['Group'], **{'text-align': 'left'})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '8px 10px')]},
+            {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
+        ])
+        .set_caption("Daily Deposit Rate ($/day) by Window")
+    )
+    display(_styled)
