@@ -152,7 +152,7 @@ else:
         ('Accounts', 'count', None),
         ('Mo Swipes', 'mean', 'mo_swipes'),
         ('Mo Spend', 'mean', 'mo_spend'),
-        ('Median Mo Dep Count', 'median', 'mo_dep_count'),
+        ('Avg Mo Dep Count', 'mean', 'mo_dep_count'),
         ('Median Mo Dep Amt', 'median', 'mo_dep_amt'),
         ('Median Balance', 'median', 'balance'),
     ]
@@ -161,7 +161,7 @@ else:
         'Accounts': '{:,.0f}',
         'Mo Swipes': '{:,.1f}',
         'Mo Spend': '${:,.1f}',
-        'Median Mo Dep Count': '{:,.1f}',
+        'Avg Mo Dep Count': '{:,.1f}',
         'Median Mo Dep Amt': '${:,.1f}',
         'Median Balance': '${:,.1f}',
     }
