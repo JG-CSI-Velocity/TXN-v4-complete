@@ -75,7 +75,7 @@ else:
         _snap = deposit_long[deposit_long['snapshot'] == _latest_snap].copy()
         if DEPOSIT_JOIN_KEY_DEPOSIT in _snap.columns:
             _snap['_join_key'] = _snap[DEPOSIT_JOIN_KEY_DEPOSIT].astype(str).str.strip()
-            _dep_cols = [c for c in ['DepAmt99', 'DepCount99', 'balance']
+            _dep_cols = [c for c in ['DepAmt99', 'DepCount99', 'depAmt365', 'depCount365', 'balance']
                           if c in _snap.columns]
             if _dep_cols:
                 _dep = (_snap[['_join_key'] + _dep_cols]
