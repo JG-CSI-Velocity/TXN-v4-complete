@@ -16,11 +16,12 @@ else:
     if 'Response Grouping' not in rewards_df.columns:
         print("    'Response Grouping' column not found.")
     else:
-        _RG_ORDER = ['MR', 'SR', 'SO', 'NR', 'NO']
+        _RG_ORDER = ['MR', 'SR', 'SO', 'NO/NR', 'NR', 'NO']
         _RG_LABELS = {
             'MR': 'Multiple Response',
             'SR': 'Single Response',
             'SO': 'Single Offer',
+            'NO/NR': 'No Offer / Non Response',
             'NR': 'Non Response',
             'NO': 'No Offer',
         }
@@ -37,13 +38,22 @@ else:
         for code in _RG_ORDER:
             _match = None
             for val in _vc.index:
+                if val in _known:
+                    continue
                 _v = val.upper().strip()
-                if (_v == code
-                        or _v == _RG_LABELS.get(code, '').upper()
-                        or code.lower() in val.lower()
-                        or _RG_LABELS.get(code, '').lower() in val.lower()):
+                # Exact match first, then substring
+                if _v == code or _v == _RG_LABELS.get(code, '').upper():
                     _match = val
                     break
+            # Fallback: substring match (only if no exact match)
+            if _match is None:
+                for val in _vc.index:
+                    if val in _known:
+                        continue
+                    if (code.lower() in val.lower()
+                            or _RG_LABELS.get(code, '').lower() in val.lower()):
+                        _match = val
+                        break
             if _match is None:
                 continue
 
