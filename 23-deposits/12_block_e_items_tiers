@@ -13,31 +13,30 @@ else:
         ('12mo', '12-Month', GEN_COLORS['primary']),
     ]:
         _tier_col = f'items_tier_{suffix}'
+        _metrics = [
+            (f'mo_swipes_{suffix}', 'Avg Swipes', 'mean'),
+            (f'mo_spend_{suffix}', 'Avg Spend', 'mean'),
+            (f'mo_items_{suffix}', 'Avg Items', 'mean'),
+            ('mo_dep_count', 'Med Dep Ct', 'median'),
+            ('mo_dep_amt', 'Med Dep $', 'median'),
+            ('mo_dep_amt', 'Avg Dep $', 'mean'),
+        ]
+
         _rows = []
         for tier in ITEMS_TIER_ORDER:
             _g = _acct[_acct[_tier_col] == tier]
             if len(_g) == 0:
                 continue
             _row = {'Tier': tier, 'Accounts': len(_g)}
-            for col, label in [
-                (f'mo_swipes_{suffix}', 'Mo Swipes'), (f'mo_spend_{suffix}', 'Mo Spend'),
-                (f'mo_items_{suffix}', 'Mo Items'),
-                
-                ('mo_dep_count', 'Mo Dep Ct'), ('mo_dep_amt', 'Mo Dep $'),
-            ]:
+            for col, label, agg in _metrics:
                 if col in _g.columns:
-                    _row[label] = _g[col].median()
+                    _row[label] = _g[col].median() if agg == 'median' else _g[col].mean()
             _rows.append(_row)
 
         _total = {'Tier': 'TOTAL', 'Accounts': len(_acct)}
-        for col, label in [
-            (f'mo_swipes_{suffix}', 'Mo Swipes'), (f'mo_spend_{suffix}', 'Mo Spend'),
-            (f'mo_items_{suffix}', 'Mo Items'),
-            
-            ('mo_dep_count', 'Mo Dep Ct'), ('mo_dep_amt', 'Mo Dep $'),
-        ]:
+        for col, label, agg in _metrics:
             if col in _acct.columns:
-                _total[label] = _acct[col].median()
+                _total[label] = _acct[col].median() if agg == 'median' else _acct[col].mean()
         _rows.append(_total)
 
         _df = pd.DataFrame(_rows)
@@ -62,13 +61,13 @@ else:
             _df.style.hide(axis='index')
             .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
             .apply(_style, axis=1)
-            .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
-                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+            .set_properties(**{'font-size': '12px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '7px 8px'})
             .set_properties(subset=['Tier'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
             .set_table_styles([
                 {'selector': 'th', 'props': [('background-color', header_color),
-                    ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
-                    ('text-align', 'center'), ('padding', '8px 10px')]},
+                    ('color', 'white'), ('font-size', '12px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '7px 8px')]},
                 {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
                     ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
                     ('padding-bottom', '12px')]},
