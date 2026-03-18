@@ -155,6 +155,11 @@ else:
 
     _summary_df = pd.DataFrame(_rows)
 
+    # Pre-round to 1 decimal
+    for _rc in ['Mo Swipes', 'Mo Spend', 'Median Mo Dep Count', 'Median Mo Dep Amt']:
+        if _rc in _summary_df.columns:
+            _summary_df[_rc] = _summary_df[_rc].round(1)
+
     # Format
     _fmt = {
         'Accounts': '{:,.0f}',
