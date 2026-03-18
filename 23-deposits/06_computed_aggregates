@@ -1,0 +1,208 @@
+# ===========================================================================
+# COMPUTED vs PRE-COMPUTED AGGREGATES: Data Validation (Conference Ed.)
+# ===========================================================================
+# Calculate our own 3-month and 12-month aggregates from individual
+# monthly ODDD columns and compare against the file's pre-computed fields.
+#
+# Computed from raw months (Oct25-Dec25 = 3mo, Jan25-Dec25 = 12mo):
+#   Spend, Swipes, PIN $, Sig $, PIN #, Sig #, MTD
+#
+# Compared against:
+#   MonthlySpend3/12, MonthlySwipes3/12, MonthlyItems3/12,
+#   last 3-mon spend/swipes, last 12-mon spend/swipes, SwipeCat3/12
+#
+# Depends on: rewards_df (00-setup/08), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available. Run 00-setup cells first.")
+else:
+    from IPython.display import display
+
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+
+    def _find_monthly_cols(suffix):
+        """Find monthly columns ending with suffix, sorted chronologically."""
+        found = []
+        for c in rewards_df.columns:
+            c_s = c.strip()
+            if not c_s.endswith(suffix):
+                continue
+            prefix = c_s.replace(suffix, '').strip()
+            if len(prefix) in (5, 6) and prefix[:3] in _VALID_MON:
+                found.append(c_s)
+        return sorted(found,
+                       key=lambda c: pd.to_datetime(c.replace(suffix, '').strip(),
+                                                      format='%b%y'))
+
+    # Discover all monthly series
+    _series = {
+        'Spend':  (' Spend', 'last 3-mon spend', 'last 12-mon spend',
+                    'MonthlySpend3', 'MonthlySpend12'),
+        'Swipes': (' Swipes', 'last 3-mon swipes', 'last 12-mon swipes',
+                    'MonthlySwipes3', 'MonthlySwipes12'),
+        'MTD':    (' MTD', 'Last 3-mon Items', 'Last 12-mon Items',
+                    'MonthlyItems3', 'MonthlyItems12'),
+        'PIN $':  (' PIN $', None, None, None, None),
+        'Sig $':  (' Sig $', None, None, None, None),
+        'PIN #':  (' PIN #', None, None, None, None),
+        'Sig #':  (' Sig #', None, None, None, None),
+    }
+
+    _validation_rows = []
+
+    for metric, (suffix, pre3_total, pre12_total, pre3_avg, pre12_avg) in _series.items():
+        _cols = _find_monthly_cols(suffix)
+        if not _cols:
+            continue
+
+        _labels = [c.replace(suffix, '').strip() for c in _cols]
+        _dates = [pd.to_datetime(l, format='%b%y') for l in _labels]
+
+        # Last 3 months and last 12 months
+        _last3_cols = [c for c, d in zip(_cols, _dates)
+                        if d >= pd.Timestamp('2025-10-01')]
+        _last12_cols = [c for c, d in zip(_cols, _dates)
+                         if d >= pd.Timestamp('2025-01-01')]
+
+        _matrix = rewards_df[_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
+
+        # Computed totals
+        _comp_3_total = _matrix[_last3_cols].sum(axis=1) if _last3_cols else None
+        _comp_12_total = _matrix[_last12_cols].sum(axis=1) if _last12_cols else None
+        _comp_3_avg = _comp_3_total / len(_last3_cols) if _comp_3_total is not None and len(_last3_cols) > 0 else None
+        _comp_12_avg = _comp_12_total / len(_last12_cols) if _comp_12_total is not None and len(_last12_cols) > 0 else None
+
+        _row = {
+            'Metric': metric,
+            'Monthly Cols': len(_cols),
+            'Range': f"{_labels[0]}-{_labels[-1]}",
+            '3mo Cols': len(_last3_cols),
+            '12mo Cols': len(_last12_cols),
+            'Comp 3mo Total': _comp_3_total.mean() if _comp_3_total is not None else np.nan,
+            'Comp 12mo Total': _comp_12_total.mean() if _comp_12_total is not None else np.nan,
+            'Comp 3mo Avg': _comp_3_avg.mean() if _comp_3_avg is not None else np.nan,
+            'Comp 12mo Avg': _comp_12_avg.mean() if _comp_12_avg is not None else np.nan,
+        }
+
+        # Compare against pre-computed if available
+        if pre3_total and pre3_total in rewards_df.columns:
+            _pre = pd.to_numeric(rewards_df[pre3_total], errors='coerce')
+            _row['File 3mo Total'] = _pre.mean()
+            if _comp_3_total is not None:
+                _diff = (_comp_3_total - _pre).abs().mean()
+                _row['3mo Diff'] = _diff
+        if pre12_total and pre12_total in rewards_df.columns:
+            _pre = pd.to_numeric(rewards_df[pre12_total], errors='coerce')
+            _row['File 12mo Total'] = _pre.mean()
+            if _comp_12_total is not None:
+                _diff = (_comp_12_total - _pre).abs().mean()
+                _row['12mo Diff'] = _diff
+        if pre3_avg and pre3_avg in rewards_df.columns:
+            _pre = pd.to_numeric(rewards_df[pre3_avg], errors='coerce')
+            _row['File 3mo Avg'] = _pre.mean()
+        if pre12_avg and pre12_avg in rewards_df.columns:
+            _pre = pd.to_numeric(rewards_df[pre12_avg], errors='coerce')
+            _row['File 12mo Avg'] = _pre.mean()
+
+        _validation_rows.append(_row)
+
+    _val_df = pd.DataFrame(_validation_rows)
+
+    if len(_val_df) > 0:
+        # Display: computed aggregates
+        _comp_cols = ['Metric', 'Monthly Cols', 'Range', '3mo Cols', '12mo Cols',
+                      'Comp 3mo Total', 'Comp 12mo Total',
+                      'Comp 3mo Avg', 'Comp 12mo Avg']
+        _comp_cols = [c for c in _comp_cols if c in _val_df.columns]
+
+        _fmt_comp = {}
+        for c in _comp_cols:
+            if 'Total' in c or 'Avg' in c:
+                _fmt_comp[c] = '{:,.1f}'
+
+        _styled_comp = (
+            _val_df[_comp_cols].style
+            .hide(axis='index')
+            .format(_fmt_comp, na_rep='--')
+            .set_properties(**{
+                'font-size': '13px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF',
+                'padding': '8px 10px',
+            })
+            .set_properties(subset=['Metric'], **{
+                'text-align': 'left', 'color': GEN_COLORS['primary'],
+            })
+            .set_table_styles([
+                {'selector': 'th', 'props': [
+                    ('background-color', GEN_COLORS['primary']),
+                    ('color', 'white'), ('font-size', '13px'),
+                    ('font-weight', 'bold'), ('text-align', 'center'),
+                    ('padding', '8px 10px'),
+                ]},
+                {'selector': 'caption', 'props': [
+                    ('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']),
+                    ('text-align', 'left'), ('padding-bottom', '12px'),
+                ]},
+            ])
+            .set_caption("Computed Aggregates from Raw Monthly Columns")
+        )
+        display(_styled_comp)
+
+        # Display: comparison against pre-computed
+        _cmp_cols = ['Metric',
+                     'Comp 3mo Total', 'File 3mo Total', '3mo Diff',
+                     'Comp 12mo Total', 'File 12mo Total', '12mo Diff']
+        _cmp_cols = [c for c in _cmp_cols if c in _val_df.columns]
+
+        if len(_cmp_cols) > 2:
+            _fmt_cmp = {}
+            for c in _cmp_cols:
+                if c != 'Metric':
+                    _fmt_cmp[c] = '{:,.1f}'
+
+            def _color_diff(col):
+                if 'Diff' not in col.name:
+                    return [''] * len(col)
+                return [
+                    f'color: {GEN_COLORS["success"]}' if pd.notna(v) and v < 1
+                    else f'color: {GEN_COLORS["warning"]}' if pd.notna(v) and v < 10
+                    else f'color: {GEN_COLORS["accent"]}' if pd.notna(v)
+                    else ''
+                    for v in col
+                ]
+
+            _styled_cmp = (
+                _val_df[_cmp_cols].style
+                .hide(axis='index')
+                .format(_fmt_cmp, na_rep='--')
+                .apply(_color_diff)
+                .set_properties(**{
+                    'font-size': '13px', 'font-weight': 'bold',
+                    'text-align': 'center', 'border': '1px solid #E9ECEF',
+                    'padding': '8px 10px',
+                })
+                .set_properties(subset=['Metric'], **{
+                    'text-align': 'left', 'color': GEN_COLORS['primary'],
+                })
+                .set_table_styles([
+                    {'selector': 'th', 'props': [
+                        ('background-color', GEN_COLORS['info']),
+                        ('color', 'white'), ('font-size', '13px'),
+                        ('font-weight', 'bold'), ('text-align', 'center'),
+                        ('padding', '8px 10px'),
+                    ]},
+                    {'selector': 'caption', 'props': [
+                        ('font-size', '22px'), ('font-weight', 'bold'),
+                        ('color', GEN_COLORS['dark_text']),
+                        ('text-align', 'left'), ('padding-bottom', '12px'),
+                    ]},
+                ])
+                .set_caption("Computed vs Pre-Computed: Validation Check")
+            )
+            display(_styled_cmp)
+
+            print(f"\n  Diff = avg absolute difference per account (computed - file)")
+            print(f"  Green < 1, Amber < 10, Red >= 10")
+
+    print(f"\n  Accounts: {len(rewards_df):,}")

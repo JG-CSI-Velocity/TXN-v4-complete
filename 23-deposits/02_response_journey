@@ -1,0 +1,297 @@
+# ===========================================================================
+# RESPONSE JOURNEY: Per-Account ARS Ladder History (Conference Edition)
+# ===========================================================================
+# Builds response_journey_df: one row per account with full campaign history
+# across all mailing waves. Tracks tier progression on the response ladder:
+#   Never Mailed -> Mailed No Response -> NU 1-4 -> NU 5+ -> TH-10/15/20/25
+#
+# Outputs: response_journey_df, RESPONSE_TIER_ORDER, RESPONSE_TIER_PALETTE
+#
+# Depends on: rewards_df (00-setup/08), mail_cols/resp_cols (09/01),
+#             deposit_df (23/01)
+
+# ---------------------------------------------------------------------------
+# Response tier hierarchy (numeric rank for comparisons)
+# ---------------------------------------------------------------------------
+RESPONSE_TIER_MAP = {
+    'Never Mailed':       0,
+    'Mailed No Response': 1,
+    'NU 1-4':             2,
+    'NU 5+':              3,
+    'TH-10':              4,
+    'TH-15':              5,
+    'TH-20':              6,
+    'TH-25':              7,
+}
+
+RESPONSE_TIER_ORDER = list(RESPONSE_TIER_MAP.keys())
+
+RESPONSE_TIER_PALETTE = {
+    'Never Mailed':       GEN_COLORS['muted'],
+    'Mailed No Response': '#A8DADC',
+    'NU 1-4':             GEN_COLORS['warning'],
+    'NU 5+':              GEN_COLORS['info'],
+    'TH-10':              '#2EC4B6',
+    'TH-15':              '#20A39E',
+    'TH-20':              '#1B8A7A',
+    'TH-25':              GEN_COLORS['primary'],
+}
+
+# Simplified 5-group palette for charts where full granularity is too much
+RESPONSE_GROUP_MAP = {
+    'Never Mailed':       'Never Mailed',
+    'Mailed No Response': 'No Response',
+    'NU 1-4':             'NU 1-4',
+    'NU 5+':              'NU 5+',
+    'TH-10':              'Threshold',
+    'TH-15':              'Threshold',
+    'TH-20':              'Threshold',
+    'TH-25':              'Threshold',
+}
+
+RESPONSE_GROUP_ORDER = ['Never Mailed', 'No Response', 'NU 1-4', 'NU 5+', 'Threshold']
+
+RESPONSE_GROUP_PALETTE = {
+    'Never Mailed': GEN_COLORS['muted'],
+    'No Response':  '#A8DADC',
+    'NU 1-4':       GEN_COLORS['warning'],
+    'NU 5+':        GEN_COLORS['info'],
+    'Threshold':    GEN_COLORS['success'],
+}
+
+# ---------------------------------------------------------------------------
+# Build per-account journey across all waves
+# ---------------------------------------------------------------------------
+# Discover mail/resp columns directly from rewards_df -- does NOT require
+# section 09 or combined_df. The ODDD has all the Mail/Resp columns we need.
+if 'rewards_df' not in dir():
+    print("    rewards_df not available. Run 00-setup cells first.")
+    response_journey_df = pd.DataFrame()
+else:
+    _rewards_cols = [c.strip() for c in rewards_df.columns]
+
+    # Auto-discover Mail and Resp columns if not already defined by section 09
+    # Sort chronologically by parsing the month prefix (e.g., "Apr23 Mail" -> Apr 2023)
+    if 'mail_cols' not in dir():
+        mail_cols = sorted(
+            [c for c in _rewards_cols if c.endswith(' Mail')],
+            key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y')
+        )
+    if 'resp_cols' not in dir():
+        resp_cols = sorted(
+            [c for c in _rewards_cols if c.endswith(' Resp')],
+            key=lambda c: pd.to_datetime(c.replace(' Resp', ''), format='%b%y')
+        )
+
+    if len(mail_cols) == 0 and len(resp_cols) == 0:
+        print("    No Mail/Resp columns found in rewards_df. Skipping response journey.")
+        response_journey_df = pd.DataFrame()
+
+if 'rewards_df' in dir() and len(mail_cols) > 0:
+
+    def _classify_response(mail_val, resp_val):
+        """Classify a single wave's mail/resp values into a tier."""
+        if pd.isna(mail_val):
+            return 'Never Mailed'
+        if pd.isna(resp_val):
+            return 'Mailed No Response'
+        v = str(resp_val).strip().upper()
+        if v.startswith('TH-25') or v == 'TH 25' or v == 'TH25':
+            return 'TH-25'
+        if v.startswith('TH-20') or v == 'TH 20' or v == 'TH20':
+            return 'TH-20'
+        if v.startswith('TH-15') or v == 'TH 15' or v == 'TH15':
+            return 'TH-15'
+        if v.startswith('TH-10') or v == 'TH 10' or v == 'TH10':
+            return 'TH-10'
+        if v in ('NU 5+', 'NU5+', 'NU 5', 'NU 6', 'NU 7', 'NU 8', 'NU 9', 'NU 10'):
+            return 'NU 5+'
+        if v in ('NU 1-4', 'NU1-4'):
+            return 'NU 1-4'
+        # Any other non-null response value with a mail = mailed but no recognized response
+        return 'Mailed No Response'
+
+    # Parse each wave for each account
+    _acct_col = 'Acct Number' if 'Acct Number' in rewards_df.columns else ' Acct Number'
+    _acct_nums = rewards_df[_acct_col].astype(str).str.strip()
+
+    # The ODDD's 'Acct Number' IS the HASHED_ACCOUNT in zaccounts.
+    # Use Acct Number as the join key and label it HASHED_ACCOUNT for
+    # consistency with deposit_df downstream.
+    _acct_num_col = 'Acct Number' if 'Acct Number' in rewards_df.columns else None
+    if _acct_num_col is None:
+        for _c in rewards_df.columns:
+            if _c.strip().lower() in ('acct number', 'acctnumber', 'acct_number'):
+                _acct_num_col = _c
+                break
+
+    _hash_col_present = _acct_num_col is not None
+    _hashes = rewards_df[_acct_num_col].astype(str).str.strip() if _hash_col_present else None
+
+    if not _hash_col_present:
+        print("    WARNING: No Acct Number column found in rewards_df.")
+        print(f"    Available columns: {[c for c in rewards_df.columns if 'acct' in c.lower()]}")
+        print("    Response journey will build without account key -- deposit merge will not work.")
+
+    # Sort mail/resp columns chronologically
+    _wave_pairs = list(zip(mail_cols, resp_cols))
+
+    # Build journey: list of tier per wave for each account
+    _n_accts = len(rewards_df)
+    _n_waves = len(_wave_pairs)
+
+    _journey_tiers = []  # list of lists: [n_accts][n_waves]
+    _wave_labels = []
+
+    for mc, rc in _wave_pairs:
+        _wave_labels.append(mc.replace(' Mail', ''))
+        mc_s = mc.strip()
+        rc_s = rc.strip()
+        _mail_vals = rewards_df[mc_s] if mc_s in _rewards_cols else pd.Series(np.nan, index=rewards_df.index)
+        _resp_vals = rewards_df[rc_s] if rc_s in _rewards_cols else pd.Series(np.nan, index=rewards_df.index)
+        _tiers = [_classify_response(m, r) for m, r in zip(_mail_vals, _resp_vals)]
+        _journey_tiers.append(_tiers)
+
+    # Transpose: per-account journey
+    _per_acct_journeys = list(zip(*_journey_tiers))
+
+    # Build summary DataFrame
+    _journey_rows = []
+    for i, journey in enumerate(_per_acct_journeys):
+        _ranks = [RESPONSE_TIER_MAP[t] for t in journey]
+        _mailed_waves = [j for j, t in enumerate(journey) if t != 'Never Mailed']
+        _responded_waves = [j for j, t in enumerate(journey) if RESPONSE_TIER_MAP[t] >= 2]
+
+        best_tier_rank = max(_ranks)
+        best_tier = RESPONSE_TIER_ORDER[best_tier_rank]
+        latest_tier_rank = _ranks[-1] if _ranks else 0
+        latest_tier = RESPONSE_TIER_ORDER[latest_tier_rank]
+
+        # First mailed tier (first time they appeared in ANY wave, regardless of outcome)
+        first_mailed_tier = None
+        first_mailed_tier_rank = 0
+        first_mailed_wave = None
+        for j, t in enumerate(journey):
+            if t != 'Never Mailed':
+                first_mailed_tier = t
+                first_mailed_tier_rank = RESPONSE_TIER_MAP[t]
+                first_mailed_wave = _wave_labels[j]
+                break
+
+        # First response (NU 1-4 or above)
+        first_response_wave = None
+        first_response_tier = None
+        for j, t in enumerate(journey):
+            if RESPONSE_TIER_MAP[t] >= 2:
+                first_response_wave = _wave_labels[j]
+                first_response_tier = t
+                break
+
+        # Direction: compare first half avg rank to second half avg rank
+        _mailed_ranks = [r for r in _ranks if r > 0]  # exclude Never Mailed
+        if len(_mailed_ranks) >= 2:
+            _mid = len(_mailed_ranks) // 2
+            _first_half_avg = np.mean(_mailed_ranks[:_mid])
+            _second_half_avg = np.mean(_mailed_ranks[_mid:])
+            if _second_half_avg > _first_half_avg + 0.3:
+                direction = 'Improving'
+            elif _second_half_avg < _first_half_avg - 0.3:
+                direction = 'Declining'
+            else:
+                direction = 'Stable'
+        else:
+            direction = 'Stable'
+
+        # Tier movement: how far did they move on the ladder?
+        _tier_movement = latest_tier_rank - first_mailed_tier_rank if first_mailed_tier_rank > 0 else 0
+
+        row = {
+            'acct_number': _acct_nums.iloc[i],
+            'first_mailed_tier': first_mailed_tier,
+            'first_mailed_tier_rank': first_mailed_tier_rank,
+            'first_mailed_wave': first_mailed_wave,
+            'best_tier': best_tier,
+            'best_tier_rank': best_tier_rank,
+            'latest_tier': latest_tier,
+            'latest_tier_rank': latest_tier_rank,
+            'first_response_wave': first_response_wave,
+            'first_response_tier': first_response_tier,
+            'times_mailed': len(_mailed_waves),
+            'times_responded': len(_responded_waves),
+            'is_repeat_responder': bool(len(_responded_waves) > 1),
+            'direction': direction,
+            'tier_movement': _tier_movement,
+            'response_group': RESPONSE_GROUP_MAP[best_tier],
+        }
+
+        if _hash_col_present:
+            row['HASHED_ACCOUNT'] = _hashes.iloc[i]
+
+        # Store the full journey as a string for debugging
+        row['journey_str'] = ' -> '.join(journey)
+
+        _journey_rows.append(row)
+
+    response_journey_df = pd.DataFrame(_journey_rows)
+
+    # ---------------------------------------------------------------------------
+    # Merge journey onto deposit_df and deposit_long
+    # ---------------------------------------------------------------------------
+    if 'deposit_df' in dir() and len(deposit_df) > 0 and _hash_col_present:
+        _journey_merge_cols = [
+            'HASHED_ACCOUNT', 'first_mailed_tier', 'first_mailed_tier_rank',
+            'best_tier', 'best_tier_rank', 'latest_tier', 'latest_tier_rank',
+            'first_response_wave', 'first_response_tier',
+            'times_mailed', 'times_responded', 'is_repeat_responder',
+            'direction', 'tier_movement', 'response_group',
+        ]
+        _journey_sub = response_journey_df[_journey_merge_cols].copy()
+
+        # Drop any pre-existing journey columns to make cell re-runnable
+        _existing = [c for c in _journey_sub.columns
+                     if c != 'HASHED_ACCOUNT' and c in deposit_df.columns]
+        if _existing:
+            deposit_df.drop(columns=_existing, inplace=True)
+
+        deposit_df = deposit_df.merge(_journey_sub, on='HASHED_ACCOUNT', how='left')
+        deposit_df['response_group'] = deposit_df['response_group'].fillna('Never Mailed')
+        deposit_df['best_tier'] = deposit_df['best_tier'].fillna('Never Mailed')
+        deposit_df['direction'] = deposit_df['direction'].fillna('Stable')
+
+        # Same for deposit_long
+        _existing_long = [c for c in _journey_sub.columns
+                          if c != 'HASHED_ACCOUNT' and c in deposit_long.columns]
+        if _existing_long:
+            deposit_long.drop(columns=_existing_long, inplace=True)
+        deposit_long = deposit_long.merge(_journey_sub, on='HASHED_ACCOUNT', how='left')
+        deposit_long['response_group'] = deposit_long['response_group'].fillna('Never Mailed')
+
+        _merge_rate = deposit_df['best_tier'].ne('Never Mailed').mean() * 100
+        print(f"\n  Journey merged onto deposit_df: "
+              f"{deposit_df['best_tier'].ne('Never Mailed').sum():,} accounts with campaign data "
+              f"({_merge_rate:.1f}%)")
+
+    # ---------------------------------------------------------------------------
+    # Summary
+    # ---------------------------------------------------------------------------
+    print(f"\n  Response journey built across {_n_waves} waves ({_wave_labels[0]} to {_wave_labels[-1]})")
+
+    _group_dist = response_journey_df['response_group'].value_counts().reindex(
+        RESPONSE_GROUP_ORDER
+    ).dropna()
+    print(f"\n  Response group distribution (best tier ever):")
+    for grp, count in _group_dist.items():
+        pct = count / len(response_journey_df) * 100
+        print(f"    {grp:<20s}: {count:>8,} ({pct:>5.1f}%)")
+
+    _dir_dist = response_journey_df[
+        response_journey_df['times_mailed'] > 0
+    ]['direction'].value_counts()
+    print(f"\n  Direction (mailed accounts only):")
+    for d, count in _dir_dist.items():
+        print(f"    {d:<12s}: {count:>8,}")
+
+    _repeat = response_journey_df['is_repeat_responder'].sum()
+    _any_resp = (response_journey_df['times_responded'] > 0).sum()
+    print(f"\n  Repeat responders: {_repeat:,} of {_any_resp:,} "
+          f"({_repeat / _any_resp * 100:.1f}%)" if _any_resp > 0 else "")

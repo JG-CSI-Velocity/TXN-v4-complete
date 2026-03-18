@@ -1,0 +1,118 @@
+# ===========================================================================
+# ODDD FIELD INVENTORY: What Do We Have? (Data Validation)
+# ===========================================================================
+# Styled table showing every field group in rewards_df with column count,
+# coverage (% non-null), and date range. This is the "show your data"
+# step before any analysis.
+#
+# Depends on: rewards_df (00-setup/08), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available. Run 00-setup cells first.")
+else:
+    from IPython.display import display
+
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+    _cols = [c.strip() for c in rewards_df.columns]
+
+    # Classify columns into groups
+    def _classify(col):
+        c = col.strip()
+        if c.endswith(' Mail'): return 'Mail (Segment Assignment)'
+        if c.endswith(' Resp'): return 'Resp (Outcome)'
+        if c.endswith(' Segmentation'): return 'Segmentation'
+        if c.endswith(' Spend'): return 'Monthly Spend ($)'
+        if c.endswith(' Swipes'): return 'Monthly Swipes (#)'
+        if c.endswith(' MTD'): return 'Monthly MTD Items'
+        if ' PIN $' in c: return 'Monthly PIN Spend ($)'
+        if ' Sig $' in c: return 'Monthly Signature Spend ($)'
+        if ' PIN #' in c: return 'Monthly PIN Txns (#)'
+        if ' Sig #' in c: return 'Monthly Signature Txns (#)'
+        if ' Reg E Code' in c: return 'Reg E Code'
+        if ' Reg E Desc' in c: return 'Reg E Description'
+        if ' OD Limit' in c: return 'OD Limit'
+        if c.endswith(' Elig'): return 'Eligibility'
+        if c.endswith(' Prog'): return 'Program Status'
+        if c in ('Total Spend', 'Total Swipes', 'Total Items',
+                 'last 3-mon spend', 'last 3-mon swipes',
+                 'last 12-mon spend', 'last 12-mon swipes',
+                 'Last 12-mon Items', 'Last 3-mon Items',
+                 'MonthlySwipes12', 'MonthlySwipes3',
+                 'MonthlySpend12', 'MonthlySpend3',
+                 'MonthlyItems12', 'MonthlyItems3',
+                 'SwipeCat12', 'SwipeCat3'):
+            return 'Pre-Computed Aggregates'
+        if c in ('# of Offers', '# of Responses', 'Response Grouping'):
+            return 'Response Summary'
+        if c in ('DOB', 'Date Opened', 'Date Closed',
+                 'Account Holder Age', 'Account Age'):
+            return 'Demographics / Lifecycle'
+        if c in ('Acct ID', 'Acct Number', 'Acct Mask'):
+            return 'Account Identifiers'
+        if c in ('Branch', 'Prod Code', 'Prod Desc', 'Business?',
+                 'Stat Code', 'Stat Desc', 'Mailable?', 'Debit?',
+                 'Avg Bal', 'Curr Bal'):
+            return 'Account Attributes'
+        return 'Other'
+
+    _group_data = {}
+    for col in rewards_df.columns:
+        grp = _classify(col)
+        if grp not in _group_data:
+            _group_data[grp] = {'cols': [], 'non_null': 0, 'total': 0}
+        _group_data[grp]['cols'].append(col)
+        _nn = rewards_df[col].notna().sum()
+        _group_data[grp]['non_null'] += _nn
+        _group_data[grp]['total'] += len(rewards_df)
+
+    # Build summary table
+    _rows = []
+    for grp, info in sorted(_group_data.items()):
+        _coverage = info['non_null'] / info['total'] * 100 if info['total'] > 0 else 0
+        _example = info['cols'][0].strip()
+        if len(info['cols']) > 1:
+            _example += f" ... {info['cols'][-1].strip()}"
+        _rows.append({
+            'Field Group': grp,
+            'Columns': len(info['cols']),
+            'Coverage': _coverage,
+            'Example': _example,
+        })
+
+    _inv_df = pd.DataFrame(_rows)
+
+    _styled = (
+        _inv_df.style
+        .hide(axis='index')
+        .format({'Coverage': '{:.1f}%', 'Columns': '{:,}'})
+        .bar(subset=['Coverage'], color='rgba(46, 196, 182, 0.3)',
+             vmin=0, vmax=100)
+        .set_properties(**{
+            'font-size': '13px', 'text-align': 'center',
+            'border': '1px solid #E9ECEF', 'padding': '8px 12px',
+        })
+        .set_properties(subset=['Field Group', 'Example'], **{
+            'text-align': 'left',
+        })
+        .set_properties(subset=['Field Group'], **{
+            'font-weight': 'bold', 'color': GEN_COLORS['primary'],
+        })
+        .set_table_styles([
+            {'selector': 'th', 'props': [
+                ('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '14px'),
+                ('font-weight', 'bold'), ('text-align', 'center'),
+                ('padding', '10px 12px'),
+            ]},
+            {'selector': 'caption', 'props': [
+                ('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']),
+                ('text-align', 'left'), ('padding-bottom', '12px'),
+            ]},
+        ])
+        .set_caption("ODDD Field Inventory")
+    )
+    display(_styled)
+
+    print(f"\n  {len(rewards_df):,} accounts x {len(rewards_df.columns)} columns")
+    print(f"  {len(_group_data)} field groups identified")

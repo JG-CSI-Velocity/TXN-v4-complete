@@ -1,0 +1,152 @@
+# ===========================================================================
+# SEGMENTATION BASELINE: Distribution Across Mailers (Data Validation)
+# ===========================================================================
+# Styled table showing the Segmentation field values at each of the
+# 12 mailers. This is the starting point: who was assigned what.
+#
+# Also shows Response Grouping, # of Offers, # of Responses distributions.
+#
+# Depends on: rewards_df (00-setup/08), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available. Run 00-setup cells first.")
+else:
+    from IPython.display import display
+
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+
+    # -----------------------------------------------------------------
+    # 1. Segmentation columns: distribution per mailer
+    # -----------------------------------------------------------------
+    _seg_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Segmentation')],
+        key=lambda c: pd.to_datetime(c.replace(' Segmentation', ''), format='%b%y'))
+
+    if len(_seg_cols) == 0:
+        print("    No Segmentation columns found.")
+    else:
+        # Get all unique segmentation values across all mailers
+        _all_vals = set()
+        for col in _seg_cols:
+            _all_vals.update(rewards_df[col].dropna().astype(str).str.strip().unique())
+        _seg_vals = sorted(_all_vals)
+
+        # Build mailer x segmentation value count matrix
+        _seg_rows = []
+        for col in _seg_cols:
+            _mailer = col.replace(' Segmentation', '')
+            _series = rewards_df[col].astype(str).str.strip()
+            _total_assigned = (_series.notna() & (_series != 'nan') & (_series != '')).sum()
+            _row = {'Mailer': _mailer, 'Assigned': _total_assigned}
+            for val in _seg_vals:
+                _n = (_series == val).sum()
+                _row[val] = _n
+            _seg_rows.append(_row)
+
+        _seg_df = pd.DataFrame(_seg_rows)
+
+        # Add totals row
+        _totals = {'Mailer': 'TOTAL', 'Assigned': _seg_df['Assigned'].sum()}
+        for val in _seg_vals:
+            if val in _seg_df.columns:
+                _totals[val] = _seg_df[val].sum()
+        _seg_df = pd.concat([_seg_df, pd.DataFrame([_totals])], ignore_index=True)
+
+        _last_idx = len(_seg_df) - 1
+
+        def _bold_total(row):
+            if row.name == _last_idx:
+                return ['font-weight: bold; border-top: 2px solid #1B2A4A'] * len(row)
+            return [''] * len(row)
+
+        _fmt = {c: '{:,.0f}' for c in _seg_df.columns if c != 'Mailer'}
+
+        _styled_seg = (
+            _seg_df.style
+            .hide(axis='index')
+            .format(_fmt, na_rep='--')
+            .apply(_bold_total, axis=1)
+            .set_properties(**{
+                'font-size': '13px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF',
+                'padding': '8px 10px',
+            })
+            .set_properties(subset=['Mailer'], **{
+                'text-align': 'left', 'color': GEN_COLORS['primary'],
+            })
+            .set_table_styles([
+                {'selector': 'th', 'props': [
+                    ('background-color', GEN_COLORS['primary']),
+                    ('color', 'white'), ('font-size', '13px'),
+                    ('font-weight', 'bold'), ('text-align', 'center'),
+                    ('padding', '8px 10px'),
+                ]},
+                {'selector': 'caption', 'props': [
+                    ('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']),
+                    ('text-align', 'left'), ('padding-bottom', '12px'),
+                ]},
+            ])
+            .set_caption("Segmentation Assignment by Mailer")
+        )
+        display(_styled_seg)
+
+    # -----------------------------------------------------------------
+    # 2. Response summary fields
+    # -----------------------------------------------------------------
+    _summary_fields = {
+        '# of Offers': '# of Offers',
+        '# of Responses': '# of Responses',
+        'Response Grouping': 'Response Grouping',
+    }
+
+    for label, col in _summary_fields.items():
+        if col not in rewards_df.columns:
+            continue
+
+        _vals = rewards_df[col].dropna()
+        if len(_vals) == 0:
+            continue
+
+        _vc = _vals.astype(str).str.strip().value_counts().sort_index()
+        _dist_df = pd.DataFrame({
+            'Value': _vc.index,
+            'Count': _vc.values,
+            '% of Total': (_vc.values / len(rewards_df) * 100),
+        })
+
+        _styled_dist = (
+            _dist_df.style
+            .hide(axis='index')
+            .format({'Count': '{:,.0f}', '% of Total': '{:.1f}%'})
+            .bar(subset=['% of Total'], color='rgba(46, 196, 182, 0.3)',
+                 vmin=0)
+            .set_properties(**{
+                'font-size': '13px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF',
+                'padding': '8px 10px',
+            })
+            .set_properties(subset=['Value'], **{
+                'text-align': 'left', 'color': GEN_COLORS['primary'],
+            })
+            .set_table_styles([
+                {'selector': 'th', 'props': [
+                    ('background-color', GEN_COLORS['info']),
+                    ('color', 'white'), ('font-size', '13px'),
+                    ('font-weight', 'bold'), ('text-align', 'center'),
+                    ('padding', '8px 10px'),
+                ]},
+                {'selector': 'caption', 'props': [
+                    ('font-size', '20px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']),
+                    ('text-align', 'left'), ('padding-bottom', '10px'),
+                ]},
+            ])
+            .set_caption(f"{label} Distribution")
+        )
+        display(_styled_dist)
+
+    print(f"\n  Total accounts: {len(rewards_df):,}")
+    print(f"  Segmentation columns: {len(_seg_cols)}")
+    print(f"  Mailer range: {_seg_cols[0].replace(' Segmentation', '')} to "
+          f"{_seg_cols[-1].replace(' Segmentation', '')}" if _seg_cols else '')
