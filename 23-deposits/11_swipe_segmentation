@@ -87,7 +87,7 @@ else:
         _snap = deposit_long[deposit_long['snapshot'] == _latest_snap].copy()
         if DEPOSIT_JOIN_KEY_DEPOSIT in _snap.columns:
             _snap['_join_key'] = _snap[DEPOSIT_JOIN_KEY_DEPOSIT].astype(str).str.strip()
-            _dep_cols = [c for c in ['depAmt365', 'depCount365']
+            _dep_cols = [c for c in ['DepAmt99', 'DepCount99', 'depAmt365', 'depCount365']
                           if c in _snap.columns]
             if _dep_cols:
                 _dep = (_snap[['_join_key'] + _dep_cols]
@@ -96,11 +96,22 @@ else:
                 _acct = _acct.join(_dep, on='_join_key', how='left')
                 print(f"  Z5: {_latest_snap}, matched {_acct[_dep_cols[0]].notna().sum():,} accounts")
 
-    # Normalize to monthly (365 days / 12)
+    # Normalize to monthly -- both windows
+    # 99-day (~3.3 months) -- matches the 3mo swipe window
+    if 'DepCount99' in _acct.columns:
+        _acct['mo_dep_count_99d'] = _acct['DepCount99'] / 3.3
+    if 'DepAmt99' in _acct.columns:
+        _acct['mo_dep_amt_99d'] = _acct['DepAmt99'] / 3.3
+    # 365-day (12 months) -- full year
     if 'depCount365' in _acct.columns:
-        _acct['mo_dep_count'] = _acct['depCount365'] / 12
+        _acct['mo_dep_count_365d'] = _acct['depCount365'] / 12
     if 'depAmt365' in _acct.columns:
-        _acct['mo_dep_amt'] = _acct['depAmt365'] / 12
+        _acct['mo_dep_amt_365d'] = _acct['depAmt365'] / 12
+    # Keep mo_dep_amt/mo_dep_count pointing to 365d for downstream cells
+    if 'depCount365' in _acct.columns:
+        _acct['mo_dep_count'] = _acct['mo_dep_count_365d']
+    if 'depAmt365' in _acct.columns:
+        _acct['mo_dep_amt'] = _acct['mo_dep_amt_365d']
 
     # -----------------------------------------------------------------
     # 3. Create swipe-based tiers
@@ -127,10 +138,12 @@ else:
 
     _metric_defs = [
         ('Accounts', 'count', None),
-        ('Mo Swipes', 'mean', 'mo_swipes'),
-        ('Mo Spend', 'mean', 'mo_spend'),
-        ('Median Mo Dep Count', 'median', 'mo_dep_count'),
-        ('Median Mo Dep Amt', 'median', 'mo_dep_amt'),
+        ('Mo Swipes (3mo)', 'mean', 'mo_swipes'),
+        ('Mo Spend (3mo)', 'mean', 'mo_spend'),
+        ('Med Dep Ct (99d)', 'median', 'mo_dep_count_99d'),
+        ('Med Dep $ (99d)', 'median', 'mo_dep_amt_99d'),
+        ('Med Dep Ct (365d)', 'median', 'mo_dep_count_365d'),
+        ('Med Dep $ (365d)', 'median', 'mo_dep_amt_365d'),
     ]
 
     _rows = []
@@ -156,17 +169,19 @@ else:
     _summary_df = pd.DataFrame(_rows)
 
     # Pre-round to 1 decimal
-    for _rc in ['Mo Swipes', 'Mo Spend', 'Median Mo Dep Count', 'Median Mo Dep Amt']:
-        if _rc in _summary_df.columns:
+    for _rc in _summary_df.columns:
+        if _rc not in ('Tier', 'Accounts') and _summary_df[_rc].dtype in ('float64', 'float32'):
             _summary_df[_rc] = _summary_df[_rc].round(1)
 
     # Format
     _fmt = {
         'Accounts': '{:,.0f}',
-        'Mo Swipes': '{:,.1f}',
-        'Mo Spend': '${:,.1f}',
-        'Median Mo Dep Count': '{:,.1f}',
-        'Median Mo Dep Amt': '${:,.1f}',
+        'Mo Swipes (3mo)': '{:,.1f}',
+        'Mo Spend (3mo)': '${:,.1f}',
+        'Med Dep Ct (99d)': '{:,.1f}',
+        'Med Dep $ (99d)': '${:,.1f}',
+        'Med Dep Ct (365d)': '{:,.1f}',
+        'Med Dep $ (365d)': '${:,.1f}',
     }
 
     _total_idx = set(_summary_df[_summary_df['Tier'] == 'TOTAL'].index)
