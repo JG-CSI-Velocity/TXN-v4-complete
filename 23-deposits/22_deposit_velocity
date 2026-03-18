@@ -110,5 +110,72 @@ else:
                 print(f"    {_label} | {grp:<16s} | n={_vel.get('n',0):>6,} | "
                       f"33d=${_r33:,.1f}/day | 365d=${_r365:,.1f}/day")
 
+    # -----------------------------------------------------------------
+    # Summary styled table: all windows, all snapshots, all groups
+    # -----------------------------------------------------------------
+    from IPython.display import display
+
+    _sum_rows = []
+    for sk in SNAPSHOT_ORDER:
+        for grp in _GROUPS:
+            _vel = _velocity_data.get((sk, grp), {})
+            if not _vel:
+                continue
+            _row = {
+                'Snapshot': _snap_labels.get(sk, sk),
+                'Group': grp,
+                'N': _vel.get('n', 0),
+            }
+            for wlabel, _, _, _ in _WINDOWS:
+                _row[f'{wlabel} $/day'] = _vel.get(f'{wlabel}_daily_amt', np.nan)
+                _row[f'{wlabel} #/day'] = _vel.get(f'{wlabel}_daily_cnt', np.nan)
+            _sum_rows.append(_row)
+
+    _sum_df = pd.DataFrame(_sum_rows)
+
+    _snap_breaks = set()
+    _prev = None
+    for i, row in _sum_df.iterrows():
+        if row['Snapshot'] != _prev and _prev is not None:
+            _snap_breaks.add(i)
+        _prev = row['Snapshot']
+
+    def _style_22(row):
+        parts = []
+        _grp = _sum_df.loc[row.name, 'Group']
+        if _grp == 'Responder':
+            parts.append('background-color: rgba(46, 196, 182, 0.08)')
+        if _grp == 'Total Open':
+            parts.append('font-weight: bold; font-style: italic')
+        if row.name in _snap_breaks:
+            parts.append('border-top: 2px solid #1B2A4A')
+        return ['; '.join(parts) if parts else ''] * len(row)
+
+    _fmt_22 = {'N': '{:,.0f}'}
+    for w in _WINDOWS:
+        _fmt_22[f'{w[0]} $/day'] = '${:,.1f}'
+        _fmt_22[f'{w[0]} #/day'] = '{:,.2f}'
+
+    _styled_22 = (
+        _sum_df.style.hide(axis='index')
+        .format({k: v for k, v in _fmt_22.items() if k in _sum_df.columns}, na_rep='--')
+        .apply(_style_22, axis=1)
+        .apply(lambda col: [f'color: {_GROUP_COLORS.get(v, "")}' for v in col]
+               if col.name == 'Group' else [''] * len(col))
+        .set_properties(**{'font-size': '12px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '7px 8px'})
+        .set_properties(subset=['Snapshot'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+        .set_properties(subset=['Group'], **{'text-align': 'left'})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '12px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '7px 8px')]},
+            {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
+        ])
+        .set_caption("Deposit Velocity: Daily Rate ($ and #) Across All Windows and Snapshots")
+    )
+    display(_styled_22)
+
     # Velocity data built. Cells 23-26 use _velocity_data, _WINDOWS,
     # _GROUPS, _GROUP_COLORS, _snap_labels, _snap_dates.
