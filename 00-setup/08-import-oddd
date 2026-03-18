@@ -1,16 +1,32 @@
 # Load ODDD
 # Uses ODD_FILE from cell 02-file-config. Falls back to odd_file if set.
+import time as _time
+
 if 'ODD_FILE' not in dir() and 'odd_file' not in dir():
     print("    WARNING: ODD_FILE not defined. Run 00-setup/02-file-config first.")
 else:
     if 'ODD_FILE' in dir():
         odd_file = ODD_FILE
 
-    print(f"Loading rewards file: {odd_file}")
+    _file_size = odd_file.stat().st_size / (1024 * 1024) if odd_file.exists() else 0
+    print(f"Loading: {odd_file.name} ({_file_size:.1f} MB)")
+
+    _t0 = _time.time()
+
+    # Try openpyxl engine first (default), but if file is large,
+    # suggest converting to CSV for faster loads
     rewards_df = pd.read_excel(odd_file)
-    print(f"Loaded: {len(rewards_df):,} rows, {len(rewards_df.columns)} columns")
+
+    _elapsed = _time.time() - _t0
+    print(f"Loaded: {len(rewards_df):,} rows x {len(rewards_df.columns)} columns "
+          f"in {_elapsed:.1f}s")
+
+    if _elapsed > 30:
+        print(f"\n  TIP: Excel load took {_elapsed:.0f}s. For faster reloads,")
+        print(f"  save as CSV once and load with pd.read_csv() instead:")
+        print(f"    rewards_df.to_csv('{odd_file.stem}.csv', index=False)")
 
     # ODD Columns
-    print("\nColumns:")
+    print(f"\nColumns ({len(rewards_df.columns)}):")
     for col in rewards_df.columns:
         print(f"  {col}")
