@@ -1,0 +1,146 @@
+# ===========================================================================
+# UNIFIED COMPARISON: Responder vs Non-Responder vs Not Mailed
+# ===========================================================================
+# Single table per swipe tier showing all three groups side by side.
+# Each tier gets one row per group so you can compare directly.
+#
+# Depends on: cell 13 must run first (builds _acct with group, swipe_tier,
+#             and all metrics). If not, rebuilds from scratch.
+#
+# Depends on: rewards_df, deposit_long, DEPOSIT_JOIN_KEY_ODDD,
+#             DEPOSIT_JOIN_KEY_DEPOSIT, SNAPSHOT_ORDER, GEN_COLORS
+
+if '_acct' not in dir() or 'group' not in _acct.columns:
+    print("    Run cell 13 first to build _acct with group assignments.")
+else:
+    from IPython.display import display
+
+    _TIERS = ['0', '1-5', '6-10', '11-15', '16-20', '21-25', '26+']
+    _GROUPS = ['Responder', 'Non-Responder', 'Not Mailed']
+    _GROUP_COLORS = {
+        'Responder': GEN_COLORS['success'],
+        'Non-Responder': GEN_COLORS['muted'],
+        'Not Mailed': GEN_COLORS['warning'],
+    }
+
+    _metric_cols = [
+        ('Accounts', 'count', None),
+        ('Mo Swipes', 'mean', 'mo_swipes'),
+        ('Mo Spend', 'mean', 'mo_spend'),
+        ('Med Mo Dep Ct', 'median', 'mo_dep_count'),
+        ('Med Mo Dep $', 'median', 'mo_dep_amt'),
+        ('Med Balance', 'median', 'balance'),
+    ]
+
+    _rows = []
+    for tier in _TIERS:
+        for grp in _GROUPS:
+            _g = _acct[(_acct['swipe_tier'] == tier) & (_acct['group'] == grp)]
+            if len(_g) == 0:
+                continue
+            _row = {'Tier': tier, 'Group': grp, 'Accounts': len(_g)}
+            for label, agg, col in _metric_cols:
+                if col and col in _g.columns:
+                    _row[label] = (_g[col].median() if agg == 'median'
+                                    else _g[col].mean())
+            _rows.append(_row)
+
+    # TOTAL rows
+    for grp in _GROUPS:
+        _g = _acct[_acct['group'] == grp]
+        if len(_g) == 0:
+            continue
+        _row = {'Tier': 'TOTAL', 'Group': grp, 'Accounts': len(_g)}
+        for label, agg, col in _metric_cols:
+            if col and col in _g.columns:
+                _row[label] = (_g[col].median() if agg == 'median'
+                                else _g[col].mean())
+        _rows.append(_row)
+
+    _df = pd.DataFrame(_rows)
+
+    # -----------------------------------------------------------------
+    # Style: tier separators, group row colors, bold totals
+    # -----------------------------------------------------------------
+    _tier_breaks = set()
+    _prev_tier = None
+    for i, row in _df.iterrows():
+        if row['Tier'] != _prev_tier and _prev_tier is not None:
+            _tier_breaks.add(i)
+        _prev_tier = row['Tier']
+
+    _total_idx = set(_df[_df['Tier'] == 'TOTAL'].index)
+
+    def _style_rows(row):
+        parts = []
+        _grp = _df.loc[row.name, 'Group'] if row.name in _df.index else ''
+        _tier = _df.loc[row.name, 'Tier'] if row.name in _df.index else ''
+
+        # Group tinting
+        if _grp == 'Responder':
+            parts.append('background-color: rgba(46, 196, 182, 0.08)')
+        elif _grp == 'Not Mailed':
+            parts.append('background-color: rgba(255, 159, 28, 0.06)')
+
+        # Tier separators
+        if row.name in _tier_breaks:
+            parts.append('border-top: 2px solid #1B2A4A')
+
+        # Bold totals
+        if _tier == 'TOTAL':
+            parts.append('font-weight: bold')
+
+        css = '; '.join(parts) if parts else ''
+        return [css] * len(row)
+
+    def _color_group(col):
+        if col.name != 'Group':
+            return [''] * len(col)
+        return [
+            f'color: {_GROUP_COLORS.get(v, GEN_COLORS["dark_text"])}'
+            for v in col
+        ]
+
+    _fmt = {
+        'Accounts': '{:,.0f}',
+        'Mo Swipes': '{:,.1f}',
+        'Mo Spend': '${:,.1f}',
+        'Med Mo Dep Ct': '{:,.1f}',
+        'Med Mo Dep $': '${:,.1f}',
+        'Med Balance': '${:,.1f}',
+    }
+
+    _styled = (
+        _df.style
+        .hide(axis='index')
+        .format({k: v for k, v in _fmt.items() if k in _df.columns},
+                na_rep='--')
+        .apply(_style_rows, axis=1)
+        .apply(_color_group)
+        .set_properties(**{
+            'font-size': '13px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF',
+            'padding': '7px 10px',
+        })
+        .set_properties(subset=['Tier'], **{
+            'text-align': 'left', 'color': GEN_COLORS['primary'],
+        })
+        .set_properties(subset=['Group'], **{
+            'text-align': 'left',
+        })
+        .set_table_styles([
+            {'selector': 'th', 'props': [
+                ('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '13px'),
+                ('font-weight', 'bold'), ('text-align', 'center'),
+                ('padding', '8px 10px'),
+            ]},
+            {'selector': 'caption', 'props': [
+                ('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']),
+                ('text-align', 'left'), ('padding-bottom', '12px'),
+            ]},
+        ])
+        .set_caption("Unified Comparison: Swipe Tier x Response Group")
+    )
+    display(_styled)
