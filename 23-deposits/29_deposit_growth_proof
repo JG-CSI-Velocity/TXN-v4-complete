@@ -93,13 +93,15 @@ else:
     # =================================================================
     # 2. Build T-indexed ODDD trajectories (vectorized)
     # =================================================================
+    _T_LO, _T_HI = -6, 18  # T range for all charts
+
     def _build_oddd_trajectory(suffix, cols, metric_label):
-        """Melt ODDD monthly columns, compute T offset, aggregate."""
+        """Melt ODDD monthly columns, compute T offset, aggregate.
+        Returns (all_accounts_traj, balanced_panel_traj)."""
         if not cols:
-            return pd.DataFrame()
+            return pd.DataFrame(), pd.DataFrame()
 
         _sub = _eligible.loc[_has_t0, cols].copy()
-        # Rename columns to datetime for melting
         _col_map = {c: pd.to_datetime(c.replace(suffix, ''), format='%b%y')
                     for c in cols}
         _sub = _sub.rename(columns=_col_map)
@@ -109,36 +111,53 @@ else:
         _long['value'] = pd.to_numeric(_long['value'], errors='coerce')
         _long = _long.dropna(subset=['value'])
 
-        # Add group and T+0
         _long['group'] = _acct['group'].reindex(_long['idx']).values
         _long['t0'] = _acct_t0.reindex(_long['idx']).values
 
-        # T offset in months
         _long['T'] = (
             (_long['month'].dt.year - _long['t0'].dt.year) * 12 +
             (_long['month'].dt.month - _long['t0'].dt.month)
         )
+        _long = _long[_long['T'].between(_T_LO, _T_HI)]
 
-        _long = _long[_long['T'].between(-6, 18)]
-
-        _traj = _long.groupby(['group', 'T']).agg(
+        # All-accounts trajectory
+        _traj_all = _long.groupby(['group', 'T']).agg(
             mean=('value', 'mean'),
             median=('value', 'median'),
             n=('value', 'count')
         ).reset_index()
-        _traj['metric'] = metric_label
-        return _traj
+        _traj_all['metric'] = metric_label
 
-    _traj_swipes = _build_oddd_trajectory(' Swipes', _swipe_cols, 'Swipes/mo')
-    _traj_spend = _build_oddd_trajectory(' Spend', _spend_cols, 'Spend/mo')
-    _traj_items = _build_oddd_trajectory(' MTD', _items_cols, 'Items/mo')
+        # Balanced panel: only accounts with data at EVERY T in range
+        _full_range = set(range(_T_LO, _T_HI + 1))
+        _acct_t_counts = _long.groupby('idx')['T'].apply(set)
+        _balanced_ids = _acct_t_counts[
+            _acct_t_counts.apply(lambda s: _full_range.issubset(s))
+        ].index
+        _bal_long = _long[_long['idx'].isin(_balanced_ids)]
 
-    for _t, _label in [(_traj_swipes, 'Swipes'), (_traj_spend, 'Spend'),
-                         (_traj_items, 'Items')]:
+        _traj_bal = _bal_long.groupby(['group', 'T']).agg(
+            mean=('value', 'mean'),
+            median=('value', 'median'),
+            n=('value', 'count')
+        ).reset_index()
+        _traj_bal['metric'] = metric_label
+
+        return _traj_all, _traj_bal
+
+    _traj_swipes, _traj_swipes_bal = _build_oddd_trajectory(' Swipes', _swipe_cols, 'Swipes/mo')
+    _traj_spend, _traj_spend_bal = _build_oddd_trajectory(' Spend', _spend_cols, 'Spend/mo')
+    _traj_items, _traj_items_bal = _build_oddd_trajectory(' MTD', _items_cols, 'Items/mo')
+
+    for _t, _tb, _label in [(_traj_swipes, _traj_swipes_bal, 'Swipes'),
+                              (_traj_spend, _traj_spend_bal, 'Spend'),
+                              (_traj_items, _traj_items_bal, 'Items')]:
         if len(_t) > 0:
             _t_range = f"T{_t['T'].min():+d} to T{_t['T'].max():+d}"
             _n_min = _t['n'].min()
-            print(f"  {_label}: {_t_range}, min N per bucket: {_n_min:,}")
+            _bal_n = _tb['n'].iloc[0] if len(_tb) > 0 else 0
+            print(f"  {_label}: {_t_range}, min N={_n_min:,}, "
+                  f"balanced panel N={_bal_n:,}")
 
     # =================================================================
     # 3. Map Z5 deposit windows to T offsets
@@ -199,6 +218,9 @@ else:
                 (_dep_long['month'].dt.month - _dep_long['t0'].dt.month)
             )
 
+            # Limit deposit T range to match ODDD charts
+            _dep_long = _dep_long[_dep_long['T'].between(_T_LO, _T_HI)]
+
             _dep_traj = _dep_long.groupby(['group', 'T']).agg(
                 mean=('dep_amt', 'mean'),
                 median=('dep_amt', 'median'),
@@ -206,28 +228,31 @@ else:
             ).reset_index()
             _dep_traj['metric'] = 'Deposits (33d window)'
 
-            print(f"\n  Z5 deposit windows -> T offsets:")
+            print(f"\n  Z5 deposit windows -> T offsets (T{_T_LO:+d} to T{_T_HI:+d}):")
             _dep_windows = _dep_long.groupby(['group', 'window', 'T']).size().reset_index(name='n')
-            for _, _w in _dep_windows[_dep_windows['group'] == 'Responder'].iterrows():
+            for _, _w in _dep_windows[_dep_windows['group'] == 'Responder'].sort_values('T').iterrows():
                 print(f"    {_w['window']} -> T{_w['T']:+d} (n={_w['n']:,})")
 
     # =================================================================
     # 4. Summary table: pre vs post averages
     # =================================================================
+    # Use balanced panel for summary (same accounts at every T bucket)
     _summary_rows = []
-    for _traj, _label, _dollar in [(_traj_swipes, 'Swipes/mo', False),
-                                     (_traj_spend, 'Spend/mo', True),
-                                     (_traj_items, 'Items/mo', False)]:
+    for _traj, _label, _dollar in [(_traj_swipes_bal, 'Swipes/mo', False),
+                                     (_traj_spend_bal, 'Spend/mo', True),
+                                     (_traj_items_bal, 'Items/mo', False)]:
         if len(_traj) == 0:
             continue
         for grp in ['Responder', 'Non-Responder']:
             _g = _traj[_traj['group'] == grp]
             _pre = _g[_g['T'].between(-6, -1)]['mean'].mean()
             _post = _g[_g['T'].between(1, 12)]['mean'].mean()
+            _n = int(_g['n'].iloc[0]) if len(_g) > 0 else 0
             _pct = ((_post - _pre) / _pre * 100) if _pre > 0 else np.nan
             _summary_rows.append({
                 'Metric': _label,
                 'Group': grp,
+                'N (balanced)': _n,
                 'Pre (T-6 to T-1)': _pre,
                 'Post (T+1 to T+12)': _post,
                 'Change': _post - _pre,
@@ -279,11 +304,11 @@ else:
         display(_styled)
 
     # =================================================================
-    # 5. Chart 1: ODDD trajectory (swipes + spend, 2 panels)
+    # 5. Chart 1: ODDD trajectory — balanced panel (same accounts at every T)
     # =================================================================
-    _plot_data = [(t, label, dollar) for t, label, dollar in
-                   [(_traj_swipes, 'Avg Swipes/mo', False),
-                    (_traj_spend, 'Avg Spend/mo', True)]
+    _plot_data = [(t, tb, label, dollar) for t, tb, label, dollar in
+                   [(_traj_swipes, _traj_swipes_bal, 'Avg Swipes/mo', False),
+                    (_traj_spend, _traj_spend_bal, 'Avg Spend/mo', True)]
                    if len(t) > 0]
 
     if _plot_data:
@@ -292,19 +317,33 @@ else:
         if len(_plot_data) == 1:
             axes = [axes]
 
-        for ax, (_traj, _ylabel, _is_dollar) in zip(axes, _plot_data):
+        for ax, (_traj_all, _traj_bal, _ylabel, _is_dollar) in zip(axes, _plot_data):
+            # Faded background: all accounts (shows cohort-mix effect)
+            for grp, color in [
+                ('Responder', GEN_COLORS['success']),
+                ('Non-Responder', GEN_COLORS['muted']),
+            ]:
+                _g = _traj_all[_traj_all['group'] == grp].sort_values('T')
+                if len(_g) > 0:
+                    ax.plot(_g['T'], _g['mean'],
+                            color=color, linewidth=1, linestyle=':',
+                            alpha=0.3, zorder=2)
+
+            # Primary: balanced panel (same accounts throughout)
+            _bal_n_label = ''
             for grp, color, ls, lw in [
                 ('Responder', GEN_COLORS['success'], '-', 3),
                 ('Non-Responder', GEN_COLORS['muted'], '--', 2.5),
             ]:
-                _g = _traj[_traj['group'] == grp].sort_values('T')
+                _g = _traj_bal[_traj_bal['group'] == grp].sort_values('T')
                 if len(_g) == 0:
                     continue
+                _n = _g['n'].iloc[0]
                 ax.plot(_g['T'], _g['mean'],
                         color=color, linewidth=lw, linestyle=ls,
-                        marker='o', markersize=4, label=grp, zorder=3)
+                        marker='o', markersize=4,
+                        label=f'{grp} (n={_n:,})', zorder=3)
 
-            # T+0 vertical line
             ax.axvline(0, color=GEN_COLORS['dark_text'], linewidth=1,
                         linestyle=':', alpha=0.6, zorder=2)
             ax.text(0.3, 0.97, 'T+0\n(response)',
@@ -312,12 +351,8 @@ else:
                     fontsize=9, color=GEN_COLORS['muted'],
                     va='top', ha='left')
 
-            # Shading
-            _xlim = ax.get_xlim()
-            ax.axvspan(_xlim[0], 0, alpha=0.03,
-                        color=GEN_COLORS['muted'])
-            ax.axvspan(0, _xlim[1], alpha=0.03,
-                        color=GEN_COLORS['success'])
+            ax.axvspan(_T_LO, 0, alpha=0.03, color=GEN_COLORS['muted'])
+            ax.axvspan(0, _T_HI, alpha=0.03, color=GEN_COLORS['success'])
 
             ax.set_xlabel("Months Relative to T+0", fontsize=12,
                            fontweight='bold', labelpad=8)
@@ -332,12 +367,12 @@ else:
             ax.legend(fontsize=11, loc='upper left', frameon=True,
                       facecolor='white', edgecolor=GEN_COLORS['grid'])
 
-        fig.suptitle("Post-Response Trajectory: ODDD Metrics",
+        fig.suptitle("Post-Response Trajectory: Balanced Panel",
                       fontsize=22, fontweight='bold',
                       color=GEN_COLORS['dark_text'], y=1.02)
         fig.text(0.5, 0.98,
-                 "T+0 = response month (R) or first mailer (NR)  |  "
-                 "Pre-period left, post-period right",
+                 "Same accounts at every T bucket (no cohort-mix bias)  |  "
+                 "Faded = all accounts, Solid = balanced panel",
                  ha='center', fontsize=12,
                  color=GEN_COLORS['muted'], style='italic')
 
@@ -346,7 +381,7 @@ else:
         plt.show()
 
     # =================================================================
-    # 6. Chart 2: Indexed to 100 at T-1 (relative change)
+    # 6. Chart 2: Indexed to 100 at T-1 (balanced panel)
     # =================================================================
     if _plot_data:
         fig, axes = plt.subplots(1, len(_plot_data),
@@ -354,15 +389,14 @@ else:
         if len(_plot_data) == 1:
             axes = [axes]
 
-        for ax, (_traj, _ylabel, _) in zip(axes, _plot_data):
+        for ax, (_, _traj_bal, _ylabel, __) in zip(axes, _plot_data):
             for grp, color, ls, lw in [
                 ('Responder', GEN_COLORS['success'], '-', 3),
                 ('Non-Responder', GEN_COLORS['muted'], '--', 2.5),
             ]:
-                _g = _traj[_traj['group'] == grp].sort_values('T')
+                _g = _traj_bal[_traj_bal['group'] == grp].sort_values('T')
                 if len(_g) == 0:
                     continue
-                # Baseline = mean of T-3 to T-1 (pre-period)
                 _pre = _g[_g['T'].between(-3, -1)]['mean'].mean()
                 if _pre > 0:
                     _indexed = _g['mean'] / _pre * 100
@@ -375,9 +409,8 @@ else:
             ax.axhline(100, color=GEN_COLORS['grid'], linewidth=1,
                         linestyle='-', zorder=1)
 
-            _xlim = ax.get_xlim()
-            ax.axvspan(_xlim[0], 0, alpha=0.03, color=GEN_COLORS['muted'])
-            ax.axvspan(0, _xlim[1], alpha=0.03, color=GEN_COLORS['success'])
+            ax.axvspan(_T_LO, 0, alpha=0.03, color=GEN_COLORS['muted'])
+            ax.axvspan(0, _T_HI, alpha=0.03, color=GEN_COLORS['success'])
 
             ax.set_xlabel("Months Relative to T+0", fontsize=12,
                            fontweight='bold', labelpad=8)
@@ -394,7 +427,7 @@ else:
                       fontsize=22, fontweight='bold',
                       color=GEN_COLORS['dark_text'], y=1.02)
         fig.text(0.5, 0.98,
-                 "Baseline = avg of T-3 to T-1  |  "
+                 "Balanced panel  |  Baseline = avg of T-3 to T-1  |  "
                  "> 100 = improvement over pre-response level",
                  ha='center', fontsize=12,
                  color=GEN_COLORS['muted'], style='italic')
@@ -404,71 +437,74 @@ else:
         plt.show()
 
     # =================================================================
-    # 7. Chart 3: Z5 deposit windows on T axis
+    # 7. Chart 3: Z5 deposit windows on T axis (same T range)
     # =================================================================
     if len(_dep_traj) > 0:
-        fig, ax = plt.subplots(figsize=(14, 6))
+        # Filter to same T range as ODDD charts
+        _dep_plot = _dep_traj[_dep_traj['T'].between(_T_LO, _T_HI)].copy()
 
-        for grp, color, ls, marker in [
-            ('Responder', GEN_COLORS['success'], '-', 'o'),
-            ('Non-Responder', GEN_COLORS['muted'], '--', 's'),
-        ]:
-            _g = _dep_traj[_dep_traj['group'] == grp].sort_values('T')
-            if len(_g) == 0:
-                continue
-            ax.plot(_g['T'], _g['median'],
-                    color=color, linewidth=2.5, linestyle=ls,
-                    marker=marker, markersize=8, label=grp, zorder=3)
-            # Label each point
-            for _, _pt in _g.iterrows():
-                ax.text(_pt['T'], _pt['median'] * 1.03,
-                        f"${_pt['median']:,.0f}",
-                        ha='center', va='bottom', fontsize=9,
-                        fontweight='bold', color=color)
+        if len(_dep_plot) > 0:
+            fig, ax = plt.subplots(figsize=(14, 6))
 
-        ax.axvline(0, color=GEN_COLORS['dark_text'], linewidth=1,
-                    linestyle=':', alpha=0.6, zorder=2)
-        ax.text(0.3, 0.97, 'T+0',
-                transform=ax.get_xaxis_transform(),
-                fontsize=10, color=GEN_COLORS['muted'],
-                va='top', ha='left')
+            for grp, color, ls, marker in [
+                ('Responder', GEN_COLORS['success'], '-', 'o'),
+                ('Non-Responder', GEN_COLORS['muted'], '--', 's'),
+            ]:
+                _g = _dep_plot[_dep_plot['group'] == grp].sort_values('T')
+                if len(_g) == 0:
+                    continue
+                ax.plot(_g['T'], _g['median'],
+                        color=color, linewidth=2.5, linestyle=ls,
+                        marker=marker, markersize=6, label=grp, zorder=3)
 
-        _xlim = ax.get_xlim()
-        ax.axvspan(_xlim[0], 0, alpha=0.03, color=GEN_COLORS['muted'])
-        ax.axvspan(0, _xlim[1], alpha=0.03, color=GEN_COLORS['success'])
+            ax.axvline(0, color=GEN_COLORS['dark_text'], linewidth=1,
+                        linestyle=':', alpha=0.6, zorder=2)
+            ax.text(0.3, 0.97, 'T+0',
+                    transform=ax.get_xaxis_transform(),
+                    fontsize=10, color=GEN_COLORS['muted'],
+                    va='top', ha='left')
 
-        ax.set_xlabel("Months Relative to T+0", fontsize=13,
-                       fontweight='bold', labelpad=8)
-        ax.set_ylabel("Median Deposit Amount (33d window)", fontsize=13,
-                       fontweight='bold', labelpad=8)
-        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
-        gen_clean_axes(ax)
-        ax.yaxis.grid(True, color=GEN_COLORS['grid'],
-                      linewidth=0.5, alpha=0.7)
-        ax.set_axisbelow(True)
-        ax.legend(fontsize=12, loc='upper left', frameon=True,
-                  facecolor='white', edgecolor=GEN_COLORS['grid'])
+            ax.axvspan(_T_LO, 0, alpha=0.03, color=GEN_COLORS['muted'])
+            ax.axvspan(0, _T_HI, alpha=0.03, color=GEN_COLORS['success'])
 
-        ax.set_title("Deposit Trajectory: Z5 Windows Mapped to Response Timeline",
-                      fontsize=20, fontweight='bold',
-                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
-        ax.text(0.0, 1.02,
-                "Each point = 33-day deposit window from Z5 snapshot  |  "
-                "Mapped to months relative to mailer response",
-                transform=ax.transAxes, fontsize=11,
-                color=GEN_COLORS['muted'], style='italic')
+            ax.set_xlabel("Months Relative to T+0", fontsize=13,
+                           fontweight='bold', labelpad=8)
+            ax.set_ylabel("Median Deposit Amount (33d window)", fontsize=13,
+                           fontweight='bold', labelpad=8)
+            ax.yaxis.set_major_formatter(
+                mticker.FuncFormatter(gen_fmt_dollar))
+            gen_clean_axes(ax)
+            ax.yaxis.grid(True, color=GEN_COLORS['grid'],
+                          linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+            ax.legend(fontsize=12, loc='upper left', frameon=True,
+                      facecolor='white', edgecolor=GEN_COLORS['grid'])
 
-        plt.tight_layout()
-        plt.show()
+            ax.set_title(
+                "Deposit Trajectory: Z5 Windows Mapped to Response Timeline",
+                fontsize=20, fontweight='bold',
+                color=GEN_COLORS['dark_text'], pad=35, loc='left')
+            ax.text(0.0, 1.02,
+                    "Each point = 33-day deposit window from Z5 snapshot  |  "
+                    f"T{_T_LO:+d} to T{_T_HI:+d}",
+                    transform=ax.transAxes, fontsize=11,
+                    color=GEN_COLORS['muted'], style='italic')
+
+            plt.tight_layout()
+            plt.show()
 
     # =================================================================
     # 8. Print summary
     # =================================================================
     print(f"\n  Post-response trajectory complete.")
-    if len(_traj_swipes) > 0:
+    if len(_traj_swipes_bal) > 0:
+        print(f"  Balanced panel summary (same accounts T{_T_LO:+d} to T{_T_HI:+d}):")
         for grp in ['Responder', 'Non-Responder']:
-            _g = _traj_swipes[_traj_swipes['group'] == grp]
+            _g = _traj_swipes_bal[_traj_swipes_bal['group'] == grp]
+            if len(_g) == 0:
+                continue
             _pre = _g[_g['T'].between(-3, -1)]['mean'].mean()
             _post = _g[_g['T'].between(1, 6)]['mean'].mean()
+            _n = int(_g['n'].iloc[0])
             _pct = ((_post - _pre) / _pre * 100) if _pre > 0 else 0
-            print(f"    {grp} swipes: {_pre:.1f} -> {_post:.1f} ({_pct:+.1f}%)")
+            print(f"    {grp} (n={_n:,}) swipes: {_pre:.1f} -> {_post:.1f} ({_pct:+.1f}%)")
