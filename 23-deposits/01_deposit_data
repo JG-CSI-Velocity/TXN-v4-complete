@@ -114,6 +114,15 @@ else:
                 label = f"{_mon_names[mon-1]}{yr % 100:02d}"
                 return label, yr * 100 + mon
 
+        # Pattern: YYYY.M.D or YYYY.MM.DD (e.g., 2025.3.3, 2025.12.31)
+        m = _re.search(r'(\d{4})\.(\d{1,2})\.(\d{1,2})', stem)
+        if m:
+            yr, mon = int(m.group(1)), int(m.group(2))
+            if 1 <= mon <= 12:
+                _mon_names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+                label = f"{_mon_names[mon-1]}{yr % 100:02d}"
+                return label, yr * 100 + mon
+
         return None
 
     # Discover files
