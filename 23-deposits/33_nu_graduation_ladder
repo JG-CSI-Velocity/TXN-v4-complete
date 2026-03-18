@@ -1,0 +1,349 @@
+# ===========================================================================
+# NU GRADUATION LADDER: Non-User → Threshold Progression
+# ===========================================================================
+# Tracks accounts that started as NU and were later promoted to TH segments.
+# The CU only promotes accounts that demonstrate sustained card usage.
+#
+# Groups:
+#   Graduated:      Started NU, later mailed as TH-10+ (proved sustained use)
+#   Repeat NU 5+:   Hit 5+ multiple times but stayed in NU segment
+#   One-time NU 5+: Hit 5+ once, not promoted or didn't respond again
+#   NU 1-4 Only:    Showed partial activity, never hit 5+
+#   NU 0:           Never activated
+#
+# The graduation group is the strongest proof — zero card usage to sustained
+# threshold-level activity, driven entirely by the program.
+#
+# Depends on: rewards_df, _acct (cell 04), PROGRAM_SEG_ORDER, GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+elif '_acct' not in dir():
+    print("    Run cell 04 first.")
+else:
+    from IPython.display import display
+
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+
+    _mail_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
+        key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
+    _resp_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Resp')],
+        key=lambda c: pd.to_datetime(c.replace(' Resp', ''), format='%b%y'))
+
+    _eligible = rewards_df.reindex(_acct.index)
+
+    def _parse_seg(val):
+        if pd.isna(val): return None
+        v = str(val).strip().upper()
+        if 'TH-25' in v or 'TH 25' in v or 'TH25' in v: return 'TH-25'
+        if 'TH-20' in v or 'TH 20' in v or 'TH20' in v: return 'TH-20'
+        if 'TH-15' in v or 'TH 15' in v or 'TH15' in v: return 'TH-15'
+        if 'TH-10' in v or 'TH 10' in v or 'TH10' in v: return 'TH-10'
+        if v.startswith('NU') or 'NON-USER' in v: return 'NU'
+        return None
+
+    def _is_success(val):
+        if pd.isna(val): return False
+        v = str(val).strip().upper()
+        if not v or v == 'NAN': return False
+        if 'NU' in v: return '5+' in v or '5 +' in v
+        return True
+
+    def _is_nu_partial(val):
+        if pd.isna(val): return False
+        v = str(val).strip().upper()
+        return v in ('NU 1-4', 'NU1-4', 'NU 1', 'NU 2', 'NU 3', 'NU 4')
+
+    _TH_SEGS = {'TH-10', 'TH-15', 'TH-20', 'TH-25'}
+    _SEG_RANK = {'NU': 0, 'TH-10': 1, 'TH-15': 2, 'TH-20': 3, 'TH-25': 4}
+
+    # =================================================================
+    # 1. Build per-account wave history
+    # =================================================================
+    # For each account, track: segment assigned per wave, response per wave
+    _acct_history = pd.DataFrame(index=_acct.index)
+
+    _first_seg = pd.Series(np.nan, index=_acct.index, dtype='object')
+    _highest_seg = pd.Series(np.nan, index=_acct.index, dtype='object')
+    _highest_seg_rank = pd.Series(-1, index=_acct.index)
+    _started_nu = pd.Series(False, index=_acct.index)
+    _ever_th = pd.Series(False, index=_acct.index)
+    _highest_th = pd.Series(np.nan, index=_acct.index, dtype='object')
+    _times_5plus = pd.Series(0, index=_acct.index)
+    _times_1to4 = pd.Series(0, index=_acct.index)
+    _times_th_success = pd.Series(0, index=_acct.index)
+    _was_mailed_nu = pd.Series(False, index=_acct.index)
+
+    for mc, rc in zip(_mail_cols, _resp_cols):
+        if rc not in _eligible.columns:
+            continue
+
+        _mailed = _eligible[mc].notna()
+        _seg = _eligible[mc].apply(_parse_seg)
+        _resp_val = _eligible[rc]
+
+        # Track first segment assignment
+        _has_seg = _mailed & _seg.notna() & _first_seg.isna()
+        _first_seg[_has_seg] = _seg[_has_seg]
+
+        # Track if ever mailed as NU
+        _was_mailed_nu |= (_mailed & (_seg == 'NU'))
+
+        # Track highest segment assignment
+        for idx in _eligible.index[_mailed & _seg.notna()]:
+            _s = _seg[idx]
+            _r = _SEG_RANK.get(_s, -1)
+            if _r > _highest_seg_rank[idx]:
+                _highest_seg_rank[idx] = _r
+                _highest_seg[idx] = _s
+
+        # Track if ever assigned to TH
+        _is_th = _mailed & _seg.isin(_TH_SEGS)
+        _ever_th |= _is_th
+        for idx in _eligible.index[_is_th]:
+            _s = _seg[idx]
+            _old = _highest_th[idx]
+            if pd.isna(_old) or _SEG_RANK.get(_s, 0) > _SEG_RANK.get(_old, 0):
+                _highest_th[idx] = _s
+
+        # Count successes
+        _is_5plus = _resp_val.apply(_is_success)
+        _is_partial = _resp_val.apply(_is_nu_partial)
+        _times_5plus += (_mailed & _is_5plus).astype(int)
+        _times_1to4 += (_mailed & _is_partial).astype(int)
+
+        # Count TH successes (responded to a TH challenge)
+        _th_success = _is_th & _is_5plus  # _is_success covers TH responses too
+        _times_th_success += _th_success.astype(int)
+
+    # Started as NU = first segment was NU
+    _started_nu = _first_seg == 'NU'
+
+    # =================================================================
+    # 2. Classify into graduation groups
+    # =================================================================
+    # Focus on accounts that started as NU
+    _nu_start = _started_nu & _acct['was_mailed']
+
+    # Graduated: started NU, later assigned TH-10+
+    _graduated = _nu_start & _ever_th
+    _grad_with_th_success = _graduated & (_times_th_success > 0)
+
+    # Repeat NU 5+: hit 5+ multiple times, never promoted to TH
+    _repeat_5plus = _nu_start & ~_ever_th & (_times_5plus >= 2)
+
+    # One-time NU 5+: hit 5+ exactly once, never promoted
+    _onetime_5plus = _nu_start & ~_ever_th & (_times_5plus == 1)
+
+    # NU 1-4 only: showed partial activity, never hit 5+
+    _partial_only = _nu_start & (_times_5plus == 0) & (_times_1to4 > 0)
+
+    # NU 0: never activated
+    _never_activated = _nu_start & (_times_5plus == 0) & (_times_1to4 == 0)
+
+    print(f"  Accounts that started as NU: {_nu_start.sum():,}")
+    print(f"    Graduated to TH:           {_graduated.sum():,} "
+          f"({_graduated.sum() / _nu_start.sum() * 100:.1f}%)")
+    print(f"      with TH success:         {_grad_with_th_success.sum():,}")
+    print(f"    Repeat NU 5+ (2+ waves):   {_repeat_5plus.sum():,} "
+          f"({_repeat_5plus.sum() / _nu_start.sum() * 100:.1f}%)")
+    print(f"    One-time NU 5+:            {_onetime_5plus.sum():,} "
+          f"({_onetime_5plus.sum() / _nu_start.sum() * 100:.1f}%)")
+    print(f"    NU 1-4 only:               {_partial_only.sum():,} "
+          f"({_partial_only.sum() / _nu_start.sum() * 100:.1f}%)")
+    print(f"    Never activated:           {_never_activated.sum():,} "
+          f"({_never_activated.sum() / _nu_start.sum() * 100:.1f}%)")
+
+    # Highest TH reached by graduates
+    if _graduated.sum() > 0:
+        _th_dist = _highest_th[_graduated].value_counts()
+        print(f"\n  Graduated accounts — highest TH reached:")
+        for seg in ['TH-10', 'TH-15', 'TH-20', 'TH-25']:
+            if seg in _th_dist.index:
+                print(f"    {seg}: {_th_dist[seg]:,}")
+
+    # =================================================================
+    # 3. Comparison table
+    # =================================================================
+    _groups = [
+        ('Graduated to TH', _graduated),
+        ('Repeat NU 5+', _repeat_5plus),
+        ('One-time NU 5+', _onetime_5plus),
+        ('NU 1-4 Only', _partial_only),
+        ('Never Activated', _never_activated),
+    ]
+
+    _rows = []
+    for label, mask in _groups:
+        _g = _acct[mask]
+        _n = len(_g)
+        if _n == 0:
+            continue
+
+        _row = {'Group': label, 'N': _n}
+
+        if 'mo_swipes_3mo' in _g.columns:
+            _row['Swipes/mo'] = _g['mo_swipes_3mo'].median()
+        if 'mo_spend_3mo' in _g.columns:
+            _row['Spend/mo'] = _g['mo_spend_3mo'].median()
+        if 'mo_dep_amt' in _g.columns:
+            _row['Dep $/mo'] = _g['mo_dep_amt'].median()
+        if 'mo_dep_count' in _g.columns:
+            _row['Dep Ct/mo'] = _g['mo_dep_count'].median()
+        if 'balance' in _g.columns:
+            _row['Balance'] = pd.to_numeric(_g['balance'], errors='coerce').median()
+        if 'has_direct_deposit' in _g.columns:
+            _row['Direct Dep'] = _g['has_direct_deposit'].mean()
+        if 'avgdaysbetweendeposits' in _g.columns:
+            _row['Days Btwn Dep'] = _g['avgdaysbetweendeposits'].replace(0, np.nan).median()
+
+        _rows.append(_row)
+
+    _df = pd.DataFrame(_rows)
+    for c in _df.columns:
+        if c not in ('Group', 'N') and _df[c].dtype in ('float64', 'float32'):
+            _df[c] = _df[c].round(1)
+
+    _GRAD_COLORS = {
+        'Graduated to TH': GEN_COLORS['success'],
+        'Repeat NU 5+': '#2a9d8f',
+        'One-time NU 5+': GEN_COLORS['warning'],
+        'NU 1-4 Only': '#e9c46a',
+        'Never Activated': GEN_COLORS['muted'],
+    }
+
+    def _gradient_row(row):
+        g = str(_df.loc[row.name, 'Group'])
+        if g == 'Graduated to TH':
+            return ['background-color: rgba(46, 196, 182, 0.12)'] * len(row)
+        elif 'Repeat' in g:
+            return ['background-color: rgba(46, 196, 182, 0.06)'] * len(row)
+        elif 'One-time' in g:
+            return ['background-color: rgba(255, 159, 28, 0.06)'] * len(row)
+        return [''] * len(row)
+
+    def _color_grp(col):
+        if col.name != 'Group': return [''] * len(col)
+        return [f'color: {_GRAD_COLORS.get(str(v), GEN_COLORS["muted"])}'
+                for v in col]
+
+    _fmt = {'N': '{:,.0f}'}
+    for c in _df.columns:
+        if c in ('Group', 'N'): continue
+        elif 'Direct' in c: _fmt[c] = '{:.0%}'
+        elif '$' in c or 'Spend' in c or 'Balance' in c: _fmt[c] = '${:,.0f}'
+        elif 'Days' in c: _fmt[c] = '{:.0f}'
+        elif 'Ct' in c: _fmt[c] = '{:,.1f}'
+        else: _fmt[c] = '{:,.1f}'
+
+    _styled = (
+        _df.style.hide(axis='index')
+        .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+        .apply(_gradient_row, axis=1)
+        .apply(_color_grp)
+        .set_properties(**{'font-size': '15px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF',
+            'padding': '12px 14px'})
+        .set_properties(subset=['Group'], **{'text-align': 'left'})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '14px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '12px 14px')]},
+            {'selector': 'caption', 'props': [('font-size', '24px'),
+                ('font-weight', 'bold'), ('color', GEN_COLORS['dark_text']),
+                ('text-align', 'left'), ('padding-bottom', '14px')]},
+        ])
+        .set_caption("NU Graduation Ladder: From Zero to Sustained Card User")
+    )
+    display(_styled)
+
+    # =================================================================
+    # 4. Bar charts: deposits + balance by graduation level
+    # =================================================================
+    _chart_metrics = []
+    if 'Dep $/mo' in _df.columns:
+        _chart_metrics.append(('Dep $/mo', 'Median Monthly Deposits ($)', True))
+    if 'Balance' in _df.columns:
+        _chart_metrics.append(('Balance', 'Median Balance ($)', True))
+    if 'Swipes/mo' in _df.columns:
+        _chart_metrics.append(('Swipes/mo', 'Median Swipes/mo', False))
+
+    if _chart_metrics:
+        _n_charts = len(_chart_metrics)
+        fig, axes = plt.subplots(1, _n_charts,
+                                  figsize=(5.5 * _n_charts, 6))
+        if _n_charts == 1:
+            axes = [axes]
+
+        _bar_colors = [_GRAD_COLORS.get(g, GEN_COLORS['muted'])
+                        for g in _df['Group']]
+        _bar_labels = [g.replace('Graduated to TH', 'Grad TH')
+                        .replace('Never Activated', 'NU 0')
+                        .replace('One-time NU 5+', '1x 5+')
+                        .replace('Repeat NU 5+', 'Repeat 5+')
+                        .replace('NU 1-4 Only', 'NU 1-4')
+                        for g in _df['Group']]
+
+        for ax, (col, ylabel, is_dollar) in zip(axes, _chart_metrics):
+            _vals = _df[col].tolist()
+            _x = np.arange(len(_vals))
+
+            bars = ax.bar(_x, _vals, color=_bar_colors,
+                          edgecolor='white', linewidth=1.5, width=0.6,
+                          zorder=3)
+
+            for bar, val, color in zip(bars, _vals, _bar_colors):
+                if pd.notna(val) and val > 0:
+                    _label = f'${val:,.0f}' if is_dollar else f'{val:.1f}'
+                    ax.text(bar.get_x() + bar.get_width() / 2,
+                            bar.get_height() + bar.get_height() * 0.02,
+                            _label, ha='center', va='bottom',
+                            fontsize=11, fontweight='bold', color=color)
+
+            ax.set_xticks(_x)
+            ax.set_xticklabels(_bar_labels, fontsize=10,
+                                fontweight='bold', rotation=20, ha='right')
+            ax.set_ylabel(ylabel, fontsize=12, fontweight='bold', labelpad=8)
+            if is_dollar:
+                ax.yaxis.set_major_formatter(
+                    mticker.FuncFormatter(gen_fmt_dollar))
+            gen_clean_axes(ax)
+            ax.yaxis.grid(True, color=GEN_COLORS['grid'],
+                          linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+
+        fig.suptitle("Graduation Effect: Deeper Engagement = Stronger Deposits",
+                      fontsize=22, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], y=1.02)
+        fig.text(0.5, 0.98,
+                 "All accounts started as non-card-users  |  "
+                 "Sorted by depth of program engagement",
+                 ha='center', fontsize=12,
+                 color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.subplots_adjust(top=0.86)
+        plt.show()
+
+    # =================================================================
+    # 5. Summary
+    # =================================================================
+    if _graduated.sum() > 0 and _never_activated.sum() > 0:
+        _grad_dep = _acct.loc[_graduated, 'mo_dep_amt'].median() if 'mo_dep_amt' in _acct.columns else 0
+        _zero_dep = _acct.loc[_never_activated, 'mo_dep_amt'].median() if 'mo_dep_amt' in _acct.columns else 0
+        _grad_bal = pd.to_numeric(_acct.loc[_graduated, 'balance'], errors='coerce').median() if 'balance' in _acct.columns else 0
+        _zero_bal = pd.to_numeric(_acct.loc[_never_activated, 'balance'], errors='coerce').median() if 'balance' in _acct.columns else 0
+
+        print(f"\n  Graduation impact (Graduated vs Never Activated):")
+        if _zero_dep > 0:
+            print(f"    Deposits: ${_grad_dep:,.0f} vs ${_zero_dep:,.0f}/mo "
+                  f"({(_grad_dep - _zero_dep) / _zero_dep * 100:+.0f}%)")
+        else:
+            print(f"    Deposits: ${_grad_dep:,.0f} vs ${_zero_dep:,.0f}/mo")
+        if _zero_bal > 0:
+            print(f"    Balance:  ${_grad_bal:,.0f} vs ${_zero_bal:,.0f} "
+                  f"({(_grad_bal - _zero_bal) / _zero_bal * 100:+.0f}%)")
+        else:
+            print(f"    Balance:  ${_grad_bal:,.0f} vs ${_zero_bal:,.0f}")
