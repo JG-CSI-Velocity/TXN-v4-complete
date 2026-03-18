@@ -19,13 +19,16 @@ else:
             if len(_g) == 0:
                 continue
             _row = {'Tier': tier, 'Group': grp, 'N': len(_g)}
-            for col, label in [
-                ('mo_swipes_3mo', 'Mo Swipes'), ('mo_spend_3mo', 'Mo Spend'),
-                ('mo_items_3mo', 'Mo Items'),
-                ('mo_dep_count', 'Mo Dep Ct'), ('mo_dep_amt', 'Mo Dep $'),
+            for col, label, agg in [
+                ('mo_swipes_3mo', 'Avg Swipes', 'mean'),
+                ('mo_spend_3mo', 'Avg Spend', 'mean'),
+                ('mo_items_3mo', 'Avg Items', 'mean'),
+                ('mo_dep_count', 'Med Dep Ct', 'median'),
+                ('mo_dep_amt', 'Med Dep $', 'median'),
+                ('mo_dep_amt', 'Avg Dep $', 'mean'),
             ]:
                 if col in _g.columns:
-                    _row[label] = _g[col].median()
+                    _row[label] = _g[col].median() if agg == 'median' else _g[col].mean()
             _rows.append(_row)
 
     _df = pd.DataFrame(_rows)
