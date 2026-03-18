@@ -1,114 +1,147 @@
 # ===========================================================================
-# SECTION 3B: MERGE ODD DATA & CREATE BUSINESS/PERSONAL SPLITS
+# ODDD ACCOUNT TYPE: Business/Personal Classification
 # ===========================================================================
+# Always classifies accounts from ODDD (rewards_df) as Business or Personal.
+# If transaction data (combined_df) exists, merges the flag onto it and
+# creates business_df / personal_df splits.
+# If no transaction data, still sets up the account-level classification
+# so deposit-only analysis can use it.
 
-# Clean up column names (remove leading/trailing spaces)
+# Clean up column names
 rewards_df.columns = rewards_df.columns.str.strip()
 
-# Check business flag distribution
-print(f"Business account distribution:")
-print(rewards_df['Business?'].value_counts())
+# -----------------------------------------------------------------------
+# 1. Build account-level Business/Personal flag from ODDD
+# -----------------------------------------------------------------------
+_biz_col = None
+for _c in rewards_df.columns:
+    if _c.strip().lower().replace(' ', '').replace('?', '') in ('business', 'businessflag', 'isbusiness'):
+        _biz_col = _c.strip()
+        break
 
-# Create a clean subset for merging
-odd_subset = rewards_df[['Acct Number', 'Business?']].copy()
-odd_subset.columns = ['account_number', 'business_flag']
-
-# Normalize account numbers to string (Excel loads as int/float, TSV as string)
-odd_subset['account_number'] = odd_subset['account_number'].astype(str).str.strip().str.replace(r'\.0$', '', regex=True)
-combined_df['primary_account_num'] = combined_df['primary_account_num'].astype(str).str.strip()
-
-# Drop stale merge columns so cell is safe to re-run
-for col in ['business_flag', 'account_number', 'business_flag_x', 'business_flag_y']:
-    if col in combined_df.columns:
-        combined_df.drop(columns=col, inplace=True)
-
-# Merge with transaction data
-combined_df = combined_df.merge(
-    odd_subset,
-    left_on='primary_account_num',
-    right_on='account_number',
-    how='left'
-)
-
-# Drop the redundant account_number column
-combined_df.drop('account_number', axis=1, inplace=True)
-
-# Check merge results
-print(f"\nMerge results:")
-print(f"  Total transactions: {len(combined_df):,}")
-print(f"  Matched to ODD: {combined_df['business_flag'].notna().sum():,}")
-print(f"  Unmatched: {combined_df['business_flag'].isna().sum():,}")
-
-# Debug: show sample account numbers from each side if match rate is low
-_match_rate = combined_df['business_flag'].notna().mean()
-if _match_rate < 0.5:
-    print(f"\n  WARNING: Low match rate ({_match_rate:.1%})")
-    print(f"  Sample txn acct nums: {combined_df['primary_account_num'].head(3).tolist()}")
-    print(f"  Sample ODDD acct nums: {odd_subset['account_number'].head(3).tolist()}")
-
-# Check what the actual values are
-print("\nBusiness flag unique values in merged data:")
-print(combined_df['business_flag'].value_counts())
-
-# Normalize business_flag values (handle Y/Yes/YES/True variants)
-_bf = combined_df['business_flag'].astype(str).str.strip().str.lower()
-combined_df['business_flag'] = _bf.map(
-    lambda v: 'Yes' if v in ('yes', 'y', 'true', '1') else ('No' if v in ('no', 'n', 'false', '0') else None)
-)
-
-# Split into business and personal
-business_df = combined_df[combined_df['business_flag'] == 'Yes'].copy()
-personal_df = combined_df[combined_df['business_flag'] == 'No'].copy()
-
-print(f"\nTransaction split:")
-print(f"  Business transactions: {len(business_df):,}")
-print(f"  Personal transactions: {len(personal_df):,}")
-print(f"  Unmatched transactions: {combined_df['business_flag'].isna().sum():,}")
-
-# ===========================================================================
-# CREATE YEAR_MONTH COLUMN FOR TIME-BASED ANALYSIS
-# ===========================================================================
-
-combined_df['transaction_date'] = pd.to_datetime(combined_df['transaction_date'])
-business_df['transaction_date'] = pd.to_datetime(business_df['transaction_date'])
-personal_df['transaction_date'] = pd.to_datetime(personal_df['transaction_date'])
-
-# ---------------------------------------------------------------------------
-# Dataset date range constants (available to ALL downstream folders)
-# ---------------------------------------------------------------------------
-DATASET_START  = combined_df['transaction_date'].min()
-DATASET_END    = combined_df['transaction_date'].max()
-DATASET_MONTHS = max(1, round((DATASET_END - DATASET_START).days / 30.44))
-DATASET_LABEL  = f"{DATASET_START.strftime('%b %Y')}-{DATASET_END.strftime('%b %Y')}"
-print(f"\nDataset period: {DATASET_LABEL} ({DATASET_MONTHS} months)")
-
-# Create year_month column in all dataframes
-if 'year_month' not in combined_df.columns:
-    combined_df['year_month'] = combined_df['transaction_date'].dt.to_period('M')
-    business_df['year_month'] = business_df['transaction_date'].dt.to_period('M')
-    personal_df['year_month'] = personal_df['transaction_date'].dt.to_period('M')
-    print(f"Created year_month column for time-based analysis")
-
-# ===========================================================================
-# FINAL VERIFICATION
-# ===========================================================================
-
-print(f"\nVerification:")
-print(f"  combined_df has 'merchant_consolidated': {'merchant_consolidated' in combined_df.columns}")
-print(f"  business_df has 'merchant_consolidated': {'merchant_consolidated' in business_df.columns}")
-print(f"  personal_df has 'merchant_consolidated': {'merchant_consolidated' in personal_df.columns}")
-print(f"  combined_df has 'year_month': {'year_month' in combined_df.columns}")
-print(f"  business_df has 'year_month': {'year_month' in business_df.columns}")
-print(f"  personal_df has 'year_month': {'year_month' in personal_df.columns}")
-
-if 'merchant_consolidated' not in business_df.columns:
-    print("\nWARNING: merchant_consolidated column missing!")
-    print("   Make sure Section 2 (Data Prep) ran before Section 3!")
-elif 'year_month' not in business_df.columns:
-    print("\nWARNING: year_month column missing!")
-    print("   This should not happen - check the code above!")
+if _biz_col is None:
+    print("  WARNING: No business flag column found in ODDD.")
+    print(f"    Searched columns: {[c for c in rewards_df.columns if 'bus' in c.lower()]}")
+    rewards_df['is_business'] = False
+    rewards_df['is_personal'] = True
 else:
-    print(f"\nReady for analysis.")
-    print(f"  Business unique merchants (consolidated): {business_df['merchant_consolidated'].nunique():,}")
-    print(f"  Personal unique merchants (consolidated): {personal_df['merchant_consolidated'].nunique():,}")
-    print(f"  Total months in dataset: {combined_df['year_month'].nunique()}")
+    print(f"  Business flag column: '{_biz_col}'")
+    print(f"  Raw distribution:")
+    print(rewards_df[_biz_col].value_counts().to_string(header=False))
+
+    _bf = rewards_df[_biz_col].astype(str).str.strip().str.lower()
+    rewards_df['is_business'] = _bf.isin(['yes', 'y', 'true', '1'])
+    rewards_df['is_personal'] = ~rewards_df['is_business']
+
+_n_biz = rewards_df['is_business'].sum()
+_n_per = rewards_df['is_personal'].sum()
+print(f"\n  Account classification (ODDD):")
+print(f"    Business: {_n_biz:,} ({_n_biz / len(rewards_df) * 100:.1f}%)")
+print(f"    Personal: {_n_per:,} ({_n_per / len(rewards_df) * 100:.1f}%)")
+
+# -----------------------------------------------------------------------
+# 2. If transaction data exists, merge and create splits
+# -----------------------------------------------------------------------
+if 'combined_df' in dir() and len(combined_df) > 0:
+    print(f"\n  Transaction data available ({len(combined_df):,} rows). Merging...")
+
+    # Build merge subset
+    _acct_col = None
+    for _c in ['Acct Number', 'Acct ID', 'acctid', 'HASHED_ACCOUNT']:
+        if _c in rewards_df.columns:
+            _acct_col = _c
+            break
+
+    if _acct_col is None:
+        print("    WARNING: No account ID column found for merge.")
+    else:
+        odd_subset = rewards_df[[_acct_col, 'is_business']].copy()
+        odd_subset.columns = ['account_number', 'business_flag']
+        odd_subset['account_number'] = (
+            odd_subset['account_number'].astype(str).str.strip()
+            .str.replace(r'\.0$', '', regex=True)
+        )
+        odd_subset['business_flag'] = odd_subset['business_flag'].map(
+            {True: 'Yes', False: 'No'}
+        )
+
+        # Find matching column in combined_df
+        _txn_acct_col = None
+        for _c in ['primary_account_num', 'account_number', 'acct_number']:
+            if _c in combined_df.columns:
+                _txn_acct_col = _c
+                break
+
+        if _txn_acct_col:
+            combined_df[_txn_acct_col] = (
+                combined_df[_txn_acct_col].astype(str).str.strip()
+            )
+
+            # Drop stale merge columns so cell is safe to re-run
+            for col in ['business_flag', 'account_number',
+                        'business_flag_x', 'business_flag_y']:
+                if col in combined_df.columns:
+                    combined_df.drop(columns=col, inplace=True)
+
+            combined_df = combined_df.merge(
+                odd_subset,
+                left_on=_txn_acct_col,
+                right_on='account_number',
+                how='left'
+            )
+            if 'account_number' in combined_df.columns:
+                combined_df.drop('account_number', axis=1, inplace=True)
+
+            print(f"    Merged on {_txn_acct_col}:")
+            print(f"    Matched: {combined_df['business_flag'].notna().sum():,}")
+            print(f"    Unmatched: {combined_df['business_flag'].isna().sum():,}")
+
+            # Split into business and personal
+            business_df = combined_df[combined_df['business_flag'] == 'Yes'].copy()
+            personal_df = combined_df[combined_df['business_flag'] == 'No'].copy()
+
+            print(f"\n  Transaction split:")
+            print(f"    Business: {len(business_df):,}")
+            print(f"    Personal: {len(personal_df):,}")
+
+            # Year-month and date range
+            combined_df['transaction_date'] = pd.to_datetime(
+                combined_df['transaction_date'])
+            business_df['transaction_date'] = pd.to_datetime(
+                business_df['transaction_date'])
+            personal_df['transaction_date'] = pd.to_datetime(
+                personal_df['transaction_date'])
+
+            DATASET_START = combined_df['transaction_date'].min()
+            DATASET_END = combined_df['transaction_date'].max()
+            DATASET_MONTHS = max(
+                1, round((DATASET_END - DATASET_START).days / 30.44))
+            DATASET_LABEL = (
+                f"{DATASET_START.strftime('%b %Y')}-"
+                f"{DATASET_END.strftime('%b %Y')}"
+            )
+            print(f"\n  Dataset period: {DATASET_LABEL} ({DATASET_MONTHS} months)")
+
+            if 'year_month' not in combined_df.columns:
+                combined_df['year_month'] = (
+                    combined_df['transaction_date'].dt.to_period('M'))
+                business_df['year_month'] = (
+                    business_df['transaction_date'].dt.to_period('M'))
+                personal_df['year_month'] = (
+                    personal_df['transaction_date'].dt.to_period('M'))
+
+            print(f"\n  Ready for analysis (transactions + ODDD).")
+        else:
+            print(f"    WARNING: No account column found in combined_df.")
+            print(f"    Available: {[c for c in combined_df.columns if 'acct' in c.lower() or 'account' in c.lower()]}")
+
+else:
+    print(f"\n  No transaction data (combined_df). Deposits-only mode.")
+    print(f"  Account types set on rewards_df (is_business / is_personal).")
+    # Create empty placeholders so downstream cells don't crash
+    business_df = pd.DataFrame()
+    personal_df = pd.DataFrame()
+    DATASET_START = None
+    DATASET_END = None
+    DATASET_MONTHS = 0
+    DATASET_LABEL = 'N/A (no transactions)'
