@@ -1,0 +1,324 @@
+# ===========================================================================
+# 2024 RESPONDER TRAJECTORY: Long-Term Behavior Into 2025
+# ===========================================================================
+# Classifies accounts by 2024 response status, then tracks their
+# monthly spend/swipe behavior through 2025 plus deposit snapshots.
+#
+# Groups:
+#   2024 Responder -- hit NU 5+ or TH in any 2024 Resp column
+#   2024 Non-Responder -- mailed in 2024 but never responded in 2024
+#
+# Depends on: rewards_df (00-setup/08), deposit_long (23/01),
+#             DEPOSIT_JOIN_KEY_ODDD, DEPOSIT_JOIN_KEY_DEPOSIT,
+#             SNAPSHOT_ORDER, SNAPSHOT_CONFIG, GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available. Run 00-setup cells first.")
+else:
+    from IPython.display import display
+
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+
+    # -----------------------------------------------------------------
+    # 1. Classify accounts by 2024 response
+    # -----------------------------------------------------------------
+    _mail_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
+        key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
+    _resp_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Resp')],
+        key=lambda c: pd.to_datetime(c.replace(' Resp', ''), format='%b%y'))
+
+    # 2024 mailers only
+    _mail_2024 = [c for c in _mail_cols
+                   if pd.to_datetime(c.replace(' Mail', ''), format='%b%y').year == 2024]
+    _resp_2024 = [c for c in _resp_cols
+                   if pd.to_datetime(c.replace(' Resp', ''), format='%b%y').year == 2024]
+
+    print(f"  2024 Mail columns: {[c.replace(' Mail', '') for c in _mail_2024]}")
+    print(f"  2024 Resp columns: {[c.replace(' Resp', '') for c in _resp_2024]}")
+
+    def _is_success(val):
+        if pd.isna(val):
+            return False
+        v = str(val).strip().upper()
+        if not v or v == 'NAN':
+            return False
+        if 'NU' in v:
+            return '5+' in v or '5 +' in v
+        return True
+
+    # Mailed in 2024
+    _mailed_2024 = rewards_df[_mail_2024].notna().any(axis=1)
+
+    # Responded in 2024 (at least once)
+    _responded_2024 = pd.Series(False, index=rewards_df.index)
+    for rc in _resp_2024:
+        _responded_2024 |= rewards_df[rc].apply(_is_success)
+
+    _group = pd.Series('Not Mailed 2024', index=rewards_df.index)
+    _group[_mailed_2024 & ~_responded_2024] = '2024 Non-Responder'
+    _group[_responded_2024] = '2024 Responder'
+
+    _grp_counts = _group.value_counts()
+    for g in ['2024 Responder', '2024 Non-Responder', 'Not Mailed 2024']:
+        print(f"  {g}: {_grp_counts.get(g, 0):,}")
+
+    # -----------------------------------------------------------------
+    # 2. Monthly spend/swipes through 2025
+    # -----------------------------------------------------------------
+    _spend_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Spend')
+         and c.strip()[0].isupper()
+         and len(c.strip().split(' ')[0]) in (5, 6)
+         and c.strip().split(' ')[0][:3] in _VALID_MON],
+        key=lambda c: pd.to_datetime(c.strip().replace(' Spend', ''), format='%b%y'))
+
+    _swipe_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Swipes')
+         and c.strip()[0].isupper()
+         and len(c.strip().split(' ')[0]) in (5, 6)
+         and c.strip().split(' ')[0][:3] in _VALID_MON],
+        key=lambda c: pd.to_datetime(c.strip().replace(' Swipes', ''), format='%b%y'))
+
+    # Start from mid-2024 to show before + after
+    _start = pd.Timestamp('2024-07-01')
+    _spend_track = [(c, pd.to_datetime(c.replace(' Spend', ''), format='%b%y'))
+                     for c in _spend_cols
+                     if pd.to_datetime(c.replace(' Spend', ''), format='%b%y') >= _start]
+    _swipe_track = [(c, pd.to_datetime(c.replace(' Swipes', ''), format='%b%y'))
+                     for c in _swipe_cols
+                     if pd.to_datetime(c.replace(' Swipes', ''), format='%b%y') >= _start]
+
+    print(f"  Tracking months: {_spend_track[0][0].replace(' Spend', '')} to "
+          f"{_spend_track[-1][0].replace(' Spend', '')}")
+
+    # Build monthly averages by group
+    _TRACK_GROUPS = ['2024 Responder', '2024 Non-Responder']
+    _GROUP_COLORS = {
+        '2024 Responder': GEN_COLORS['success'],
+        '2024 Non-Responder': GEN_COLORS['muted'],
+    }
+
+    # -----------------------------------------------------------------
+    # 3. Chart: Monthly Spend Trajectory
+    # -----------------------------------------------------------------
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(16, 12))
+
+    for grp in _TRACK_GROUPS:
+        _mask = _group == grp
+        _dates = [d for _, d in _spend_track]
+        _vals = [pd.to_numeric(rewards_df.loc[_mask, c], errors='coerce').fillna(0).mean()
+                 for c, _ in _spend_track]
+
+        ax1.plot(_dates, _vals, color=_GROUP_COLORS[grp], linewidth=2.5,
+                 marker='o', markersize=6, markeredgecolor='white',
+                 markeredgewidth=1.5,
+                 label=f"{grp} ({_mask.sum():,})", zorder=5)
+
+    # Mark 2024 mailer dates
+    for mc in _mail_2024:
+        _wd = pd.to_datetime(mc.replace(' Mail', ''), format='%b%y')
+        ax1.axvline(x=_wd, color=GEN_COLORS['accent'],
+                    linewidth=1, linestyle=':', alpha=0.4, zorder=2)
+
+    # Mark 2025 boundary
+    ax1.axvline(x=pd.Timestamp('2025-01-01'), color=GEN_COLORS['primary'],
+                linewidth=2, linestyle='--', alpha=0.6, zorder=3)
+    ax1.text(pd.Timestamp('2025-01-15'), ax1.get_ylim()[1] * 0.95 if ax1.get_ylim()[1] > 0 else 100,
+             '2025', fontsize=14, fontweight='bold',
+             color=GEN_COLORS['primary'], alpha=0.7)
+
+    ax1.set_ylabel("Avg Monthly Spend ($)", fontsize=14, fontweight='bold', labelpad=10)
+    ax1.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+    gen_clean_axes(ax1)
+    ax1.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax1.set_axisbelow(True)
+    ax1.legend(fontsize=12, loc='upper left', frameon=True,
+               facecolor='white', edgecolor=GEN_COLORS['grid'])
+    ax1.set_title("2024 Responders vs Non-Responders: Monthly Spend",
+                   fontsize=22, fontweight='bold',
+                   color=GEN_COLORS['dark_text'], pad=15, loc='left')
+    fig.autofmt_xdate(rotation=45)
+
+    # -----------------------------------------------------------------
+    # 4. Chart: Monthly Swipes Trajectory
+    # -----------------------------------------------------------------
+    for grp in _TRACK_GROUPS:
+        _mask = _group == grp
+        _dates = [d for _, d in _swipe_track]
+        _vals = [pd.to_numeric(rewards_df.loc[_mask, c], errors='coerce').fillna(0).mean()
+                 for c, _ in _swipe_track]
+
+        ax2.plot(_dates, _vals, color=_GROUP_COLORS[grp], linewidth=2.5,
+                 marker='o', markersize=6, markeredgecolor='white',
+                 markeredgewidth=1.5,
+                 label=f"{grp} ({_mask.sum():,})", zorder=5)
+
+    for mc in _mail_2024:
+        _wd = pd.to_datetime(mc.replace(' Mail', ''), format='%b%y')
+        ax2.axvline(x=_wd, color=GEN_COLORS['accent'],
+                    linewidth=1, linestyle=':', alpha=0.4, zorder=2)
+
+    ax2.axvline(x=pd.Timestamp('2025-01-01'), color=GEN_COLORS['primary'],
+                linewidth=2, linestyle='--', alpha=0.6, zorder=3)
+
+    ax2.set_ylabel("Avg Monthly Swipes", fontsize=14, fontweight='bold', labelpad=10)
+    ax2.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
+    gen_clean_axes(ax2)
+    ax2.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax2.set_axisbelow(True)
+    ax2.legend(fontsize=12, loc='upper left', frameon=True,
+               facecolor='white', edgecolor=GEN_COLORS['grid'])
+    ax2.set_title("2024 Responders vs Non-Responders: Monthly Swipes",
+                   fontsize=22, fontweight='bold',
+                   color=GEN_COLORS['dark_text'], pad=15, loc='left')
+
+    plt.tight_layout()
+    plt.show()
+
+    # -----------------------------------------------------------------
+    # 5. Deposit snapshot trajectory (if Z5 available)
+    # -----------------------------------------------------------------
+    if ('deposit_long' in dir() and len(deposit_long) > 0
+            and 'DEPOSIT_JOIN_KEY_ODDD' in dir()
+            and 'DEPOSIT_JOIN_KEY_DEPOSIT' in dir()
+            and 'SNAPSHOT_ORDER' in dir()):
+
+        _snap_dates = {}
+        if 'SNAPSHOT_CONFIG' in dir():
+            for sk in SNAPSHOT_ORDER:
+                cfg = SNAPSHOT_CONFIG[sk]
+                try:
+                    _snap_dates[sk] = pd.to_datetime(cfg['label'], format='%b %Y')
+                except (ValueError, KeyError):
+                    if 'sort_key' in cfg:
+                        _snap_dates[sk] = pd.Timestamp(
+                            year=cfg['sort_key'] // 100,
+                            month=cfg['sort_key'] % 100, day=1)
+
+        # Build join key
+        _jk = rewards_df[DEPOSIT_JOIN_KEY_ODDD].astype(str).str.strip()
+
+        fig, ax = plt.subplots(figsize=(14, 7))
+
+        for grp in _TRACK_GROUPS:
+            _mask = _group == grp
+            _grp_keys = set(_jk[_mask])
+            _snap_vals = []
+            _snap_labels = []
+
+            for sk in SNAPSHOT_ORDER:
+                if sk not in _snap_dates:
+                    continue
+                _snap = deposit_long[deposit_long['snapshot'] == sk]
+                if 'balance' not in _snap.columns or DEPOSIT_JOIN_KEY_DEPOSIT not in _snap.columns:
+                    continue
+                _sk = _snap[DEPOSIT_JOIN_KEY_DEPOSIT].astype(str).str.strip()
+                _matched = _snap[_sk.isin(_grp_keys)]
+                if len(_matched) > 0:
+                    _snap_vals.append(_matched['balance'].median())
+                    _cfg_label = (SNAPSHOT_CONFIG[sk]['label']
+                                  if 'SNAPSHOT_CONFIG' in dir() and sk in SNAPSHOT_CONFIG
+                                  else sk)
+                    _snap_labels.append(_cfg_label)
+
+            if _snap_vals:
+                ax.plot(range(len(_snap_vals)), _snap_vals,
+                        color=_GROUP_COLORS[grp], linewidth=3,
+                        marker='o', markersize=9, markeredgecolor='white',
+                        markeredgewidth=2,
+                        label=f"{grp} ({_mask.sum():,})", zorder=5)
+
+                for i, v in enumerate(_snap_vals):
+                    ax.text(i, v, f"${v:,.0f}",
+                            ha='center', va='bottom', fontsize=12,
+                            fontweight='bold', color=_GROUP_COLORS[grp])
+
+        ax.set_xticks(range(len(_snap_labels)))
+        ax.set_xticklabels(_snap_labels, fontsize=13, fontweight='bold')
+        ax.set_ylabel("Median Balance", fontsize=14, fontweight='bold', labelpad=10)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+        gen_clean_axes(ax)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+        ax.legend(fontsize=12, loc='upper left', frameon=True,
+                  facecolor='white', edgecolor=GEN_COLORS['grid'])
+        ax.set_title("Deposit Balance: 2024 Responders vs Non-Responders",
+                      fontsize=22, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=15, loc='left')
+        ax.text(0.0, 1.02, "Median balance at each Z5 snapshot",
+                transform=ax.transAxes, fontsize=12,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()
+
+    # -----------------------------------------------------------------
+    # 6. Styled summary table
+    # -----------------------------------------------------------------
+    _summary_rows = []
+    for grp in _TRACK_GROUPS:
+        _mask = _group == grp
+        _g = rewards_df[_mask]
+
+        # 2024 H2 avg spend (Jul-Dec 2024)
+        _h2_2024_spend = [c for c in _spend_cols
+                           if pd.to_datetime(c.replace(' Spend', ''), format='%b%y') >= pd.Timestamp('2024-07-01')
+                           and pd.to_datetime(c.replace(' Spend', ''), format='%b%y') <= pd.Timestamp('2024-12-31')]
+        # 2025 avg spend
+        _2025_spend = [c for c in _spend_cols
+                        if pd.to_datetime(c.replace(' Spend', ''), format='%b%y').year == 2025]
+
+        _row = {'Group': grp, 'Accounts': _mask.sum()}
+
+        if _h2_2024_spend:
+            _row['2024 H2 Avg Spend'] = _g[_h2_2024_spend].apply(
+                pd.to_numeric, errors='coerce').fillna(0).mean(axis=1).mean()
+        if _2025_spend:
+            _row['2025 Avg Spend'] = _g[_2025_spend].apply(
+                pd.to_numeric, errors='coerce').fillna(0).mean(axis=1).mean()
+
+        if '2024 H2 Avg Spend' in _row and '2025 Avg Spend' in _row:
+            _row['Spend Change'] = _row['2025 Avg Spend'] - _row['2024 H2 Avg Spend']
+
+        _summary_rows.append(_row)
+
+    _summary_df = pd.DataFrame(_summary_rows)
+
+    _fmt = {
+        'Accounts': '{:,.0f}',
+        '2024 H2 Avg Spend': '${:,.1f}',
+        '2025 Avg Spend': '${:,.1f}',
+        'Spend Change': lambda v: (f"+${v:,.1f}" if pd.notna(v) and v >= 0
+                                    else f"-${abs(v):,.1f}" if pd.notna(v) else '--'),
+    }
+
+    def _color_change(col):
+        if col.name != 'Spend Change':
+            return [''] * len(col)
+        return [
+            f'color: {GEN_COLORS["success"]}' if pd.notna(v) and v > 0
+            else f'color: {GEN_COLORS["accent"]}' if pd.notna(v) and v < 0
+            else '' for v in col
+        ]
+
+    _styled = (
+        _summary_df.style.hide(axis='index')
+        .format({k: v for k, v in _fmt.items() if k in _summary_df.columns}, na_rep='--')
+        .apply(_color_change)
+        .set_properties(**{'font-size': '14px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '10px 12px'})
+        .set_properties(subset=['Group'], **{
+            'text-align': 'left', 'color': GEN_COLORS['primary']})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '14px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '10px 12px')]},
+            {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                ('padding-bottom', '12px')]},
+        ])
+        .set_caption("2024 Response Status: Long-Term Spend Trajectory")
+    )
+    display(_styled)
