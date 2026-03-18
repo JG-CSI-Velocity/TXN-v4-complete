@@ -1,0 +1,308 @@
+# ===========================================================================
+# DEPOSIT GROWTH PROOF: YoY Deposit Change by Response Segment
+# ===========================================================================
+# Two Z5 snapshots one year apart give us depAmt365 at each point.
+# Delta = Mar26_depAmt365 - Mar25_depAmt365 = year-over-year deposit change.
+#
+# Table: 5 Resp rows + 5 NR rows (by segment), with:
+#   Mar25 Dep $/mo, Mar26 Dep $/mo, Delta $/mo, % Change
+#
+# Grouped bar chart: delta by segment, R vs NR side by side.
+# THIS is the deposit proof -- did responders grow deposits more?
+#
+# Depends on: rewards_df, _acct (cell 04), deposit_long, SNAPSHOT_ORDER,
+#             PROGRAM_SEG_ORDER, GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+elif '_acct' not in dir():
+    print("    Run cell 04 first.")
+elif 'mo_dep_amt_delta' not in _acct.columns:
+    print("    No deposit deltas. Need 2+ Z5 snapshots (cell 01 + cell 04).")
+else:
+    from IPython.display import display
+
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+
+    _mail_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
+        key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
+    _resp_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Resp')],
+        key=lambda c: pd.to_datetime(c.replace(' Resp', ''), format='%b%y'))
+
+    # Snapshot labels for column headers
+    _loaded_snaps = [k for k in SNAPSHOT_ORDER
+                     if k in deposit_long['snapshot'].unique()]
+    _early_label = SNAPSHOT_CONFIG[_loaded_snaps[0]]['label']
+    _late_label = SNAPSHOT_CONFIG[_loaded_snaps[-1]]['label']
+
+    print(f"  Deposit growth: {_early_label} -> {_late_label}")
+
+    def _parse_seg(val):
+        if pd.isna(val): return None
+        v = str(val).strip().upper()
+        if 'TH-25' in v or 'TH 25' in v or 'TH25' in v: return 'TH-25'
+        if 'TH-20' in v or 'TH 20' in v or 'TH20' in v: return 'TH-20'
+        if 'TH-15' in v or 'TH 15' in v or 'TH15' in v: return 'TH-15'
+        if 'TH-10' in v or 'TH 10' in v or 'TH10' in v: return 'TH-10'
+        if v.startswith('NU') or 'NON-USER' in v: return 'NU'
+        return None
+
+    def _is_success(val):
+        if pd.isna(val): return False
+        v = str(val).strip().upper()
+        if not v or v == 'NAN': return False
+        if 'NU' in v: return '5+' in v or '5 +' in v
+        return True
+
+    _eligible = rewards_df.reindex(_acct.index)
+
+    # Classify accounts by segment and response status
+    _SEG_RANK = {'NU': 1, 'TH-10': 2, 'TH-15': 3, 'TH-20': 4, 'TH-25': 5}
+    _resp_segment = pd.Series(np.nan, index=_acct.index, dtype='object')
+    _acct_seg = pd.Series(np.nan, index=_acct.index, dtype='object')
+    _mailed = pd.Series(False, index=_acct.index)
+    _acct_resp = pd.Series(False, index=_acct.index)
+
+    for mc in _mail_cols:
+        _month = mc.replace(' Mail', '')
+        _rc = f"{_month} Resp"
+        if _rc not in _eligible.columns:
+            continue
+        _m = _eligible[mc].notna()
+        _mailed |= _m
+        _resp = _eligible[_rc].apply(_is_success)
+        _seg = _eligible[mc].apply(_parse_seg)
+
+        _has_seg = _m & _seg.notna()
+        _acct_seg[_has_seg] = _seg[_has_seg]
+        _acct_resp |= (_m & _resp)
+
+        for idx in _eligible.index[_m & _resp]:
+            _new_seg = _seg[idx]
+            _old_seg = _resp_segment[idx]
+            if pd.isna(_old_seg):
+                _resp_segment[idx] = _new_seg
+            elif _new_seg and _SEG_RANK.get(_new_seg, 0) > _SEG_RANK.get(_old_seg, 0):
+                _resp_segment[idx] = _new_seg
+
+    _responded = _resp_segment.notna()
+
+    # Require both snapshots for valid delta
+    _has_both = (
+        _acct['depAmt365'].notna()
+        & _acct['depAmt365_early'].notna()
+    )
+    print(f"  Accounts with both snapshots: {_has_both.sum():,}")
+    print(f"  Mailed: {_mailed.sum():,}, Responded: {_responded.sum():,}")
+
+    # Build groups: Resp then NR by segment
+    _groups = []
+    for seg in PROGRAM_SEG_ORDER:
+        _mask = (_resp_segment == seg) & _has_both
+        if _mask.sum() > 0:
+            _groups.append((f'{seg} Resp', _mask))
+
+    for seg in PROGRAM_SEG_ORDER:
+        _seg_nr = (_acct_seg == seg) & ~_acct_resp & _has_both
+        if _seg_nr.sum() > 0:
+            _groups.append((f'{seg} NR', _seg_nr))
+
+    _rows = []
+    for label, mask in _groups:
+        _g = _acct[mask]
+        _n = len(_g)
+        if _n == 0:
+            continue
+
+        _row = {'Group': label, 'N': _n}
+
+        # Early snapshot deposits
+        if 'mo_dep_amt_early' in _g.columns:
+            _row[f'{_early_label} $/mo'] = _g['mo_dep_amt_early'].median()
+        # Latest snapshot deposits
+        if 'mo_dep_amt' in _g.columns:
+            _row[f'{_late_label} $/mo'] = _g['mo_dep_amt'].median()
+        # Delta
+        if 'mo_dep_amt_delta' in _g.columns:
+            _row['Delta $/mo'] = _g['mo_dep_amt_delta'].median()
+        # % change
+        if 'mo_dep_amt_early' in _g.columns and 'mo_dep_amt' in _g.columns:
+            _med_early = _g['mo_dep_amt_early'].median()
+            _med_late = _g['mo_dep_amt'].median()
+            if _med_early > 0:
+                _row['% Change'] = ((_med_late - _med_early) / _med_early) * 100
+
+        # Deposit count delta
+        if 'mo_dep_count_early' in _g.columns:
+            _row[f'{_early_label} Ct/mo'] = _g['mo_dep_count_early'].median()
+        if 'mo_dep_count' in _g.columns:
+            _row[f'{_late_label} Ct/mo'] = _g['mo_dep_count'].median()
+
+        _rows.append(_row)
+
+    _df = pd.DataFrame(_rows)
+    for _rc in _df.columns:
+        if _rc not in ('Group', 'N') and _df[_rc].dtype in ('float64', 'float32'):
+            _df[_rc] = _df[_rc].round(1)
+
+    # Find where NR rows start for separator
+    _nr_start = None
+    for i, row in _df.iterrows():
+        if 'NR' in str(row['Group']) and _nr_start is None:
+            _nr_start = i
+
+    def _style_rows(row):
+        parts = []
+        if 'Resp' in str(_df.loc[row.name, 'Group']):
+            parts.append('background-color: rgba(46, 196, 182, 0.08)')
+        if row.name == _nr_start:
+            parts.append('border-top: 2px solid #1B2A4A')
+        return ['; '.join(parts) if parts else ''] * len(row)
+
+    def _color_grp(col):
+        if col.name != 'Group': return [''] * len(col)
+        return [f'color: {GEN_COLORS["success"]}' if 'Resp' in str(v)
+                else f'color: {GEN_COLORS["muted"]}' for v in col]
+
+    def _color_delta(col):
+        if 'Delta' not in col.name and '% Change' not in col.name:
+            return [''] * len(col)
+        styles = []
+        for v in col:
+            if pd.notna(v) and v > 0:
+                styles.append(f'color: {GEN_COLORS["success"]}')
+            elif pd.notna(v) and v < 0:
+                styles.append(f'color: {GEN_COLORS["accent"]}')
+            else:
+                styles.append('')
+        return styles
+
+    _fmt = {'N': '{:,.0f}'}
+    for c in _df.columns:
+        if c in ('Group', 'N'):
+            continue
+        elif '% Change' in c:
+            _fmt[c] = '{:+.1f}%'
+        elif '$' in c or 'Delta' in c:
+            _fmt[c] = '${:,.0f}'
+        elif 'Ct' in c:
+            _fmt[c] = '{:,.1f}'
+
+    _styled = (
+        _df.style.hide(axis='index')
+        .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+        .apply(_style_rows, axis=1)
+        .apply(_color_grp)
+        .apply(_color_delta)
+        .set_properties(**{'font-size': '14px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '10px 12px'})
+        .set_properties(subset=['Group'], **{'text-align': 'left'})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '14px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '10px 12px')]},
+            {'selector': 'caption', 'props': [('font-size', '24px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                ('padding-bottom', '14px')]},
+        ])
+        .set_caption(f"Deposit Growth Proof: {_early_label} to {_late_label}")
+    )
+    display(_styled)
+
+    # -----------------------------------------------------------------
+    # Grouped bar chart: YoY deposit delta by segment, R vs NR
+    # -----------------------------------------------------------------
+    if 'Delta $/mo' in _df.columns:
+        _seg_order = [s for s in PROGRAM_SEG_ORDER
+                       if f'{s} Resp' in _df['Group'].values
+                       or f'{s} NR' in _df['Group'].values]
+
+        if _seg_order:
+            fig, ax = plt.subplots(figsize=(14, 7))
+
+            _x = np.arange(len(_seg_order))
+            _bw = 0.35
+            _r_vals = []
+            _nr_vals = []
+
+            for seg in _seg_order:
+                _r_row = _df[_df['Group'] == f'{seg} Resp']
+                _nr_row = _df[_df['Group'] == f'{seg} NR']
+                _r_vals.append(
+                    _r_row['Delta $/mo'].iloc[0] if len(_r_row) > 0 else 0)
+                _nr_vals.append(
+                    _nr_row['Delta $/mo'].iloc[0] if len(_nr_row) > 0 else 0)
+
+            bars_r = ax.bar(_x - _bw/2, _r_vals, _bw,
+                            color=GEN_COLORS['success'], edgecolor='white',
+                            linewidth=1.5, label='Responder', zorder=3)
+            bars_nr = ax.bar(_x + _bw/2, _nr_vals, _bw,
+                             color=GEN_COLORS['muted'], edgecolor='white',
+                             linewidth=1.5, label='Non-Responder', zorder=3)
+
+            for bar, val in zip(bars_r, _r_vals):
+                if pd.notna(val) and val != 0:
+                    _sign = '+' if val > 0 else ''
+                    ax.text(bar.get_x() + bar.get_width() / 2,
+                            bar.get_height() + (20 if val >= 0 else -40),
+                            f"{_sign}${val:,.0f}",
+                            ha='center', va='bottom' if val >= 0 else 'top',
+                            fontsize=11, fontweight='bold',
+                            color=GEN_COLORS['success'])
+
+            for bar, val in zip(bars_nr, _nr_vals):
+                if pd.notna(val) and val != 0:
+                    _sign = '+' if val > 0 else ''
+                    ax.text(bar.get_x() + bar.get_width() / 2,
+                            bar.get_height() + (20 if val >= 0 else -40),
+                            f"{_sign}${val:,.0f}",
+                            ha='center', va='bottom' if val >= 0 else 'top',
+                            fontsize=11, fontweight='bold',
+                            color=GEN_COLORS['muted'])
+
+            ax.axhline(0, color=GEN_COLORS['dark_text'], linewidth=0.8,
+                        linestyle='-', zorder=2)
+
+            ax.set_xticks(_x)
+            ax.set_xticklabels(_seg_order, fontsize=13, fontweight='bold')
+            ax.set_ylabel("Median Deposit Change ($/mo)", fontsize=14,
+                           fontweight='bold', labelpad=10)
+            ax.yaxis.set_major_formatter(
+                mticker.FuncFormatter(gen_fmt_dollar))
+            gen_clean_axes(ax)
+            ax.yaxis.grid(True, color=GEN_COLORS['grid'],
+                          linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+            ax.legend(fontsize=13, loc='upper left', frameon=True,
+                      facecolor='white', edgecolor=GEN_COLORS['grid'])
+
+            ax.set_title(
+                f"Year-over-Year Deposit Growth: {_early_label} to {_late_label}",
+                fontsize=22, fontweight='bold',
+                color=GEN_COLORS['dark_text'], pad=35, loc='left')
+            ax.text(0.0, 1.02,
+                    "Median monthly deposit change per account  |  "
+                    "Teal = responded, Gray = did not",
+                    transform=ax.transAxes, fontsize=12,
+                    color=GEN_COLORS['muted'], style='italic')
+
+            plt.tight_layout()
+            plt.show()
+
+            # Quick summary: responder advantage
+            _r_all = _acct[_acct.index.isin(
+                pd.concat([_acct[m] for _, m in _groups
+                           if 'Resp' in _], ignore_index=True).index
+            ) if False else _responded & _has_both]
+            _nr_all = _mailed & ~_responded & _has_both
+
+            if _r_all.sum() > 0 and _nr_all.sum() > 0:
+                _r_med = _acct.loc[_r_all, 'mo_dep_amt_delta'].median()
+                _nr_med = _acct.loc[_nr_all, 'mo_dep_amt_delta'].median()
+                _adv = _r_med - _nr_med
+                print(f"\n  Responder advantage (all segments):")
+                print(f"    Resp median delta:     ${_r_med:+,.0f}/mo")
+                print(f"    NR median delta:       ${_nr_med:+,.0f}/mo")
+                print(f"    Responder advantage:   ${_adv:+,.0f}/mo")

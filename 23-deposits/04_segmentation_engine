@@ -122,6 +122,85 @@ else:
                 _acct = _acct.join(_dep, on='_join_key', how='left')
                 print(f"  Z5: {_latest_snap}, matched {_acct[_dep_cols[0]].notna().sum():,}")
 
+        # -----------------------------------------------------------
+        # Earlier snapshot: pull deposit fields for delta computation
+        # -----------------------------------------------------------
+        _loaded_snaps = [k for k in SNAPSHOT_ORDER
+                         if k in deposit_long['snapshot'].unique()]
+        if len(_loaded_snaps) >= 2:
+            _earliest_snap = _loaded_snaps[0]
+            _snap_early = deposit_long[
+                deposit_long['snapshot'] == _earliest_snap
+            ].copy()
+            if DEPOSIT_JOIN_KEY_DEPOSIT in _snap_early.columns:
+                _snap_early['_join_key'] = (
+                    _snap_early[DEPOSIT_JOIN_KEY_DEPOSIT]
+                    .astype(str).str.strip()
+                )
+                _early_fields = [c for c in [
+                    'DepAmt33', 'DepAmt66', 'DepAmt99',
+                    'DepCount33', 'DepCount66', 'DepCount99',
+                    'depAmt365', 'depCount365',
+                ] if c in _snap_early.columns]
+
+                if _early_fields:
+                    _early_rename = {
+                        c: f'{c}_early' for c in _early_fields
+                    }
+                    _dep_early = (
+                        _snap_early[['_join_key'] + _early_fields]
+                        .drop_duplicates(subset='_join_key')
+                        .rename(columns=_early_rename)
+                        .set_index('_join_key')
+                    )
+                    _acct = _acct.join(_dep_early, on='_join_key', how='left')
+                    _matched_early = _acct[f'{_early_fields[0]}_early'].notna().sum()
+                    print(f"  Z5 early: {_earliest_snap}, matched {_matched_early:,}")
+
+                    # YoY deposit deltas
+                    for _fc in _early_fields:
+                        _ec = f'{_fc}_early'
+                        _dc = f'{_fc}_delta'
+                        if _fc in _acct.columns and _ec in _acct.columns:
+                            _acct[_dc] = (
+                                _acct[_fc].fillna(0) - _acct[_ec].fillna(0)
+                            )
+
+                    # Derived deltas: monthly deposit $ and count
+                    if 'depAmt365' in _acct.columns and 'depAmt365_early' in _acct.columns:
+                        _acct['mo_dep_amt_early'] = _acct['depAmt365_early'] / 12
+                        _acct['mo_dep_amt_delta'] = (
+                            _acct['depAmt365'].fillna(0) / 12
+                            - _acct['depAmt365_early'].fillna(0) / 12
+                        )
+                    if 'depCount365' in _acct.columns and 'depCount365_early' in _acct.columns:
+                        _acct['mo_dep_count_early'] = _acct['depCount365_early'] / 12
+                        _acct['mo_dep_count_delta'] = (
+                            _acct['depCount365'].fillna(0) / 12
+                            - _acct['depCount365_early'].fillna(0) / 12
+                        )
+
+                    # Early-snapshot acceleration (33d/66d ratio)
+                    if 'DepAmt33_early' in _acct.columns and 'DepAmt66_early' in _acct.columns:
+                        _acct['dep_accel_amt_early'] = np.where(
+                            _acct['DepAmt66_early'] > 0,
+                            _acct['DepAmt33_early'] / _acct['DepAmt66_early'],
+                            np.nan)
+                    if 'DepCount33_early' in _acct.columns and 'DepCount66_early' in _acct.columns:
+                        _acct['dep_accel_count_early'] = np.where(
+                            _acct['DepCount66_early'] > 0,
+                            _acct['DepCount33_early'] / _acct['DepCount66_early'],
+                            np.nan)
+
+                    print(f"  Deposit deltas: {_earliest_snap} -> {_latest_snap}")
+                    _has_both = (
+                        _acct['depAmt365'].notna()
+                        & _acct['depAmt365_early'].notna()
+                    )
+                    print(f"  Accounts with both snapshots: {_has_both.sum():,}")
+        else:
+            print(f"  Single snapshot loaded -- no deposit deltas")
+
     # Monthly averages from 365-day rollup ONLY
     if 'depCount365' in _acct.columns:
         _acct['mo_dep_count'] = _acct['depCount365'] / 12
