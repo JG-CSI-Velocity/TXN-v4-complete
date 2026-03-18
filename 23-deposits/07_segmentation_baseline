@@ -114,15 +114,15 @@ else:
         display(_styled_seg)
 
     # -----------------------------------------------------------------
-    # Build segment totals per account from MAIL columns
-    # Mail columns contain the segment assignment: NU, TH-10, etc.
+    # Build segment totals per account from RESP columns
+    # Resp columns contain response values with segment identifiers
     # -----------------------------------------------------------------
     _SEG_GROUP_ORDER = ['NU', 'TH-10', 'TH-15', 'TH-20', 'TH-25']
     _seg_totals = {}
 
-    _mail_cols = sorted(
-        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
-        key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
+    _resp_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Resp')],
+        key=lambda c: pd.to_datetime(c.replace(' Resp', ''), format='%b%y'))
 
     def _extract_segment(val):
         if pd.isna(val):
@@ -135,15 +135,15 @@ else:
         if v.startswith('NU') or 'NON-USER' in v or 'NON USER' in v: return 'NU'
         return None
 
-    if _mail_cols:
+    if _resp_cols:
         for seg in _SEG_GROUP_ORDER:
             _count = pd.Series(0, index=rewards_df.index)
-            for mc in _mail_cols:
-                _parsed = rewards_df[mc].apply(_extract_segment)
+            for rc in _resp_cols:
+                _parsed = rewards_df[rc].apply(_extract_segment)
                 _count += (_parsed == seg).astype(int)
             _seg_totals[seg] = _count
 
-        print(f"  Segment counts from {len(_mail_cols)} Mail columns")
+        print(f"  Segment counts from {len(_resp_cols)} Resp columns")
 
     # -----------------------------------------------------------------
     # 2. # of Offers -- sorted numerically
