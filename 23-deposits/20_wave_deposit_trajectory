@@ -1,12 +1,9 @@
 # ===========================================================================
 # DEPOSIT TRAJECTORY: Balance at Each Snapshot, Per Mailer (Conf. Ed.)
 # ===========================================================================
-# Three clean lines per mailer:
-#   1. Responded (all segments pooled) -- solid teal
-#   2. Did Not Respond (all segments pooled) -- solid gray
-#   3. Never Mailed (control) -- dashed amber
-#
-# Segment-level detail lives in the styled DID table below the charts.
+# One full-size chart per mailer showing actual deposit BALANCES at
+# each snapshot. Lines by segment (Resp solid, NR dashed). Never Mailed
+# as flat baseline. Styled DID table below for segment detail.
 #
 # Depends on: wave_cohort_df (23/11), rewards_df, deposit_long,
 #             SEGMENT_ORDER, SNAPSHOT_ORDER, SNAPSHOT_CONFIG, GEN_COLORS
@@ -38,12 +35,10 @@ else:
         _dep_key_col = (DEPOSIT_JOIN_KEY_DEPOSIT
                         if 'DEPOSIT_JOIN_KEY_DEPOSIT' in dir() else None)
 
-        if (_dep_join and _dep_join in rewards_df.columns
-                and _dep_key_col):
+        if (_dep_join and _dep_join in rewards_df.columns and _dep_key_col):
             _nm_mask = _acct_nums.isin(_never_mailed)
             _nm_keys = set(
                 rewards_df.loc[_nm_mask, _dep_join].astype(str).str.strip())
-
             if _dep_key_col in deposit_long.columns:
                 for sk in SNAPSHOT_ORDER:
                     _snap = deposit_long[deposit_long['snapshot'] == sk]
@@ -57,20 +52,16 @@ else:
         print(f"  Never Mailed control: {_nm_n:,} accounts, "
               f"balance at {len(_nm_snap_balances)} snapshots")
 
-    # -----------------------------------------------------------------
     # Discover snapshots with balance data
-    # -----------------------------------------------------------------
     _snap_bal_cols = {sk: f"{sk}_balance" for sk in SNAPSHOT_ORDER
                       if f"{sk}_balance" in _cohort.columns}
 
     if len(_snap_bal_cols) < 2:
-        print(f"    Need at least 2 snapshots with balance data. "
-              f"Found: {list(_snap_bal_cols.keys())}")
+        print(f"    Need at least 2 snapshots. Found: {list(_snap_bal_cols.keys())}")
     else:
         _mailers = sorted(_cohort['mailer'].unique(),
                            key=lambda m: pd.to_datetime(m, format='%b%y'))
 
-        # Snapshot dates
         _snap_dates_local = {}
         if 'SNAPSHOT_CONFIG' in dir():
             for sk in SNAPSHOT_ORDER:
@@ -84,109 +75,13 @@ else:
                             year=cfg['sort_key'] // 100,
                             month=cfg['sort_key'] % 100, day=1)
 
-        _COLOR_RESP = GEN_COLORS['success']
-        _COLOR_NR = GEN_COLORS['muted']
-        _COLOR_NM = GEN_COLORS['warning']
-
-        # ---------------------------------------------------------------
-        # Helper: get valid snapshots + labels for a mailer
-        # ---------------------------------------------------------------
-        def _get_snap_info(data, wave_date):
-            valid = []
-            labels = []
-            for sk, col in _snap_bal_cols.items():
-                if sk not in _snap_dates_local:
-                    continue
-                if data[col].notna().sum() == 0:
-                    continue
-                _sd = _snap_dates_local[sk]
-                _months = ((_sd.year - wave_date.year) * 12
-                           + (_sd.month - wave_date.month))
-                _cfg_label = (SNAPSHOT_CONFIG[sk]['label']
-                              if 'SNAPSHOT_CONFIG' in dir()
-                              and sk in SNAPSHOT_CONFIG else sk)
-                if _months < 0:
-                    _rel = f"{abs(_months)}mo before"
-                elif _months == 0:
-                    _rel = "at mailer"
-                else:
-                    _rel = f"{_months}mo after"
-                valid.append(sk)
-                labels.append(f"{_cfg_label}\n({_rel})")
-            return valid, labels
-
-        # ---------------------------------------------------------------
-        # Helper: draw 3-line DELTA trajectory (change from 1st snapshot)
-        # ---------------------------------------------------------------
-        def _draw_trajectory(ax, data, valid_snaps, snap_labels,
-                              wave_date, title):
-            _resp = data[data['outcome'] == 'Responder']
-            _nr = data[data['outcome'] == 'Non-Responder']
-            _x = range(len(valid_snaps))
-            _first_snap = valid_snaps[0]
-
-            # Responded line (delta from first snapshot)
-            if len(_resp) > 0:
-                _base = _resp[_snap_bal_cols[_first_snap]].mean()
-                _vals = [_resp[_snap_bal_cols[sk]].mean() - _base
-                         for sk in valid_snaps]
-                ax.plot(_x, _vals, color=_COLOR_RESP, linewidth=3,
-                        marker='o', markersize=9, markeredgecolor='white',
-                        markeredgewidth=2,
-                        label=f'Responded ({len(_resp):,})', zorder=5)
-                for i, v in enumerate(_vals):
-                    if pd.notna(v) and i > 0:
-                        _sign = '+' if v >= 0 else ''
-                        ax.text(i, v, f"{_sign}${v:,.0f}",
-                                ha='center', va='bottom', fontsize=11,
-                                fontweight='bold', color=_COLOR_RESP)
-
-            # Non-Responder line (delta from first snapshot)
-            if len(_nr) > 0:
-                _base = _nr[_snap_bal_cols[_first_snap]].mean()
-                _vals = [_nr[_snap_bal_cols[sk]].mean() - _base
-                         for sk in valid_snaps]
-                ax.plot(_x, _vals, color=_COLOR_NR, linewidth=3,
-                        marker='s', markersize=9, markeredgecolor='white',
-                        markeredgewidth=2,
-                        label=f'Did Not Respond ({len(_nr):,})', zorder=4)
-                for i, v in enumerate(_vals):
-                    if pd.notna(v) and i > 0:
-                        _sign = '+' if v >= 0 else ''
-                        ax.text(i, v, f"{_sign}${v:,.0f}",
-                                ha='center', va='top', fontsize=11,
-                                fontweight='bold', color=_COLOR_NR)
-
-            # Never Mailed baseline (delta from first snapshot)
-            if _nm_snap_balances and _first_snap in _nm_snap_balances:
-                _nm_base = _nm_snap_balances[_first_snap]
-                _nm_vals = [_nm_snap_balances.get(sk, np.nan) - _nm_base
-                            for sk in valid_snaps]
-                if any(pd.notna(v) for v in _nm_vals):
-                    ax.plot(_x, _nm_vals, color=_COLOR_NM, linewidth=2.5,
-                            linestyle='--', marker='D', markersize=6,
-                            markeredgecolor='white', markeredgewidth=1.5,
-                            label=f'Never Mailed ({_nm_n:,})', zorder=3)
-
-            # Zero baseline
-            ax.axhline(y=0, color=GEN_COLORS['dark_text'],
-                        linewidth=0.8, alpha=0.4, zorder=1)
-
-            ax.set_xticks(list(_x))
-            ax.set_xticklabels(snap_labels, fontsize=11, fontweight='bold')
-            ax.set_ylabel("Deposit Change ($)", fontsize=14,
-                           fontweight='bold', labelpad=8)
-            ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
-            gen_clean_axes(ax)
-            ax.yaxis.grid(True, color=GEN_COLORS['grid'],
-                           linewidth=0.5, alpha=0.7)
-            ax.set_axisbelow(True)
-            ax.set_title(title, fontsize=20, fontweight='bold',
-                          color=GEN_COLORS['dark_text'], pad=30)
-            ax.legend(fontsize=11, loc='lower center',
-                      bbox_to_anchor=(0.5, -0.18), ncol=3,
-                      frameon=True, facecolor='white',
-                      edgecolor=GEN_COLORS['grid'])
+        _seg_colors = {
+            'NU':    GEN_COLORS['info'],
+            'TH-10': '#2EC4B6',
+            'TH-15': '#20A39E',
+            'TH-20': '#1B8A7A',
+            'TH-25': GEN_COLORS['primary'],
+        }
 
         # ---------------------------------------------------------------
         # One full-size chart per mailer
@@ -194,30 +89,126 @@ else:
         for mailer in _mailers:
             _mdf = _cohort[_cohort['mailer'] == mailer]
             _wave_date = _mdf['wave_date'].iloc[0]
-            _valid, _labels = _get_snap_info(_mdf, _wave_date)
 
-            if len(_valid) < 2:
+            # Valid snapshots for this mailer
+            _valid_snaps = []
+            _snap_labels = []
+            for sk, col in _snap_bal_cols.items():
+                if sk not in _snap_dates_local:
+                    continue
+                if _mdf[col].notna().sum() == 0:
+                    continue
+                _sd = _snap_dates_local[sk]
+                _months = ((_sd.year - _wave_date.year) * 12
+                           + (_sd.month - _wave_date.month))
+                _cfg_label = (SNAPSHOT_CONFIG[sk]['label']
+                              if 'SNAPSHOT_CONFIG' in dir()
+                              and sk in SNAPSHOT_CONFIG else sk)
+                _rel = (f"{abs(_months)}mo before" if _months < 0
+                        else "at mailer" if _months == 0
+                        else f"{_months}mo after")
+                _valid_snaps.append(sk)
+                _snap_labels.append(f"{_cfg_label}\n({_rel})")
+
+            if len(_valid_snaps) < 2:
                 continue
 
-            fig, ax = plt.subplots(figsize=(14, 7.5))
-            _draw_trajectory(ax, _mdf, _valid, _labels, _wave_date,
-                              f"{mailer} Mailer: Deposit Growth From Baseline")
+            # Top segments by account count for this mailer
+            _seg_counts = (_mdf['segment'].value_counts()
+                           .reindex(SEGMENT_ORDER).dropna())
+            _top_segs = [s for s in SEGMENT_ORDER
+                         if s in _seg_counts.index and _seg_counts[s] > 0]
 
-            ax.text(0.0, 1.05,
-                    f"{len(_mdf):,} accounts mailed  |  "
-                    f"Change from first snapshot -- above $0 = deposits grew",
+            fig, ax = plt.subplots(figsize=(14, 7))
+            _x = range(len(_valid_snaps))
+
+            for seg in _top_segs:
+                _seg_data = _mdf[_mdf['segment'] == seg]
+                _color = _seg_colors.get(seg, GEN_COLORS['muted'])
+
+                for outcome, ls, lw, alpha, marker in [
+                    ('Responder', '-', 2.5, 1.0, 'o'),
+                    ('Non-Responder', '--', 1.8, 0.6, 's')
+                ]:
+                    _out = _seg_data[_seg_data['outcome'] == outcome]
+                    if len(_out) < 5:
+                        continue
+                    _vals = [_out[_snap_bal_cols[sk]].mean()
+                             for sk in _valid_snaps]
+                    if all(pd.isna(v) for v in _vals):
+                        continue
+
+                    _lbl = (f"{seg} Resp ({len(_out):,})"
+                            if outcome == 'Responder'
+                            else f"{seg} NR ({len(_out):,})")
+                    ax.plot(_x, _vals, color=_color, linewidth=lw,
+                            linestyle=ls, alpha=alpha, marker=marker,
+                            markersize=7, markeredgecolor='white',
+                            markeredgewidth=1.5, label=_lbl,
+                            zorder=5 if outcome == 'Responder' else 3)
+
+                    # Label last point
+                    _last = _vals[-1]
+                    if pd.notna(_last):
+                        ax.text(len(_valid_snaps) - 1 + 0.08, _last,
+                                gen_fmt_dollar(_last, None),
+                                fontsize=9, fontweight='bold', va='center',
+                                color=_color, alpha=alpha)
+
+            # Never Mailed baseline
+            if _nm_snap_balances:
+                _nm_vals = [_nm_snap_balances.get(sk, np.nan)
+                            for sk in _valid_snaps]
+                if any(pd.notna(v) for v in _nm_vals):
+                    ax.plot(_x, _nm_vals, color=GEN_COLORS['warning'],
+                            linewidth=2, linestyle=':', marker='D',
+                            markersize=5, markeredgecolor='white',
+                            markeredgewidth=1,
+                            label=f'Never Mailed ({_nm_n:,})', zorder=2)
+
+            # Mark closest-to-mailer snapshot
+            for i, sk in enumerate(_valid_snaps):
+                if sk in _snap_dates_local:
+                    _sd = _snap_dates_local[sk]
+                    _diff = abs((_sd.year - _wave_date.year) * 12
+                                + (_sd.month - _wave_date.month))
+                    if _diff <= 1:
+                        ax.axvline(x=i, color=GEN_COLORS['accent'],
+                                   linewidth=1.5, linestyle=':', alpha=0.5)
+
+            ax.set_xticks(list(_x))
+            ax.set_xticklabels(_snap_labels, fontsize=12, fontweight='bold')
+            ax.set_ylabel("Avg Deposit Balance", fontsize=16,
+                           fontweight='bold', labelpad=10)
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+            gen_clean_axes(ax)
+            ax.yaxis.grid(True, color=GEN_COLORS['grid'],
+                           linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+
+            ax.set_title(f"{mailer} Mailer: Deposit Balance by Segment",
+                          fontsize=24, fontweight='bold',
+                          color=GEN_COLORS['dark_text'], pad=15)
+            ax.text(0.0, 1.02,
+                    f"{len(_mdf):,} mailed  |  "
+                    f"Solid = responded, Dashed = did not  |  "
+                    f"Dotted amber = never mailed",
                     transform=ax.transAxes, fontsize=12,
                     color=GEN_COLORS['muted'], style='italic')
+
+            # Legend outside right
+            ax.legend(fontsize=9, loc='center left',
+                      bbox_to_anchor=(1.01, 0.5), frameon=True,
+                      facecolor='white', edgecolor=GEN_COLORS['grid'])
 
             plt.tight_layout()
             plt.show()
 
         # ---------------------------------------------------------------
-        # DID table: deposit growth proof by segment x mailer
+        # DID table: deposit growth by segment x mailer
         # ---------------------------------------------------------------
         _did_rows = []
 
-        # Never Mailed control delta
         _nm_delta = np.nan
         _snap_keys_sorted = sorted(
             _nm_snap_balances.keys(),
@@ -226,15 +217,14 @@ else:
             _nm_delta = (_nm_snap_balances[_snap_keys_sorted[-1]]
                          - _nm_snap_balances[_snap_keys_sorted[0]])
 
-        def _build_deposit_did(data, mailer_label, wave_date):
+        def _build_did(data, mailer_label):
             _bs = (data['before_snap'].dropna().iloc[0]
                    if data['before_snap'].notna().any() else None)
             _as = (data['after_snap'].dropna().iloc[0]
                    if data['after_snap'].notna().any() else None)
             if not _bs or not _as:
                 return
-            _b_col = f"{_bs}_balance"
-            _a_col = f"{_as}_balance"
+            _b_col, _a_col = f"{_bs}_balance", f"{_as}_balance"
             if _b_col not in data.columns or _a_col not in data.columns:
                 return
 
@@ -249,56 +239,38 @@ else:
                 _r_a = _r[_a_col].mean() if len(_r) > 0 else np.nan
                 _nr_b = _nr[_b_col].mean() if len(_nr) > 0 else np.nan
                 _nr_a = _nr[_a_col].mean() if len(_nr) > 0 else np.nan
-
                 _r_d = _r_a - _r_b if pd.notna(_r_a) and pd.notna(_r_b) else np.nan
                 _nr_d = _nr_a - _nr_b if pd.notna(_nr_a) and pd.notna(_nr_b) else np.nan
                 _did = _r_d - _nr_d if pd.notna(_r_d) and pd.notna(_nr_d) else np.nan
 
                 _did_rows.append({
-                    'Segment': seg,
-                    'Mailer': mailer_label,
+                    'Segment': seg, 'Mailer': mailer_label,
                     'Resp N': len(_r),
-                    'Resp Before': _r_b,
-                    'Resp After': _r_a,
+                    'Resp Before': _r_b, 'Resp After': _r_a,
                     'Resp Delta': _r_d,
-                    'NR N': len(_nr),
-                    'NR Delta': _nr_d,
-                    'NM Delta': _nm_delta,
-                    'DID Lift': _did,
+                    'NR N': len(_nr), 'NR Delta': _nr_d,
+                    'NM Delta': _nm_delta, 'DID Lift': _did,
                 })
 
-        # ALL MAILERS aggregate
+        # Aggregate
         for seg in SEGMENT_ORDER:
-            _seg_all = _cohort[_cohort['segment'] == seg]
-            _r = _seg_all[_seg_all['outcome'] == 'Responder']
-            _nr = _seg_all[_seg_all['outcome'] == 'Non-Responder']
+            _s = _cohort[_cohort['segment'] == seg]
+            _r = _s[_s['outcome'] == 'Responder']
+            _nr = _s[_s['outcome'] == 'Non-Responder']
             if len(_r) == 0 and len(_nr) == 0:
                 continue
-
-            _r_d = (_r['delta_balance'].mean()
-                    if 'delta_balance' in _r.columns and len(_r) > 0
-                    else np.nan)
-            _nr_d = (_nr['delta_balance'].mean()
-                     if 'delta_balance' in _nr.columns and len(_nr) > 0
-                     else np.nan)
-            _did = (_r_d - _nr_d
-                    if pd.notna(_r_d) and pd.notna(_nr_d) else np.nan)
-
+            _r_d = _r['delta_balance'].mean() if 'delta_balance' in _r.columns and len(_r) > 0 else np.nan
+            _nr_d = _nr['delta_balance'].mean() if 'delta_balance' in _nr.columns and len(_nr) > 0 else np.nan
+            _did = _r_d - _nr_d if pd.notna(_r_d) and pd.notna(_nr_d) else np.nan
             _did_rows.append({
-                'Segment': seg,
-                'Mailer': 'ALL MAILERS',
-                'Resp N': len(_r),
-                'Resp Delta': _r_d,
-                'NR N': len(_nr),
-                'NR Delta': _nr_d,
-                'NM Delta': _nm_delta,
-                'DID Lift': _did,
+                'Segment': seg, 'Mailer': 'ALL MAILERS',
+                'Resp N': len(_r), 'Resp Delta': _r_d,
+                'NR N': len(_nr), 'NR Delta': _nr_d,
+                'NM Delta': _nm_delta, 'DID Lift': _did,
             })
 
-        # Per-mailer
         for mailer in _mailers:
-            _mdf = _cohort[_cohort['mailer'] == mailer]
-            _build_deposit_did(_mdf, mailer, _mdf['wave_date'].iloc[0])
+            _build_did(_cohort[_cohort['mailer'] == mailer], mailer)
 
         _did_df = pd.DataFrame(_did_rows)
 
@@ -310,48 +282,46 @@ else:
             _display_df = _did_df[_disp_cols].copy()
 
             _seg_breaks = set()
-            _prev_seg = None
+            _prev = None
             for i, row in _display_df.iterrows():
-                if row['Segment'] != _prev_seg and _prev_seg is not None:
+                if row['Segment'] != _prev and _prev is not None:
                     _seg_breaks.add(i)
-                _prev_seg = row['Segment']
+                _prev = row['Segment']
 
-            _agg_rows = set(
+            _agg_idx = set(
                 _display_df[_display_df['Mailer'] == 'ALL MAILERS'].index)
 
             def _style_rows(row):
-                is_agg = row.name in _agg_rows
+                is_agg = row.name in _agg_idx
                 is_break = row.name in _seg_breaks
-                base = 'font-weight: bold' if is_agg else ''
-                sep = '; border-top: 2px solid #1B2A4A' if is_break else ''
-                bg = ('; background-color: rgba(27, 42, 74, 0.05)'
-                      if is_agg else '')
-                return [base + sep + bg] * len(row)
+                parts = []
+                if is_agg:
+                    parts.append('font-weight: bold')
+                    parts.append('background-color: rgba(27, 42, 74, 0.05)')
+                if is_break:
+                    parts.append('border-top: 2px solid #1B2A4A')
+                css = '; '.join(parts) if parts else ''
+                return [css] * len(row)
 
             def _color_deltas(col):
-                if col.name not in ('DID Lift', 'Resp Delta',
-                                    'NR Delta', 'NM Delta'):
+                if col.name not in ('DID Lift', 'Resp Delta', 'NR Delta', 'NM Delta'):
                     return [''] * len(col)
                 return [
-                    f'color: {GEN_COLORS["success"]}'
-                    if pd.notna(v) and v > 0
-                    else f'color: {GEN_COLORS["accent"]}'
-                    if pd.notna(v) and v < 0
+                    f'color: {GEN_COLORS["success"]}' if pd.notna(v) and v > 0
+                    else f'color: {GEN_COLORS["accent"]}' if pd.notna(v) and v < 0
                     else ''
                     for v in col
                 ]
 
-            def _fmt_delta(v):
-                if pd.isna(v):
-                    return '--'
-                sign = '+' if v >= 0 else '-'
-                return f"{sign}${abs(v):,.0f}"
+            def _fmt_d(v):
+                if pd.isna(v): return '--'
+                return f"{'+'if v >= 0 else '-'}${abs(v):,.0f}"
 
             _fmt = {
                 'Resp N': '{:,.0f}', 'NR N': '{:,.0f}',
                 'Resp Before': '${:,.0f}', 'Resp After': '${:,.0f}',
-                'Resp Delta': _fmt_delta, 'NR Delta': _fmt_delta,
-                'NM Delta': _fmt_delta, 'DID Lift': _fmt_delta,
+                'Resp Delta': _fmt_d, 'NR Delta': _fmt_d,
+                'NM Delta': _fmt_d, 'DID Lift': _fmt_d,
             }
 
             _styled = (
@@ -368,9 +338,7 @@ else:
                     'font-weight': 'bold', 'text-align': 'left',
                     'color': GEN_COLORS['primary'],
                 })
-                .set_properties(subset=['Mailer'], **{
-                    'text-align': 'left',
-                })
+                .set_properties(subset=['Mailer'], **{'text-align': 'left'})
                 .set_table_styles([
                     {'selector': 'th', 'props': [
                         ('background-color', GEN_COLORS['primary']),
@@ -384,51 +352,21 @@ else:
                         ('text-align', 'left'), ('padding-bottom', '12px'),
                     ]},
                 ])
-                .set_caption(
-                    "Deposit Growth Proof: Responder vs Non-Responder "
-                    "by Segment x Mailer"
-                )
+                .set_caption("Deposit Growth: Resp vs NR by Segment x Mailer")
             )
             display(_styled)
 
-            # -----------------------------------------------------------
             # Narrative
-            # -----------------------------------------------------------
-            _agg_data = _did_df[_did_df['Mailer'] == 'ALL MAILERS']
-            if len(_agg_data) > 0:
-                print(f"\n  Deposit DID Lift (all mailers pooled):")
-                print(f"  DID = Resp deposit change minus NR deposit change")
-                print(f"  Positive = responding led to MORE deposit growth\n")
-
+            _agg = _did_df[_did_df['Mailer'] == 'ALL MAILERS']
+            if len(_agg) > 0:
+                print(f"\n  Deposit DID (all mailers pooled):")
                 _pos = 0
-                _tot = 0
-                for _, row in _agg_data.iterrows():
-                    _did = row.get('DID Lift')
-                    _tot += 1
-                    if pd.notna(_did):
-                        _sign = '+' if _did >= 0 else '-'
-                        _tag = 'DEPOSITS UP' if _did > 0 else 'FLAT/DOWN'
-                        print(f"    {row['Segment']:<8s}: DID = "
-                              f"{_sign}${abs(_did):,.0f}  ({_tag})")
-                        if _did > 0:
-                            _pos += 1
-
-                print(f"\n    {_pos}/{_tot} segments show positive "
+                for _, row in _agg.iterrows():
+                    _d = row.get('DID Lift')
+                    if pd.notna(_d):
+                        print(f"    {row['Segment']:<8s}: "
+                              f"{'+'if _d >= 0 else '-'}${abs(_d):,.0f}  "
+                              f"({'DEPOSITS UP' if _d > 0 else 'FLAT/DOWN'})")
+                        _pos += _d > 0
+                print(f"\n    {_pos}/{len(_agg)} segments show positive "
                       f"deposit lift from responding")
-
-                if pd.notna(_nm_delta):
-                    print(f"\n    Never Mailed control delta: "
-                          f"{'+'if _nm_delta >= 0 else '-'}"
-                          f"${abs(_nm_delta):,.0f} "
-                          f"(market movement without any mailer)")
-
-            # Per-mailer consistency
-            _per = _did_df[_did_df['Mailer'] != 'ALL MAILERS']
-            if len(_per) > 0 and 'DID Lift' in _per.columns:
-                print(f"\n  Consistency: mailers with positive deposit DID:")
-                for seg in SEGMENT_ORDER:
-                    _sd = _per[_per['Segment'] == seg]
-                    _p = (_sd['DID Lift'] > 0).sum()
-                    _t = _sd['DID Lift'].notna().sum()
-                    if _t > 0:
-                        print(f"    {seg:<8s}: {_p}/{_t} mailers")
