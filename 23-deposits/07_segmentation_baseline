@@ -114,18 +114,18 @@ else:
         display(_styled_seg)
 
     # -----------------------------------------------------------------
-    # Determine segment per account: last non-null across all mailers
+    # Build segment totals per account: count ALL assignments across mailers
     # -----------------------------------------------------------------
-    _acct_segment = None
+    _SEG_GROUP_ORDER = ['NU', 'TH-10', 'TH-15', 'TH-20', 'TH-25']
+    _seg_totals = {}  # seg -> Series of per-account counts
+
     if _seg_cols:
         _seg_matrix = rewards_df[_seg_cols].astype(str)
         _seg_matrix = _seg_matrix.where(
             ~_seg_matrix.isin(['nan', '', 'None']), other=np.nan)
-        # ffill across columns (left=earliest, right=latest), take last
-        _acct_segment = _seg_matrix.ffill(axis=1).iloc[:, -1]
 
-    # Segment group order for breakdown columns
-    _SEG_GROUP_ORDER = ['NU', 'TH-10', 'TH-15', 'TH-20', 'TH-25']
+        for seg in _SEG_GROUP_ORDER:
+            _seg_totals[seg] = (_seg_matrix == seg).sum(axis=1)
 
     # -----------------------------------------------------------------
     # 2. # of Offers -- sorted numerically
@@ -141,12 +141,12 @@ else:
                     'Count': _vc[val],
                     '% of Total': _vc[val] / len(rewards_df) * 100,
                 }
-                # Segment group breakdown
-                if _acct_segment is not None:
+                # Segment breakdown: total assignments across ALL mailers
+                if _seg_totals:
                     _mask = rewards_df['# of Offers'].apply(
                         lambda x: pd.to_numeric(x, errors='coerce')) == val
                     for seg in _SEG_GROUP_ORDER:
-                        _row[seg] = (_mask & (_acct_segment == seg)).sum()
+                        _row[seg] = _seg_totals[seg][_mask].sum()
                 _dist_rows.append(_row)
 
             _dist_df = pd.DataFrame(_dist_rows)
@@ -200,11 +200,11 @@ else:
                     'Count': _vc[val],
                     '% of Total': _vc[val] / len(rewards_df) * 100,
                 }
-                if _acct_segment is not None:
+                if _seg_totals:
                     _mask = rewards_df['# of Responses'].apply(
                         lambda x: pd.to_numeric(x, errors='coerce')) == val
                     for seg in _SEG_GROUP_ORDER:
-                        _row[seg] = (_mask & (_acct_segment == seg)).sum()
+                        _row[seg] = _seg_totals[seg][_mask].sum()
                 _dist_rows.append(_row)
 
             _dist_df = pd.DataFrame(_dist_rows)
@@ -289,10 +289,10 @@ else:
                         'Count': _vc[_match],
                         '% of Total': _vc[_match] / len(rewards_df) * 100,
                     }
-                    if _acct_segment is not None:
+                    if _seg_totals:
                         _mask = _vals == _match
                         for seg in _SEG_GROUP_ORDER:
-                            _row[seg] = (_mask & (_acct_segment == seg)).sum()
+                            _row[seg] = _seg_totals[seg][_mask].sum()
                     _dist_rows.append(_row)
 
             # Append any values not matched by custom order
@@ -303,10 +303,10 @@ else:
                         'Count': _vc[val],
                         '% of Total': _vc[val] / len(rewards_df) * 100,
                     }
-                    if _acct_segment is not None:
+                    if _seg_totals:
                         _mask = _vals == val
                         for seg in _SEG_GROUP_ORDER:
-                            _row[seg] = (_mask & (_acct_segment == seg)).sum()
+                            _row[seg] = _seg_totals[seg][_mask].sum()
                     _dist_rows.append(_row)
 
             _dist_df = pd.DataFrame(_dist_rows)
@@ -355,6 +355,5 @@ else:
         print(f"  Mailer range: {_seg_cols[0].replace(' Segmentation', '')} to "
               f"{_seg_cols[-1].replace(' Segmentation', '')}")
     if _seg_cols:
-        _seg_coverage = _acct_segment.notna().sum() if _acct_segment is not None else 0
-        print(f"  Segment breakdown: last non-null across all {len(_seg_cols)} mailers "
-              f"({_seg_coverage:,} accounts with a segment)")
+        print(f"  Segment breakdown columns show TOTAL assignments across "
+              f"all {len(_seg_cols)} mailers (not per-account)")
