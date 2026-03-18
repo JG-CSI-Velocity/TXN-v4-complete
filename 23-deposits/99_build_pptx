@@ -1,0 +1,457 @@
+# ===========================================================================
+# BUILD POWERPOINT: ARS Program Results Deck
+# ===========================================================================
+# Generates a .pptx from the analysis data using the CSI template.
+# Saves charts as temp images, inserts them into slides.
+# Output goes next to the ODDD file.
+#
+# Depends on: rewards_df, _acct (cell 04), deposit_long, SNAPSHOT_ORDER,
+#             SNAPSHOT_CONFIG, PROGRAM_SEG_ORDER, GEN_COLORS, ODD_FILE
+
+from pptx import Presentation
+from pptx.util import Inches, Pt, Emu
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+import tempfile
+import os
+
+_TEMPLATE = Path(r"C:\Users\james.gilmore\analysis-platform\2025-CSI-PPT-Template.pptx")
+_OUTPUT_DIR = ODD_FILE.parent if 'ODD_FILE' in dir() else Path('.')
+_OUTPUT_FILE = _OUTPUT_DIR / f"{CLIENT_ID}-{CLIENT_NAME}-ARS-Results.pptx"
+
+if not _TEMPLATE.exists():
+    print(f"  Template not found: {_TEMPLATE}")
+else:
+    prs = Presentation(str(_TEMPLATE))
+
+    # -----------------------------------------------------------------
+    # Inspect template layouts (run once to see what's available)
+    # -----------------------------------------------------------------
+    print(f"  Template: {_TEMPLATE.name}")
+    print(f"  Slide width: {prs.slide_width}, height: {prs.slide_height}")
+    print(f"  Layouts available:")
+    for i, layout in enumerate(prs.slide_layouts):
+        _ph_names = [ph.name for ph in layout.placeholders]
+        print(f"    [{i}] {layout.name}: {_ph_names}")
+
+    # -----------------------------------------------------------------
+    # Helper functions
+    # -----------------------------------------------------------------
+    _tmpdir = tempfile.mkdtemp()
+
+    def _save_fig(fig, name):
+        """Save matplotlib figure to temp file, return path."""
+        path = os.path.join(_tmpdir, f'{name}.png')
+        fig.savefig(path, dpi=200, bbox_inches='tight',
+                    facecolor='white', edgecolor='none')
+        plt.close(fig)
+        return path
+
+    def _add_title_slide(title, subtitle=''):
+        """Add a slide using layout 0 (title slide)."""
+        slide = prs.slides.add_slide(prs.slide_layouts[0])
+        if slide.placeholders:
+            slide.placeholders[0].text = title
+            if len(slide.placeholders) > 1 and subtitle:
+                slide.placeholders[1].text = subtitle
+        return slide
+
+    def _add_content_slide(title, subtitle=''):
+        """Add a slide using layout 1 (title + content) or layout 5 (blank)."""
+        # Try layout 1 first (usually title + content), fall back to 5 (blank)
+        _layout_idx = 1 if len(prs.slide_layouts) > 1 else 0
+        slide = prs.slides.add_slide(prs.slide_layouts[_layout_idx])
+        if slide.placeholders:
+            slide.placeholders[0].text = title
+        return slide
+
+    def _add_blank_slide():
+        """Add a blank slide (last layout or layout 6)."""
+        _idx = min(6, len(prs.slide_layouts) - 1)
+        # Find a blank layout
+        for i, layout in enumerate(prs.slide_layouts):
+            if 'blank' in layout.name.lower():
+                _idx = i
+                break
+        return prs.slides.add_slide(prs.slide_layouts[_idx])
+
+    def _add_image_slide(title, img_path, subtitle=''):
+        """Add a slide with title and full-width image."""
+        slide = _add_content_slide(title, subtitle)
+        # Remove content placeholder if it exists (keep title)
+        for ph in list(slide.placeholders):
+            if ph.placeholder_format.idx > 0 and ph.placeholder_format.idx != 10:
+                sp = ph._element
+                sp.getparent().remove(sp)
+        # Add image centered, below title area
+        _sw = prs.slide_width
+        _sh = prs.slide_height
+        _img_top = Inches(1.5)
+        _img_height = _sh - _img_top - Inches(0.3)
+        _img_width = _sw - Inches(0.6)
+        slide.shapes.add_picture(img_path,
+                                  Inches(0.3), _img_top,
+                                  _img_width, _img_height)
+        return slide
+
+    def _add_table_slide(title, df, col_widths=None):
+        """Add a slide with a data table."""
+        slide = _add_content_slide(title)
+        # Remove content placeholder
+        for ph in list(slide.placeholders):
+            if ph.placeholder_format.idx > 0 and ph.placeholder_format.idx != 10:
+                sp = ph._element
+                sp.getparent().remove(sp)
+
+        rows, cols = df.shape
+        rows += 1  # header row
+        _left = Inches(0.4)
+        _top = Inches(1.5)
+        _width = prs.slide_width - Inches(0.8)
+        _height = Inches(0.35) * rows
+
+        table = slide.shapes.add_table(rows, cols, _left, _top,
+                                         _width, _height).table
+
+        # Header row
+        for j, col_name in enumerate(df.columns):
+            cell = table.cell(0, j)
+            cell.text = str(col_name)
+            for paragraph in cell.text_frame.paragraphs:
+                paragraph.font.size = Pt(10)
+                paragraph.font.bold = True
+                paragraph.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+                paragraph.alignment = PP_ALIGN.CENTER
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = RGBColor(0x1B, 0x2A, 0x4A)
+
+        # Data rows
+        for i in range(len(df)):
+            for j, col_name in enumerate(df.columns):
+                cell = table.cell(i + 1, j)
+                val = df.iloc[i, j]
+                if isinstance(val, float):
+                    if abs(val) >= 100:
+                        cell.text = f'${val:,.0f}'
+                    elif abs(val) < 1 and col_name not in ('N',):
+                        cell.text = f'{val:.1%}'
+                    else:
+                        cell.text = f'{val:.1f}'
+                else:
+                    cell.text = str(val)
+                for paragraph in cell.text_frame.paragraphs:
+                    paragraph.font.size = Pt(9)
+                    paragraph.alignment = PP_ALIGN.CENTER
+                cell.vertical_anchor = MSO_ANCHOR.MIDDLE
+
+        return slide
+
+    # -----------------------------------------------------------------
+    # Shared setup
+    # -----------------------------------------------------------------
+    _eligible = rewards_df.reindex(_acct.index)
+
+    def _is_success(val):
+        if pd.isna(val): return False
+        v = str(val).strip().upper()
+        if not v or v == 'NAN': return False
+        if 'NU' in v: return '5+' in v or '5 +' in v
+        return True
+
+    _r_mask = _acct['ever_responded']
+    _nr_mask = _acct['was_mailed'] & ~_acct['ever_responded']
+    _n_mailed = _acct['was_mailed'].sum()
+    _n_resp = _r_mask.sum()
+    _resp_rate = _n_resp / _n_mailed * 100 if _n_mailed > 0 else 0
+
+    _mail_cols_local = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
+        key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
+
+    # =================================================================
+    # SLIDE 1: Title
+    # =================================================================
+    _add_title_slide(
+        f"ARS Rewards Program Analysis",
+        f"{CLIENT_NAME} (ID: {CLIENT_ID})")
+
+    # =================================================================
+    # SLIDE 2: Program Overview
+    # =================================================================
+    slide = _add_content_slide("Program Overview")
+    for ph in list(slide.placeholders):
+        if ph.placeholder_format.idx > 0:
+            sp = ph._element
+            sp.getparent().remove(sp)
+
+    _overview_text = (
+        f"Accounts Mailed: {_n_mailed:,}\n"
+        f"Responders: {_n_resp:,} ({_resp_rate:.1f}%)\n"
+        f"Mailer Waves: {len(_mail_cols_local)}\n"
+        f"Program Segments: {', '.join(PROGRAM_SEG_ORDER)}\n"
+    )
+    txBox = slide.shapes.add_textbox(Inches(0.5), Inches(1.8),
+                                      Inches(8), Inches(3))
+    tf = txBox.text_frame
+    tf.word_wrap = True
+    for line in _overview_text.strip().split('\n'):
+        p = tf.add_paragraph()
+        p.text = line
+        p.font.size = Pt(18)
+        p.font.bold = True
+        p.space_after = Pt(8)
+
+    # =================================================================
+    # SLIDE 3: Response by Segment (table)
+    # =================================================================
+    _seg_rows = []
+    for seg in PROGRAM_SEG_ORDER:
+        _sm = _acct['program_segment'] == seg
+        _sm_mailed = (_sm & _acct['was_mailed']).sum()
+        _sm_resp = (_sm & _acct['ever_responded']).sum()
+        if _sm_mailed > 0:
+            _seg_rows.append({
+                'Segment': seg,
+                'Mailed': _sm_mailed,
+                'Responded': _sm_resp,
+                'Rate': f'{_sm_resp / _sm_mailed * 100:.1f}%',
+            })
+    if _seg_rows:
+        _add_table_slide("Response Rate by Segment", pd.DataFrame(_seg_rows))
+
+    # =================================================================
+    # SLIDE 4: Swipe lift by segment (chart)
+    # =================================================================
+    _seg_order = [s for s in PROGRAM_SEG_ORDER
+                   if ((_acct['program_segment'] == s) & _r_mask).sum() > 0]
+
+    if _seg_order:
+        fig, ax = plt.subplots(figsize=(12, 6))
+        _x = np.arange(len(_seg_order))
+        _bw = 0.35
+        _r_vals = [_acct.loc[(_acct['program_segment'] == s) & _r_mask,
+                              'mo_swipes_3mo'].median() for s in _seg_order]
+        _nr_vals = [_acct.loc[(_acct['program_segment'] == s) & _nr_mask,
+                               'mo_swipes_3mo'].median() for s in _seg_order]
+
+        bars_r = ax.bar(_x - _bw/2, _r_vals, _bw,
+                        color=GEN_COLORS['success'], edgecolor='white',
+                        linewidth=1.5, label='Responder', zorder=3)
+        bars_nr = ax.bar(_x + _bw/2, _nr_vals, _bw,
+                         color=GEN_COLORS['muted'], edgecolor='white',
+                         linewidth=1.5, label='Non-Responder', zorder=3)
+        for bar, val in zip(bars_r, _r_vals):
+            if pd.notna(val):
+                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.3,
+                        f'{val:.0f}', ha='center', va='bottom', fontsize=12,
+                        fontweight='bold', color=GEN_COLORS['success'])
+        for bar, val in zip(bars_nr, _nr_vals):
+            if pd.notna(val):
+                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.3,
+                        f'{val:.0f}', ha='center', va='bottom', fontsize=12,
+                        fontweight='bold', color=GEN_COLORS['muted'])
+        ax.set_xticks(_x)
+        ax.set_xticklabels(_seg_order, fontsize=13, fontweight='bold')
+        ax.set_ylabel("Median Swipes/mo (Recent 3mo)", fontsize=13,
+                       fontweight='bold', labelpad=10)
+        gen_clean_axes(ax)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+        ax.legend(fontsize=12, frameon=True, facecolor='white',
+                  edgecolor=GEN_COLORS['grid'])
+        ax.set_title("Card Usage by Segment", fontsize=20,
+                      fontweight='bold', color=GEN_COLORS['dark_text'], pad=15)
+        plt.tight_layout()
+        _img = _save_fig(fig, 'swipe_by_segment')
+        _add_image_slide("Swipe Lift by Segment", _img)
+
+    # =================================================================
+    # SLIDE 5: Spend lift by segment (chart)
+    # =================================================================
+    if _seg_order:
+        fig, ax = plt.subplots(figsize=(12, 6))
+        _x = np.arange(len(_seg_order))
+        _r_vals = [_acct.loc[(_acct['program_segment'] == s) & _r_mask,
+                              'mo_spend_3mo'].median() for s in _seg_order]
+        _nr_vals = [_acct.loc[(_acct['program_segment'] == s) & _nr_mask,
+                               'mo_spend_3mo'].median() for s in _seg_order]
+
+        ax.bar(_x - _bw/2, _r_vals, _bw, color=GEN_COLORS['success'],
+               edgecolor='white', linewidth=1.5, label='Responder', zorder=3)
+        ax.bar(_x + _bw/2, _nr_vals, _bw, color=GEN_COLORS['muted'],
+               edgecolor='white', linewidth=1.5, label='Non-Responder', zorder=3)
+        ax.set_xticks(_x)
+        ax.set_xticklabels(_seg_order, fontsize=13, fontweight='bold')
+        ax.set_ylabel("Median Spend/mo (Recent 3mo)", fontsize=13,
+                       fontweight='bold', labelpad=10)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+        gen_clean_axes(ax)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+        ax.legend(fontsize=12, frameon=True, facecolor='white',
+                  edgecolor=GEN_COLORS['grid'])
+        ax.set_title("Card Spend by Segment", fontsize=20,
+                      fontweight='bold', color=GEN_COLORS['dark_text'], pad=15)
+        plt.tight_layout()
+        _img = _save_fig(fig, 'spend_by_segment')
+        _add_image_slide("Spend Lift by Segment", _img)
+
+    # =================================================================
+    # SLIDE 6: Behavioral Impact Table
+    # =================================================================
+    _impact = pd.DataFrame([
+        {'Metric': 'Swipes/mo (3mo)', 'Responder': f'{_acct.loc[_r_mask, "mo_swipes_3mo"].median():.1f}',
+         'Non-Responder': f'{_acct.loc[_nr_mask, "mo_swipes_3mo"].median():.1f}'},
+        {'Metric': 'Swipes/mo (12mo)', 'Responder': f'{_acct.loc[_r_mask, "mo_swipes_12mo"].median():.1f}',
+         'Non-Responder': f'{_acct.loc[_nr_mask, "mo_swipes_12mo"].median():.1f}'},
+        {'Metric': 'Spend/mo (3mo)', 'Responder': f'${_acct.loc[_r_mask, "mo_spend_3mo"].median():,.0f}',
+         'Non-Responder': f'${_acct.loc[_nr_mask, "mo_spend_3mo"].median():,.0f}'},
+        {'Metric': 'Spend/mo (12mo)', 'Responder': f'${_acct.loc[_r_mask, "mo_spend_12mo"].median():,.0f}',
+         'Non-Responder': f'${_acct.loc[_nr_mask, "mo_spend_12mo"].median():,.0f}'},
+    ])
+    if 'mo_dep_amt' in _acct.columns:
+        _impact.loc[len(_impact)] = {
+            'Metric': 'Deposits/mo',
+            'Responder': f'${_acct.loc[_r_mask, "mo_dep_amt"].median():,.0f}',
+            'Non-Responder': f'${_acct.loc[_nr_mask, "mo_dep_amt"].median():,.0f}',
+        }
+    _add_table_slide("Behavioral Impact: Responder vs Non-Responder", _impact)
+
+    # =================================================================
+    # SLIDE 7: Campaign summary by wave (table)
+    # =================================================================
+    if 'camp_summary' in dir() and len(camp_summary) > 0:
+        _cs = camp_summary[['period', 'mailed', 'responded', 'near_use', 'response_rate']].copy()
+        _cs.columns = ['Wave', 'Mailed', 'Responded', 'NU 1-4', 'Rate %']
+        _cs['Rate %'] = _cs['Rate %'].round(1).astype(str) + '%'
+        _add_table_slide("Campaign Response by Wave", _cs)
+
+    # =================================================================
+    # SLIDE 8: NU Conversion — Deposits (cell 32 chart)
+    # =================================================================
+    def _parse_seg_local(val):
+        if pd.isna(val): return None
+        v = str(val).strip().upper()
+        if 'TH-25' in v or 'TH 25' in v or 'TH25' in v: return 'TH-25'
+        if 'TH-20' in v or 'TH 20' in v or 'TH20' in v: return 'TH-20'
+        if 'TH-15' in v or 'TH 15' in v or 'TH15' in v: return 'TH-15'
+        if 'TH-10' in v or 'TH 10' in v or 'TH10' in v: return 'TH-10'
+        if v.startswith('NU') or 'NON-USER' in v: return 'NU'
+        return None
+
+    def _is_nu_partial(val):
+        if pd.isna(val): return False
+        v = str(val).strip().upper()
+        return v in ('NU 1-4', 'NU1-4', 'NU 1', 'NU 2', 'NU 3', 'NU 4')
+
+    _nu_mask = _acct['program_segment'] == 'NU'
+    _nu_mailed = _nu_mask & _acct['was_mailed']
+
+    _ever_5plus = pd.Series(False, index=_acct.index)
+    _ever_1to4 = pd.Series(False, index=_acct.index)
+    for rc in sorted([c.strip() for c in rewards_df.columns if c.strip().endswith(' Resp')]):
+        if rc not in _eligible.columns:
+            continue
+        _ever_5plus |= _eligible[rc].apply(_is_success)
+        _ever_1to4 |= _eligible[rc].apply(_is_nu_partial)
+
+    _nu_5plus = _nu_mailed & _ever_5plus
+    _nu_1to4 = _nu_mailed & ~_ever_5plus & _ever_1to4
+    _nu_zero = _nu_mailed & ~_ever_5plus & ~_ever_1to4
+
+    if 'mo_dep_amt' in _acct.columns and _nu_5plus.sum() > 0:
+        _dep_vals = [
+            _acct.loc[_nu_5plus, 'mo_dep_amt'].median(),
+            _acct.loc[_nu_1to4, 'mo_dep_amt'].median() if _nu_1to4.sum() > 0 else 0,
+            _acct.loc[_nu_zero, 'mo_dep_amt'].median() if _nu_zero.sum() > 0 else 0,
+        ]
+        _bar_colors = [GEN_COLORS['success'], GEN_COLORS['warning'],
+                        GEN_COLORS['muted']]
+        _bar_labels = ['NU 5+\n(Converted)', 'NU 1-4\n(Partial)',
+                        'NU 0\n(Never Activated)']
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        _x = np.arange(len(_dep_vals))
+        bars = ax.bar(_x, _dep_vals, color=_bar_colors, edgecolor='white',
+                      linewidth=1.5, width=0.5, zorder=3)
+        for bar, val, color in zip(bars, _dep_vals, _bar_colors):
+            if pd.notna(val) and val > 0:
+                ax.text(bar.get_x() + bar.get_width()/2,
+                        bar.get_height() + bar.get_height() * 0.02,
+                        f'${val:,.0f}/mo', ha='center', va='bottom',
+                        fontsize=15, fontweight='bold', color=color)
+        ax.set_xticks(_x)
+        ax.set_xticklabels(_bar_labels, fontsize=14, fontweight='bold')
+        ax.set_ylabel("Median Monthly Deposits ($)", fontsize=14,
+                       fontweight='bold', labelpad=10)
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+        gen_clean_axes(ax)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+        ax.set_title("Card Activation Drives Deposits", fontsize=22,
+                      fontweight='bold', color=GEN_COLORS['dark_text'], pad=15)
+        plt.tight_layout()
+        _img = _save_fig(fig, 'nu_deposits')
+        _add_image_slide("NU Conversion: Deposits by Activation Level", _img)
+
+    # =================================================================
+    # SLIDE 9: Sustained engagement table
+    # =================================================================
+    if 'mo_swipes_3mo' in _acct.columns:
+        _persist_rows = []
+        for seg in PROGRAM_SEG_ORDER:
+            _sm = _acct['program_segment'] == seg
+            for label, mask in [('R', _sm & _r_mask), ('NR', _sm & _nr_mask)]:
+                _g = _acct[mask]
+                if len(_g) < 10:
+                    continue
+                _s3 = _g['mo_swipes_3mo'].median()
+                _s12 = _g['mo_swipes_12mo'].median()
+                _trend = f'{_s3 / _s12:.2f}x' if _s12 > 0 else '--'
+                _persist_rows.append({
+                    'Group': f'{seg} {label}',
+                    '12mo Avg': f'{_s12:.1f}',
+                    'Recent 3mo': f'{_s3:.1f}',
+                    'Trend': _trend,
+                })
+        if _persist_rows:
+            _add_table_slide("Sustained Engagement: 3mo vs 12mo Swipes",
+                              pd.DataFrame(_persist_rows))
+
+    # =================================================================
+    # SLIDE 10: Deposit context
+    # =================================================================
+    if 'mo_dep_amt' in _acct.columns:
+        _r_dep = _acct.loc[_r_mask, 'mo_dep_amt'].median()
+        _nr_dep = _acct.loc[_nr_mask, 'mo_dep_amt'].median()
+        _r_spend = _acct.loc[_r_mask, 'mo_spend_12mo'].median()
+        _nr_spend = _acct.loc[_nr_mask, 'mo_spend_12mo'].median()
+        _lift = _r_spend - _nr_spend
+        _interchange = _lift * 0.015
+
+        _dep_ctx = pd.DataFrame([
+            {'': 'Monthly Deposits', 'Responder': f'${_r_dep:,.0f}',
+             'Non-Responder': f'${_nr_dep:,.0f}', 'Insight': 'Comparable'},
+            {'': 'Monthly Card Spend', 'Responder': f'${_r_spend:,.0f}',
+             'Non-Responder': f'${_nr_spend:,.0f}', 'Insight': 'R spends more'},
+            {'': 'Spend/Deposit Ratio',
+             'Responder': f'{_r_spend / _r_dep:.1%}' if _r_dep > 0 else '--',
+             'Non-Responder': f'{_nr_spend / _nr_dep:.1%}' if _nr_dep > 0 else '--',
+             'Insight': 'Higher utilization'},
+            {'': 'Interchange Lift',
+             'Responder': f'${_interchange:,.2f}/acct/mo',
+             'Non-Responder': '--',
+             'Insight': f'x {_n_resp:,} = ${_interchange * _n_resp:,.0f}/mo'},
+        ])
+        _add_table_slide("Same Deposits, More Card Revenue", _dep_ctx)
+
+    # =================================================================
+    # Save
+    # =================================================================
+    prs.save(str(_OUTPUT_FILE))
+    print(f"\n  PowerPoint saved: {_OUTPUT_FILE}")
+    print(f"  Slides: {len(prs.slides)}")
+
+    # Cleanup temp images
+    import shutil
+    shutil.rmtree(_tmpdir, ignore_errors=True)
