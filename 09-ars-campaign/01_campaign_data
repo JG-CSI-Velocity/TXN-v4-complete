@@ -125,33 +125,41 @@ try:
         # -----------------------------------------------------------------------
         # Merge with transaction data for responder vs non-responder analysis
         # -----------------------------------------------------------------------
-        camp_txn = combined_df.merge(
-            camp_acct[['primary_account_num', 'camp_status', 'total_offers', 'total_responses']],
-            on='primary_account_num',
-            how='left'
-        )
-        camp_txn['camp_status'] = camp_txn['camp_status'].fillna('Unknown')
+        if 'combined_df' in dir() and len(combined_df) > 0:
+            camp_txn = combined_df.merge(
+                camp_acct[['primary_account_num', 'camp_status', 'total_offers', 'total_responses']],
+                on='primary_account_num',
+                how='left'
+            )
+            camp_txn['camp_status'] = camp_txn['camp_status'].fillna('Unknown')
 
-        camp_resp_df = camp_txn[camp_txn['camp_status'] == 'Responder'].copy()
-        camp_nonresp_df = camp_txn[camp_txn['camp_status'] == 'Non-Responder'].copy()
-        camp_never_df = camp_txn[camp_txn['camp_status'] == 'Never Mailed'].copy()
+            camp_resp_df = camp_txn[camp_txn['camp_status'] == 'Responder'].copy()
+            camp_nonresp_df = camp_txn[camp_txn['camp_status'] == 'Non-Responder'].copy()
+            camp_never_df = camp_txn[camp_txn['camp_status'] == 'Never Mailed'].copy()
 
-        # Status aggregation with time-normalized metrics
-        _n_months = DATASET_MONTHS
+            _n_months = DATASET_MONTHS if 'DATASET_MONTHS' in dir() and DATASET_MONTHS > 0 else 1
 
-        camp_status_agg = camp_txn.groupby('camp_status').agg(
-            txn_count=('transaction_date', 'count'),
-            unique_accounts=('primary_account_num', 'nunique'),
-            total_spend=('amount', 'sum'),
-            avg_spend=('amount', 'mean'),
-        ).reset_index()
+            camp_status_agg = camp_txn.groupby('camp_status').agg(
+                txn_count=('transaction_date', 'count'),
+                unique_accounts=('primary_account_num', 'nunique'),
+                total_spend=('amount', 'sum'),
+                avg_spend=('amount', 'mean'),
+            ).reset_index()
 
-        total_txns_camp = len(camp_txn)
-        camp_status_agg['txn_pct'] = camp_status_agg['txn_count'] / total_txns_camp * 100
-        camp_status_agg['txn_per_account'] = camp_status_agg['txn_count'] / camp_status_agg['unique_accounts']
-        camp_status_agg['txns_per_acct_mo'] = camp_status_agg['txn_per_account'] / _n_months
-        camp_status_agg['spend_per_acct_mo'] = camp_status_agg['total_spend'] / camp_status_agg['unique_accounts'] / _n_months
-        camp_status_agg = camp_status_agg.sort_values('txn_count', ascending=False)
+            total_txns_camp = len(camp_txn)
+            camp_status_agg['txn_pct'] = camp_status_agg['txn_count'] / total_txns_camp * 100
+            camp_status_agg['txn_per_account'] = camp_status_agg['txn_count'] / camp_status_agg['unique_accounts']
+            camp_status_agg['txns_per_acct_mo'] = camp_status_agg['txn_per_account'] / _n_months
+            camp_status_agg['spend_per_acct_mo'] = camp_status_agg['total_spend'] / camp_status_agg['unique_accounts'] / _n_months
+            camp_status_agg = camp_status_agg.sort_values('txn_count', ascending=False)
+        else:
+            print("  No transaction data -- skipping txn merge.")
+            print("  camp_acct and camp_summary available (ODDD-based).")
+            camp_txn = pd.DataFrame()
+            camp_resp_df = pd.DataFrame()
+            camp_nonresp_df = pd.DataFrame()
+            camp_never_df = pd.DataFrame()
+            camp_status_agg = pd.DataFrame()
 
         # -----------------------------------------------------------------------
         # Conference-styled summary table (chronological, most recent last)
