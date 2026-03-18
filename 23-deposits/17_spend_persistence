@@ -1,34 +1,108 @@
 # ===========================================================================
-# SPEND PERSISTENCE: Actual $ Trajectory by Mailer (Conference Edition)
+# SPEND PERSISTENCE: Monthly Trajectory by Mailer (Conference Edition)
 # ===========================================================================
-# Does the spend lift hold at +3 and +6 months? Shows actual dollar
-# trajectories for Responder (solid) vs Non-Responder (dashed) per
-# segment -- first pooled, then per-mailer faceted.
+# Individual month spend (actual $) relative to mailer date.
+# -6 through +6 monthly, then +9, +12 quarterly if data exists.
+# Shows Resp (solid) vs NR (dashed) per segment.
 #
-# Depends on: wave_cohort_df (23/11), SEGMENT_ORDER (23/11), GEN_COLORS
+# Depends on: wave_cohort_df (23/11), rewards_df (00-setup),
+#             SEGMENT_ORDER (23/11), GEN_COLORS
+
+_VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
 
 if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
     print("    No cohort data. Run cell 11 first.")
-elif 'pre_spend' not in wave_cohort_df.columns:
-    print("    pre_spend not available. Check cell 11 spend column discovery.")
+elif 'rewards_df' not in dir():
+    print("    rewards_df not available. Run 00-setup cells first.")
 else:
     from IPython.display import display
 
     _cohort = wave_cohort_df.rename(columns={'wave': 'mailer'})
-
     _mailers = sorted(_cohort['mailer'].unique(),
                        key=lambda m: pd.to_datetime(m, format='%b%y'))
 
-    # Time point columns that exist
-    _tp_map = {'Pre': 'pre_spend', '+3mo': 'post_spend_3mo', '+6mo': 'post_spend_6mo'}
-    _avail_tp = [(label, col) for label, col in _tp_map.items()
-                  if col in _cohort.columns]
+    # -----------------------------------------------------------------
+    # Discover monthly spend columns and build acct-indexed matrix
+    # -----------------------------------------------------------------
+    _acct_col = ('Acct Number' if 'Acct Number' in rewards_df.columns
+                  else ' Acct Number')
+    _spend_cols = sorted(
+        [c for c in rewards_df.columns if c.endswith(' Spend') and c[0].isupper()
+         and len(c.split(' ')[0]) in (5, 6) and c.split(' ')[0][:3] in _VALID_MON],
+        key=lambda c: pd.to_datetime(c.replace(' Spend', ''), format='%b%y'))
+    _month_dates = [pd.to_datetime(c.replace(' Spend', ''), format='%b%y')
+                     for c in _spend_cols]
 
-    if len(_avail_tp) < 2:
-        print("    Need at least pre + one post period.")
+    _spend_matrix = (rewards_df[_spend_cols]
+                      .apply(pd.to_numeric, errors='coerce').fillna(0))
+    _spend_matrix.index = rewards_df[_acct_col].astype(str).str.strip()
+    _spend_matrix = _spend_matrix[~_spend_matrix.index.duplicated(keep='first')]
+
+    print(f"  Monthly spend columns: {len(_spend_cols)} "
+          f"({_spend_cols[0].replace(' Spend', '')} to "
+          f"{_spend_cols[-1].replace(' Spend', '')})")
+
+    # -----------------------------------------------------------------
+    # Build offset spend: actual $ at each relative month per mailer
+    # -----------------------------------------------------------------
+    _MONTHLY_OFFSETS = list(range(-6, 0)) + list(range(1, 7))
+    _QUARTERLY_OFFSETS = [9, 12, 15, 18, 21, 24]
+
+    _offset_records = []
+
+    for mailer in _mailers:
+        _mdf = _cohort[_cohort['mailer'] == mailer]
+        _wave_date = _mdf['wave_date'].iloc[0]
+
+        # Map each spend column to its offset from this mailer
+        _col_by_offset = {}
+        for col, mdate in zip(_spend_cols, _month_dates):
+            offset = ((mdate.year - _wave_date.year) * 12
+                      + (mdate.month - _wave_date.month))
+            _col_by_offset[offset] = col
+
+        # Which offsets to include
+        _avail = set(_col_by_offset.keys())
+        _display = sorted(
+            [o for o in _MONTHLY_OFFSETS if o in _avail]
+            + [o for o in _QUARTERLY_OFFSETS if o in _avail]
+        )
+
+        if not _display:
+            continue
+
+        # Get spend data for this mailer's accounts
+        _accts = _mdf['acct_number'].values
+        _matched = _spend_matrix.index.isin(_accts)
+        if _matched.sum() == 0:
+            continue
+        _mailer_spend = _spend_matrix.loc[_matched]
+
+        # Account info for this mailer
+        _acct_info = (_mdf.drop_duplicates(subset='acct_number')
+                      .set_index('acct_number')[['segment', 'outcome']])
+
+        for offset in _display:
+            col = _col_by_offset[offset]
+            _vals = _mailer_spend[col].rename('spend')
+            _merged = _vals.to_frame().join(_acct_info, how='inner')
+
+            for (seg, outcome), grp in _merged.groupby(['segment', 'outcome']):
+                _offset_records.append({
+                    'mailer': mailer,
+                    'segment': seg,
+                    'outcome': outcome,
+                    'offset': offset,
+                    'avg_spend': grp['spend'].mean(),
+                    'n': len(grp),
+                })
+
+    _offset_df = pd.DataFrame(_offset_records)
+
+    if len(_offset_df) == 0:
+        print("    No offset spend data could be computed.")
     else:
-        _tp_labels = [t[0] for t in _avail_tp]
-        _tp_cols = [t[1] for t in _avail_tp]
+        _all_offsets = sorted(_offset_df['offset'].unique())
 
         _seg_colors = {
             'NU':    GEN_COLORS['info'],
@@ -39,30 +113,58 @@ else:
         }
 
         # ---------------------------------------------------------------
-        # Helper: draw spend trajectory on one axis
+        # Helper: draw monthly trajectory on one axis
         # ---------------------------------------------------------------
-        def _draw_trajectory(ax, data, title, show_legend=True):
-            _x = np.arange(len(_tp_labels))
+        def _draw_monthly(ax, data, offsets, title, show_legend=True):
+            _x_map = {o: i for i, o in enumerate(offsets)}
 
             for seg in SEGMENT_ORDER:
-                _sub_r = data[(data['segment'] == seg) & (data['outcome'] == 'Responder')]
-                _sub_nr = data[(data['segment'] == seg) & (data['outcome'] == 'Non-Responder')]
                 _color = _seg_colors.get(seg, GEN_COLORS['muted'])
 
-                if len(_sub_r) > 0:
-                    _vals_r = [_sub_r[col].mean() for col in _tp_cols]
-                    ax.plot(_x, _vals_r, color=_color, linewidth=2.5,
-                            marker='o', markersize=7, markeredgecolor='white',
-                            markeredgewidth=1.5, label=f"{seg} Resp", zorder=5)
+                for outcome, ls, lw, alpha, ms in [
+                    ('Responder', '-', 2.5, 1.0, 7),
+                    ('Non-Responder', '--', 1.5, 0.5, 4)
+                ]:
+                    _sub = data[(data['segment'] == seg) &
+                                (data['outcome'] == outcome)]
+                    if len(_sub) == 0:
+                        continue
 
-                if len(_sub_nr) > 0:
-                    _vals_nr = [_sub_nr[col].mean() for col in _tp_cols]
-                    ax.plot(_x, _vals_nr, color=_color, linewidth=1.5,
-                            linestyle='--', alpha=0.5, marker='s', markersize=4,
-                            label=f"{seg} NR", zorder=4)
+                    _pts = _sub.set_index('offset')['avg_spend']
+                    _valid = [o for o in offsets if o in _pts.index]
+                    if len(_valid) < 2:
+                        continue
 
-            ax.set_xticks(_x)
-            ax.set_xticklabels(_tp_labels, fontsize=11, fontweight='bold')
+                    _xs = [_x_map[o] for o in _valid]
+                    _ys = [_pts[o] for o in _valid]
+
+                    _label = (f"{seg}" if outcome == 'Responder'
+                              else f"{seg} NR")
+                    ax.plot(_xs, _ys, color=_color, linewidth=lw,
+                            linestyle=ls, alpha=alpha, marker='o',
+                            markersize=ms, markeredgecolor='white',
+                            markeredgewidth=1, label=_label, zorder=5)
+
+            # Mailer event line at offset 0
+            if 0 not in offsets:
+                # Find position between -1 and +1
+                _neg = [i for i, o in enumerate(offsets) if o < 0]
+                _pos = [i for i, o in enumerate(offsets) if o > 0]
+                if _neg and _pos:
+                    _zero_x = (_neg[-1] + _pos[0]) / 2
+                    ax.axvline(x=_zero_x, color=GEN_COLORS['accent'],
+                               linewidth=1.5, linestyle=':', alpha=0.6, zorder=2)
+
+            # X labels
+            _labels = []
+            for o in offsets:
+                if o < 0:
+                    _labels.append(f"{o}")
+                else:
+                    _labels.append(f"+{o}")
+            ax.set_xticks(range(len(offsets)))
+            ax.set_xticklabels(_labels, fontsize=9, fontweight='bold',
+                                rotation=45, ha='right')
             ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
             gen_clean_axes(ax)
             ax.yaxis.grid(True, color=GEN_COLORS['grid'],
@@ -79,20 +181,24 @@ else:
         # ---------------------------------------------------------------
         # Chart 1: All Mailers Pooled (full size)
         # ---------------------------------------------------------------
-        fig, ax = plt.subplots(figsize=(14, 7))
-        _draw_trajectory(ax, _cohort, "All Mailers Pooled")
+        _pooled = (_offset_df
+                   .groupby(['segment', 'outcome', 'offset'])
+                   .agg(avg_spend=('avg_spend', 'mean'), n=('n', 'sum'))
+                   .reset_index())
+
+        fig, ax = plt.subplots(figsize=(16, 7))
+        _draw_monthly(ax, _pooled, _all_offsets, "All Mailers Pooled")
 
         ax.set_ylabel("Avg Monthly Spend ($)", fontsize=16,
                        fontweight='bold', labelpad=10)
-
-        # Override title for the main chart
-        ax.set_title("Spend Trajectory: Responded vs Did Not",
-                      fontsize=26, fontweight='bold',
+        ax.set_title("Monthly Spend Trajectory: Responded vs Did Not",
+                      fontsize=24, fontweight='bold',
                       color=GEN_COLORS['dark_text'], pad=35, loc='left')
         ax.text(0.0, 1.02,
-                "Actual $/mo at each window  |  Solid = responded, dashed = did not  |  "
-                "All mailers pooled",
-                transform=ax.transAxes, fontsize=12,
+                "Actual $/mo at each individual month relative to mailer  |  "
+                "Solid = responded, dashed = did not  |  "
+                "Dotted red = mailer date",
+                transform=ax.transAxes, fontsize=11,
                 color=GEN_COLORS['muted'], style='italic')
 
         plt.tight_layout()
@@ -112,13 +218,14 @@ else:
         axes_flat = axes.flat if hasattr(axes, 'flat') else [axes]
 
         for ax, mailer in zip(axes_flat, _mailers):
-            _mdf = _cohort[_cohort['mailer'] == mailer]
-            _draw_trajectory(ax, _mdf, mailer, show_legend=False)
+            _mdata = _offset_df[_offset_df['mailer'] == mailer]
+            _m_offsets = sorted(_mdata['offset'].unique())
+            _draw_monthly(ax, _mdata, _m_offsets, mailer, show_legend=False)
 
         for ax in list(axes_flat)[_n_mailers:]:
             ax.axis('off')
 
-        # Single legend for the faceted chart
+        # Shared legend
         _handles, _labels = [], []
         for seg in SEGMENT_ORDER:
             _color = _seg_colors.get(seg, GEN_COLORS['muted'])
@@ -133,7 +240,7 @@ else:
                    ncol=len(SEGMENT_ORDER), fontsize=10, frameon=True,
                    bbox_to_anchor=(0.5, -0.02))
 
-        fig.suptitle("Spend Trajectory by Mailer",
+        fig.suptitle("Monthly Spend Trajectory by Mailer",
                       fontsize=22, fontweight='bold',
                       color=GEN_COLORS['dark_text'], x=0.02, ha='left', y=1.02)
 
@@ -141,53 +248,55 @@ else:
         plt.show()
 
         # ---------------------------------------------------------------
-        # Styled table: segment x mailer spend at each time point
+        # Styled table: milestone offsets per segment x mailer
         # ---------------------------------------------------------------
+        _milestones = [o for o in [-6, -3, -1, 1, 3, 6, 9, 12]
+                        if o in _all_offsets]
+
         _table_rows = []
 
-        def _build_table_rows(data, mailer_label):
+        def _build_milestone_rows(data, mailer_label):
             for seg in SEGMENT_ORDER:
-                _r = data[(data['segment'] == seg) & (data['outcome'] == 'Responder')]
-                _nr = data[(data['segment'] == seg) & (data['outcome'] == 'Non-Responder')]
-                if len(_r) == 0 and len(_nr) == 0:
+                _r = data[(data['segment'] == seg) &
+                          (data['outcome'] == 'Responder')]
+                _nr = data[(data['segment'] == seg) &
+                           (data['outcome'] == 'Non-Responder')]
+                if len(_r) == 0:
                     continue
 
-                _row = {'Segment': seg, 'Mailer': mailer_label, 'N (Resp)': len(_r)}
+                _row = {'Segment': seg, 'Mailer': mailer_label}
+                _r_pts = _r.set_index('offset')['avg_spend']
+                _nr_pts = _nr.set_index('offset')['avg_spend'] if len(_nr) > 0 else pd.Series(dtype=float)
 
-                for label, col in _avail_tp:
-                    _row[f'Resp {label}'] = _r[col].mean() if len(_r) > 0 else np.nan
-                    _row[f'NR {label}'] = _nr[col].mean() if len(_nr) > 0 else np.nan
+                for o in _milestones:
+                    _label = f"{o:+d}mo"
+                    _row[_label] = _r_pts.get(o, np.nan)
 
-                # Deltas: post - pre for each window
-                if 'Resp Pre' in _row and pd.notna(_row.get('Resp Pre')):
-                    for label in _tp_labels[1:]:
-                        _r_val = _row.get(f'Resp {label}')
-                        _nr_val = _row.get(f'NR {label}')
-                        _r_pre = _row.get('Resp Pre')
-                        _nr_pre = _row.get('NR Pre')
-                        if all(pd.notna(v) for v in [_r_val, _nr_val, _r_pre, _nr_pre]):
-                            _row[f'DID {label}'] = (
-                                (_r_val - _r_pre) - (_nr_val - _nr_pre)
-                            )
+                # Gap at post milestones
+                for o in [m for m in _milestones if m > 0]:
+                    _r_val = _r_pts.get(o, np.nan)
+                    _nr_val = _nr_pts.get(o, np.nan)
+                    if pd.notna(_r_val) and pd.notna(_nr_val):
+                        _row[f'Gap {o:+d}'] = _r_val - _nr_val
 
                 _table_rows.append(_row)
 
-        _build_table_rows(_cohort, 'ALL MAILERS')
+        _build_milestone_rows(_pooled, 'ALL MAILERS')
         for mailer in _mailers:
-            _build_table_rows(_cohort[_cohort['mailer'] == mailer], mailer)
+            _mdata = _offset_df[_offset_df['mailer'] == mailer]
+            _build_milestone_rows(_mdata, mailer)
 
         _table_df = pd.DataFrame(_table_rows)
 
         # Select display columns
-        _disp_cols = ['Segment', 'Mailer', 'N (Resp)']
-        for label in _tp_labels:
-            _disp_cols.append(f'Resp {label}')
-        for label in _tp_labels[1:]:
-            if f'DID {label}' in _table_df.columns:
-                _disp_cols.append(f'DID {label}')
-
-        _disp_cols = [c for c in _disp_cols if c in _table_df.columns]
-        _display_df = _table_df[_disp_cols].copy()
+        _spend_label_cols = [f"{o:+d}mo" for o in _milestones]
+        _gap_cols = [f"Gap {o:+d}" for o in _milestones if o > 0
+                     and f"Gap {o:+d}" in _table_df.columns]
+        _disp_cols = (['Segment', 'Mailer']
+                      + [c for c in _spend_label_cols if c in _table_df.columns]
+                      + _gap_cols)
+        _display_df = _table_df[[c for c in _disp_cols
+                                  if c in _table_df.columns]].copy()
 
         # Style helpers
         _seg_breaks = set()
@@ -197,7 +306,8 @@ else:
                 _seg_breaks.add(i)
             _prev_seg = row['Segment']
 
-        _agg_rows = set(_display_df[_display_df['Mailer'] == 'ALL MAILERS'].index)
+        _agg_rows = set(
+            _display_df[_display_df['Mailer'] == 'ALL MAILERS'].index)
 
         def _style_rows(row):
             is_agg = row.name in _agg_rows
@@ -207,8 +317,8 @@ else:
             bg = '; background-color: rgba(27, 42, 74, 0.05)' if is_agg else ''
             return [base + sep + bg] * len(row)
 
-        def _color_did(col):
-            if 'DID' not in col.name:
+        def _color_gaps(col):
+            if 'Gap' not in col.name:
                 return [''] * len(col)
             return [
                 f'color: {GEN_COLORS["success"]}' if pd.notna(v) and v > 0
@@ -217,28 +327,26 @@ else:
                 for v in col
             ]
 
-        def _fmt_delta(v):
-            if pd.isna(v):
-                return '--'
-            sign = '+' if v >= 0 else '-'
-            return f"{sign}${abs(v):,.0f}/mo"
-
-        _fmt = {'N (Resp)': '{:,.0f}'}
-        for label in _tp_labels:
-            _fmt[f'Resp {label}'] = '${:,.0f}'
-        for label in _tp_labels[1:]:
-            if f'DID {label}' in _display_df.columns:
-                _fmt[f'DID {label}'] = _fmt_delta
+        _fmt = {}
+        for c in _display_df.columns:
+            if c in ('Segment', 'Mailer'):
+                continue
+            elif 'Gap' in c:
+                _fmt[c] = lambda v: (f"+${v:,.0f}" if pd.notna(v) and v >= 0
+                                     else f"-${abs(v):,.0f}" if pd.notna(v)
+                                     else '--')
+            else:
+                _fmt[c] = '${:,.0f}'
 
         _styled = (
             _display_df.style
             .hide(axis='index')
             .format(_fmt, na_rep='--')
             .apply(_style_rows, axis=1)
-            .apply(_color_did)
+            .apply(_color_gaps)
             .set_properties(**{
-                'font-size': '13px', 'text-align': 'center',
-                'border': '1px solid #E9ECEF', 'padding': '8px 10px',
+                'font-size': '12px', 'text-align': 'center',
+                'border': '1px solid #E9ECEF', 'padding': '7px 8px',
             })
             .set_properties(subset=['Segment'], **{
                 'font-weight': 'bold', 'text-align': 'left',
@@ -250,48 +358,35 @@ else:
             .set_table_styles([
                 {'selector': 'th', 'props': [
                     ('background-color', GEN_COLORS['primary']),
-                    ('color', 'white'), ('font-size', '13px'),
+                    ('color', 'white'), ('font-size', '12px'),
                     ('font-weight', 'bold'), ('text-align', 'center'),
-                    ('padding', '8px 10px'),
+                    ('padding', '8px'),
                 ]},
                 {'selector': 'caption', 'props': [
-                    ('font-size', '22px'), ('font-weight', 'bold'),
+                    ('font-size', '20px'), ('font-weight', 'bold'),
                     ('color', GEN_COLORS['dark_text']),
-                    ('text-align', 'left'), ('padding-bottom', '12px'),
+                    ('text-align', 'left'), ('padding-bottom', '10px'),
                 ]},
             ])
-            .set_caption("Spend Persistence: Actual $/mo by Segment x Mailer")
+            .set_caption(
+                "Responder Spend at Milestone Months + Gap vs Non-Responder"
+            )
         )
         display(_styled)
 
         # ---------------------------------------------------------------
         # Narrative
         # ---------------------------------------------------------------
-        _agg_data = _table_df[_table_df['Mailer'] == 'ALL MAILERS']
-        print(f"\n  Avg monthly spend (actual $) at each window, all mailers pooled:")
-        for _, row in _agg_data.iterrows():
-            _parts = [f"    {row['Segment']:<8s}:"]
-            for label in _tp_labels:
-                _val = row.get(f'Resp {label}')
-                if pd.notna(_val):
-                    _parts.append(f"{label}=${_val:,.0f}")
-            _did_3 = row.get('DID +3mo')
-            _did_6 = row.get('DID +6mo')
-            if pd.notna(_did_3):
-                _parts.append(f"DID+3mo={'+' if _did_3 >= 0 else ''}${_did_3:,.0f}")
-            if pd.notna(_did_6):
-                _parts.append(f"DID+6mo={'+' if _did_6 >= 0 else ''}${_did_6:,.0f}")
-            print('  '.join(_parts))
+        print(f"\n  Offsets available: {_all_offsets}")
+        print(f"  Monthly -6 to +6, then quarterly where data exists")
 
-        # Persistence check: does DID grow or shrink from +3 to +6?
-        if 'DID +3mo' in _agg_data.columns and 'DID +6mo' in _agg_data.columns:
-            print(f"\n  Persistence check (does DID grow from +3mo to +6mo?):")
+        _agg_data = _table_df[_table_df['Mailer'] == 'ALL MAILERS']
+        if len(_agg_data) > 0:
+            print(f"\n  Responder spend trajectory (all mailers pooled):")
             for _, row in _agg_data.iterrows():
-                _d3 = row.get('DID +3mo')
-                _d6 = row.get('DID +6mo')
-                if pd.notna(_d3) and pd.notna(_d6):
-                    _verdict = ('growing' if _d6 > _d3 + 5
-                                else 'fading' if _d6 < _d3 - 5
-                                else 'holding')
-                    print(f"    {row['Segment']:<8s}: "
-                          f"+3mo=${_d3:,.0f} -> +6mo=${_d6:,.0f} ({_verdict})")
+                _parts = [f"    {row['Segment']:<8s}:"]
+                for c in _spend_label_cols:
+                    _v = row.get(c)
+                    if pd.notna(_v):
+                        _parts.append(f"{c}=${_v:,.0f}")
+                print('  '.join(_parts))
