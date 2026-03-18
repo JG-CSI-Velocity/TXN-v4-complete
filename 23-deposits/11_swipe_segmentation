@@ -7,8 +7,8 @@
 # All metrics normalized to monthly:
 #   Swipes: last 3 months / 3
 #   Spend: last 3 months / 3
-#   Deposit Count: DepCount99 / 3.3
-#   Deposit Amount: DepAmt99 / 3.3
+#   Deposit Count: depCount365 / 12
+#   Deposit Amount: depAmt365 / 12
 #
 # Total Open only -- full portfolio, no Mail/Resp segmentation.
 #
@@ -87,7 +87,7 @@ else:
         _snap = deposit_long[deposit_long['snapshot'] == _latest_snap].copy()
         if DEPOSIT_JOIN_KEY_DEPOSIT in _snap.columns:
             _snap['_join_key'] = _snap[DEPOSIT_JOIN_KEY_DEPOSIT].astype(str).str.strip()
-            _dep_cols = [c for c in ['DepAmt99', 'DepCount99', 'balance']
+            _dep_cols = [c for c in ['depAmt365', 'depCount365']
                           if c in _snap.columns]
             if _dep_cols:
                 _dep = (_snap[['_join_key'] + _dep_cols]
@@ -96,11 +96,11 @@ else:
                 _acct = _acct.join(_dep, on='_join_key', how='left')
                 print(f"  Z5: {_latest_snap}, matched {_acct[_dep_cols[0]].notna().sum():,} accounts")
 
-    # Normalize to monthly (99 days ~ 3.3 months)
-    if 'DepCount99' in _acct.columns:
-        _acct['mo_dep_count'] = _acct['DepCount99'] / 3.3
-    if 'DepAmt99' in _acct.columns:
-        _acct['mo_dep_amt'] = _acct['DepAmt99'] / 3.3
+    # Normalize to monthly (365 days / 12)
+    if 'depCount365' in _acct.columns:
+        _acct['mo_dep_count'] = _acct['depCount365'] / 12
+    if 'depAmt365' in _acct.columns:
+        _acct['mo_dep_amt'] = _acct['depAmt365'] / 12
 
     # -----------------------------------------------------------------
     # 3. Create swipe-based tiers
@@ -131,7 +131,6 @@ else:
         ('Mo Spend', 'mean', 'mo_spend'),
         ('Median Mo Dep Count', 'median', 'mo_dep_count'),
         ('Median Mo Dep Amt', 'median', 'mo_dep_amt'),
-        ('Median Balance', 'median', 'balance'),
     ]
 
     _rows = []
@@ -163,7 +162,6 @@ else:
         'Mo Spend': '${:,.1f}',
         'Median Mo Dep Count': '{:,.1f}',
         'Median Mo Dep Amt': '${:,.1f}',
-        'Median Balance': '${:,.1f}',
     }
 
     _total_idx = set(_summary_df[_summary_df['Tier'] == 'TOTAL'].index)

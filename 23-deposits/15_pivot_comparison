@@ -35,12 +35,6 @@ else:
         _nr_dep = _row.get('NR Mo Dep $')
         _row['Dep $ Diff'] = _r_dep - _nr_dep if pd.notna(_r_dep) and pd.notna(_nr_dep) else np.nan
 
-        for _p, _g in _grp_data.items():
-            _row[f'{_p} Bal'] = _g['balance'].median() if 'balance' in _g.columns and len(_g) > 0 else np.nan
-        _r_bal = _row.get('Resp Bal')
-        _nr_bal = _row.get('NR Bal')
-        _row['Bal Diff'] = _r_bal - _nr_bal if pd.notna(_r_bal) and pd.notna(_nr_bal) else np.nan
-
         _pivot_rows.append(_row)
 
     _pivot_df = pd.DataFrame(_pivot_rows)
@@ -86,6 +80,6 @@ else:
             {'selector': 'caption', 'props': [('font-size', '20px'), ('font-weight', 'bold'),
                 ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '10px')]},
         ])
-        .set_caption("Pivot: Median Mo Dep $ and Balance by Group")
+        .set_caption("Pivot: Median Mo Dep $ by Group")
     )
     display(_styled)

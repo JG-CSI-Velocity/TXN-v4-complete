@@ -33,8 +33,6 @@ else:
                 _row['Med Dep Ct'] = _g['mo_dep_count'].median()
             if 'mo_dep_amt' in _g.columns:
                 _row['Med Dep $'] = _g['mo_dep_amt'].median()
-            if 'balance' in _g.columns:
-                _row['Med Bal'] = _g['balance'].median()
             _rows.append(_row)
 
     _df = pd.DataFrame(_rows)
@@ -68,7 +66,7 @@ else:
 
     _fmt = {
         'N': '{:,.0f}', 'Mo Swipes': '{:,.1f}', 'Mo Spend': '${:,.1f}',
-        'Med Dep Ct': '{:,.1f}', 'Med Dep $': '${:,.1f}', 'Med Bal': '${:,.1f}',
+        'Med Dep Ct': '{:,.1f}', 'Med Dep $': '${:,.1f}',
     }
 
     _styled = (

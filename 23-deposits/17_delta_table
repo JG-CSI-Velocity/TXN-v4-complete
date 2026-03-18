@@ -17,7 +17,6 @@ else:
         ('Mo Spend', 'mean', 'mo_spend'),
         ('Med Dep Ct', 'median', 'mo_dep_count'),
         ('Med Dep $', 'median', 'mo_dep_amt'),
-        ('Med Balance', 'median', 'balance'),
     ]
 
     _delta_rows = []

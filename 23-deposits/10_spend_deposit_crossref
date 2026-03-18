@@ -109,7 +109,7 @@ else:
                 _snap_data[DEPOSIT_JOIN_KEY_DEPOSIT].astype(str).str.strip())
 
             _dep_cols = []
-            for col in ['depAmt365', 'depCount365', 'balance']:
+            for col in ['depAmt365', 'depCount365']:
                 if col in _snap_data.columns:
                     _dep_cols.append(col)
 
@@ -150,7 +150,7 @@ else:
     _groups = [('Total Open', pd.Series(True, index=_joined.index))]
 
     _metric_cols = (['Spend 3mo Avg', 'Swipes 3mo Avg']
-                    + [c for c in ['depAmt365', 'depCount365', 'balance']
+                    + [c for c in ['depAmt365', 'depCount365']
                        if c in _joined.columns])
 
     for grp_name, mask in _groups:

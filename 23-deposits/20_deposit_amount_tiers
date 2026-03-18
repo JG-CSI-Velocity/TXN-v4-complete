@@ -39,7 +39,6 @@ else:
         ('Mo Spend', 'mean', 'mo_spend'),
         ('Med Mo Dep Ct', 'median', 'mo_dep_count'),
         ('Med Mo Dep $', 'median', 'mo_dep_amt'),
-        ('Med Balance', 'median', 'balance'),
     ]
 
     # -----------------------------------------------------------------
@@ -105,7 +104,6 @@ else:
     _fmt = {
         'Accounts': '{:,.0f}', 'Mo Swipes': '{:,.1f}', 'Mo Spend': '${:,.1f}',
         'Med Mo Dep Ct': '{:,.1f}', 'Med Mo Dep $': '${:,.1f}',
-        'Med Balance': '${:,.1f}',
     }
 
     _styled = (
@@ -145,7 +143,6 @@ else:
             ('Mo Spend', 'mean', 'mo_spend'),
             ('Med Dep Ct', 'median', 'mo_dep_count'),
             ('Med Dep $', 'median', 'mo_dep_amt'),
-            ('Med Bal', 'median', 'balance'),
         ]:
             if col in _acct.columns and len(_r) > 0 and len(_nr) > 0:
                 _rv = _r[col].median() if agg == 'median' else _r[col].mean()
