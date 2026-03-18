@@ -292,10 +292,7 @@ else:
             plt.show()
 
             # Quick summary: responder advantage
-            _r_all = _acct[_acct.index.isin(
-                pd.concat([_acct[m] for _, m in _groups
-                           if 'Resp' in _], ignore_index=True).index
-            ) if False else _responded & _has_both]
+            _r_all = _responded & _has_both
             _nr_all = _mailed & ~_responded & _has_both
 
             if _r_all.sum() > 0 and _nr_all.sum() > 0:
