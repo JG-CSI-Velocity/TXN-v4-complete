@@ -1,0 +1,91 @@
+# ===========================================================================
+# CAMPAIGN OVERVIEW: Response Rate Trend by Mailer
+# ===========================================================================
+# Per-mailer response rate over time, overall and by segment.
+# Is it improving, declining, or stable?
+#
+# Depends on: rewards_df (00-setup/08), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+else:
+    from IPython.display import display
+
+    _mail_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
+        key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
+
+    def _parse_seg(val):
+        if pd.isna(val): return None
+        v = str(val).strip().upper()
+        if 'TH-25' in v or 'TH 25' in v or 'TH25' in v: return 'TH-25'
+        if 'TH-20' in v or 'TH 20' in v or 'TH20' in v: return 'TH-20'
+        if 'TH-15' in v or 'TH 15' in v or 'TH15' in v: return 'TH-15'
+        if 'TH-10' in v or 'TH 10' in v or 'TH10' in v: return 'TH-10'
+        if v.startswith('NU') or 'NON-USER' in v: return 'NU'
+        return None
+
+    def _is_success(val):
+        if pd.isna(val): return False
+        v = str(val).strip().upper()
+        if not v or v == 'NAN': return False
+        if 'NU' in v: return '5+' in v or '5 +' in v
+        return True
+
+    _SEG_ORDER = ['NU', 'TH-10', 'TH-15', 'TH-20', 'TH-25']
+
+    _rows = []
+    for mc in _mail_cols:
+        _month = mc.replace(' Mail', '')
+        _rc = f"{_month} Resp"
+        if _rc not in rewards_df.columns or rewards_df[_rc].notna().sum() == 0:
+            continue
+
+        _mailed = rewards_df[mc].notna()
+        _responded = rewards_df[_rc].apply(_is_success)
+        _segments = rewards_df[mc].apply(_parse_seg)
+
+        _n = _mailed.sum()
+        if _n == 0:
+            continue
+
+        _row = {'Mailer': _month,
+                'Overall': (_mailed & _responded).sum() / _n * 100}
+
+        for seg in _SEG_ORDER:
+            _seg_n = (_segments == seg).sum()
+            _seg_r = ((_segments == seg) & _responded).sum()
+            _row[seg] = _seg_r / _seg_n * 100 if _seg_n > 0 else np.nan
+
+        _rows.append(_row)
+
+    if _rows:
+        _df = pd.DataFrame(_rows)
+
+        _fmt = {c: '{:.1f}%' for c in _df.columns if c != 'Mailer'}
+
+        _styled = (
+            _df.style.hide(axis='index')
+            .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+            .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+            .set_properties(subset=['Mailer'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                    ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '8px 10px')]},
+                {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
+            ])
+            .set_caption("Response Rate Trend by Mailer and Segment")
+        )
+        display(_styled)
+
+        # Trend check
+        _overall_rates = [r['Overall'] for r in _rows]
+        if len(_overall_rates) >= 2:
+            _trend = ('improving' if _overall_rates[-1] > _overall_rates[0] + 1
+                       else 'declining' if _overall_rates[-1] < _overall_rates[0] - 1
+                       else 'stable')
+            print(f"\n  Overall trend: {_trend} "
+                  f"({_overall_rates[0]:.1f}% -> {_overall_rates[-1]:.1f}%)")

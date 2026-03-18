@@ -1,0 +1,113 @@
+# ===========================================================================
+# CAMPAIGN OVERVIEW: Per-Mailer Response Summary
+# ===========================================================================
+# One row per mailer (chronological). Mailed, Responded, Rate, by segment.
+# Excludes mailers with zero Resp data.
+#
+# Depends on: rewards_df (00-setup/08), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+else:
+    from IPython.display import display
+
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+    _mail_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
+        key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
+
+    def _parse_seg(val):
+        if pd.isna(val): return None
+        v = str(val).strip().upper()
+        if 'TH-25' in v or 'TH 25' in v or 'TH25' in v: return 'TH-25'
+        if 'TH-20' in v or 'TH 20' in v or 'TH20' in v: return 'TH-20'
+        if 'TH-15' in v or 'TH 15' in v or 'TH15' in v: return 'TH-15'
+        if 'TH-10' in v or 'TH 10' in v or 'TH10' in v: return 'TH-10'
+        if v.startswith('NU') or 'NON-USER' in v: return 'NU'
+        return None
+
+    def _is_success(val):
+        if pd.isna(val): return False
+        v = str(val).strip().upper()
+        if not v or v == 'NAN': return False
+        if 'NU' in v: return '5+' in v or '5 +' in v
+        return True
+
+    _SEG_ORDER = ['NU', 'TH-10', 'TH-15', 'TH-20', 'TH-25']
+
+    _rows = []
+    for mc in _mail_cols:
+        _month = mc.replace(' Mail', '')
+        _rc = f"{_month} Resp"
+        if _rc not in rewards_df.columns:
+            continue
+        if rewards_df[_rc].notna().sum() == 0:
+            continue
+
+        _mailed = rewards_df[mc].notna()
+        _n_mailed = _mailed.sum()
+        if _n_mailed == 0:
+            continue
+
+        _responded = rewards_df[_rc].apply(_is_success)
+        _n_resp = (_mailed & _responded).sum()
+        _rate = _n_resp / _n_mailed * 100
+
+        _row = {'Mailer': _month, 'Mailed': _n_mailed,
+                'Responded': _n_resp, 'Rate': _rate}
+
+        # Per-segment response counts
+        _segments = rewards_df[mc].apply(_parse_seg)
+        for seg in _SEG_ORDER:
+            _seg_mailed = (_segments == seg).sum()
+            _seg_resp = ((_segments == seg) & _mailed & _responded).sum()
+            _row[f'{seg} R'] = _seg_resp
+            _row[f'{seg} M'] = _seg_mailed
+
+        _rows.append(_row)
+
+    # ALL MAILERS aggregate
+    if _rows:
+        _agg = {'Mailer': 'ALL'}
+        _agg['Mailed'] = sum(r['Mailed'] for r in _rows)
+        _agg['Responded'] = sum(r['Responded'] for r in _rows)
+        _agg['Rate'] = _agg['Responded'] / _agg['Mailed'] * 100 if _agg['Mailed'] > 0 else 0
+        for seg in _SEG_ORDER:
+            _agg[f'{seg} R'] = sum(r.get(f'{seg} R', 0) for r in _rows)
+            _agg[f'{seg} M'] = sum(r.get(f'{seg} M', 0) for r in _rows)
+        _rows.append(_agg)
+
+    _df = pd.DataFrame(_rows)
+    _last = len(_df) - 1
+
+    def _style(row):
+        if row.name == _last:
+            return ['font-weight: bold; border-top: 2px solid #1B2A4A; '
+                    'background-color: rgba(27, 42, 74, 0.08)'] * len(row)
+        return [''] * len(row)
+
+    _fmt = {'Mailed': '{:,.0f}', 'Responded': '{:,.0f}', 'Rate': '{:.1f}%'}
+    for seg in _SEG_ORDER:
+        _fmt[f'{seg} R'] = '{:,.0f}'
+        _fmt[f'{seg} M'] = '{:,.0f}'
+
+    _styled = (
+        _df.style.hide(axis='index')
+        .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+        .apply(_style, axis=1)
+        .set_properties(**{'font-size': '12px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '7px 10px'})
+        .set_properties(subset=['Mailer'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '12px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '7px 10px')]},
+            {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
+        ])
+        .set_caption("Campaign Overview: Per-Mailer Response Summary")
+    )
+    display(_styled)
+
+    print(f"\n  {len(_rows) - 1} mailers with response data")
+    print(f"  NU 5+ = Responder. NU 1-4 = Non-Responder.")
