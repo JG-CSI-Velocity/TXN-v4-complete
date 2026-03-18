@@ -1,0 +1,79 @@
+# ===========================================================================
+# Z5 VALIDATION 4: Sample Accounts -- Eyeball the Raw Data
+# ===========================================================================
+# Pull 20 sample accounts at different deposit levels so you can
+# look at the actual numbers and verify they make sense.
+#
+# Depends on: deposit_long (cell 01), deposit_df (cell 01), GEN_COLORS
+
+if 'deposit_df' not in dir() or len(deposit_df) == 0:
+    print("    deposit_df not available. Run cell 01 first.")
+else:
+    from IPython.display import display
+
+    _dep_fields = [c for c in [
+        'balance', 'DepAmt33', 'DepAmt66', 'DepAmt99', 'depAmt365',
+        'DepCount33', 'DepCount66', 'DepCount99', 'depCount365',
+        'has_direct_deposit', 'avgdaysbetweendeposits',
+    ] if c in deposit_df.columns]
+
+    if 'depAmt365' in deposit_df.columns:
+        _dep_vals = pd.to_numeric(deposit_df['depAmt365'], errors='coerce')
+
+        # Sample from different quantiles
+        _samples = []
+        for q, label in [(0.0, 'Min'), (0.10, 'P10'), (0.25, 'P25'),
+                          (0.50, 'Median'), (0.75, 'P75'), (0.90, 'P90'),
+                          (0.99, 'P99'), (1.0, 'Max')]:
+            _target = _dep_vals.quantile(q)
+            _closest = (_dep_vals - _target).abs().nsmallest(3).index
+            for idx in _closest:
+                _row = {'Sample': label}
+                for f in _dep_fields:
+                    _row[f] = deposit_df.loc[idx, f]
+                _samples.append(_row)
+
+        _sample_df = pd.DataFrame(_samples).drop_duplicates(subset=_dep_fields)
+
+        # Sort by depAmt365
+        if 'depAmt365' in _sample_df.columns:
+            _sample_df['depAmt365'] = pd.to_numeric(_sample_df['depAmt365'], errors='coerce')
+            _sample_df = _sample_df.sort_values('depAmt365').head(20)
+
+        _fmt = {}
+        for c in _sample_df.columns:
+            if c == 'Sample': continue
+            elif 'Amt' in c or 'amt' in c or 'balance' in c:
+                _fmt[c] = '${:,.0f}'
+            elif 'Count' in c or 'count' in c:
+                _fmt[c] = '{:,.0f}'
+            elif 'days' in c.lower():
+                _fmt[c] = '{:,.0f}'
+            else:
+                _fmt[c] = '{}'
+
+        _styled = (
+            _sample_df.style.hide(axis='index')
+            .format({k: v for k, v in _fmt.items() if k in _sample_df.columns}, na_rep='--')
+            .set_properties(**{'font-size': '11px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '5px 7px'})
+            .set_properties(subset=['Sample'], **{
+                'text-align': 'left', 'color': GEN_COLORS['primary']})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                    ('color', 'white'), ('font-size': '10px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '5px 7px')]},
+                {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                    ('padding-bottom', '12px')]},
+            ])
+            .set_caption("Z5 Sample Accounts: Raw Deposit Fields at Each Quantile")
+        )
+        display(_styled)
+
+        print(f"\n  Samples pulled from depAmt365 quantiles (Min through Max)")
+        print(f"  Verify: do the 33d/66d/99d/365d amounts make sense together?")
+        print(f"  Verify: does balance relate to deposit amounts?")
+        print(f"  Verify: do deposit counts seem reasonable?")
+    else:
+        print("    depAmt365 not found in deposit_df.")

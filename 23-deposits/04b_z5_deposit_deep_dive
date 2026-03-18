@@ -1,0 +1,84 @@
+# ===========================================================================
+# Z5 VALIDATION 2: Deposit Fields Deep Dive
+# ===========================================================================
+# Detailed distribution for every deposit-related field:
+# DepAmt33/66/99, depAmt365, DepCount33/66/99, depCount365, balance
+#
+# Shows percentiles, histograms in print, and cross-checks between
+# windows (e.g., DepAmt99 should be >= DepAmt66 >= DepAmt33).
+#
+# Depends on: deposit_long (cell 01), SNAPSHOT_ORDER, GEN_COLORS
+
+if 'deposit_long' not in dir() or len(deposit_long) == 0:
+    print("    deposit_long not available. Run cell 01 first.")
+else:
+    from IPython.display import display
+
+    _DEP_FIELDS = [
+        ('DepAmt33', '33-day deposit amount'),
+        ('DepAmt66', '66-day deposit amount'),
+        ('DepAmt99', '99-day deposit amount'),
+        ('depAmt365', '365-day deposit amount'),
+        ('DepCount33', '33-day deposit count'),
+        ('DepCount66', '66-day deposit count'),
+        ('DepCount99', '99-day deposit count'),
+        ('depCount365', '365-day deposit count'),
+        ('balance', 'Current balance'),
+    ]
+
+    _snaps = deposit_long['snapshot'].unique() if 'snapshot' in deposit_long.columns else ['all']
+
+    # -----------------------------------------------------------------
+    # Table 1: Per-snapshot percentile distribution for each field
+    # -----------------------------------------------------------------
+    _pctiles = [0, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99, 1.0]
+    _pctile_labels = ['Min', 'P10', 'P25', 'Median', 'P75', 'P90', 'P95', 'P99', 'Max']
+
+    for field, desc in _DEP_FIELDS:
+        if field not in deposit_long.columns:
+            continue
+
+        _rows = []
+        for snap in _snaps:
+            _sdata = deposit_long[deposit_long['snapshot'] == snap] if 'snapshot' in deposit_long.columns else deposit_long
+            _vals = pd.to_numeric(_sdata[field], errors='coerce').dropna()
+            if len(_vals) == 0:
+                continue
+
+            _row = {'Snapshot': snap, 'N': len(_vals),
+                    'Zeros': (_vals == 0).sum(),
+                    '% Zero': (_vals == 0).sum() / len(_vals) * 100}
+            for p, label in zip(_pctiles, _pctile_labels):
+                _row[label] = _vals.quantile(p)
+            _rows.append(_row)
+
+        if not _rows:
+            continue
+
+        _df = pd.DataFrame(_rows)
+
+        _fmt = {'N': '{:,.0f}', 'Zeros': '{:,.0f}', '% Zero': '{:.1f}%'}
+        for label in _pctile_labels:
+            if 'Count' in field or 'count' in field:
+                _fmt[label] = '{:,.1f}'
+            else:
+                _fmt[label] = '${:,.0f}'
+
+        _styled = (
+            _df.style.hide(axis='index')
+            .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+            .set_properties(**{'font-size': '12px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '6px 8px'})
+            .set_properties(subset=['Snapshot'], **{
+                'text-align': 'left', 'color': GEN_COLORS['primary']})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', GEN_COLORS['info']),
+                    ('color', 'white'), ('font-size': '11px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '6px 8px')]},
+                {'selector': 'caption', 'props': [('font-size', '18px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                    ('padding-bottom', '8px')]},
+            ])
+            .set_caption(f"{field}: {desc}")
+        )
+        display(_styled)

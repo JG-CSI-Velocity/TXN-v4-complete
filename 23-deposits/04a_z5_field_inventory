@@ -1,0 +1,69 @@
+# ===========================================================================
+# Z5 VALIDATION 1: Field Inventory -- What's in the Z file?
+# ===========================================================================
+# Shows every column in deposit_long with data type, coverage,
+# and basic stats. Before we trust any deposit metric, verify
+# what the fields actually contain.
+#
+# Depends on: deposit_long (cell 01), SNAPSHOT_ORDER, GEN_COLORS
+
+if 'deposit_long' not in dir() or len(deposit_long) == 0:
+    print("    deposit_long not available. Run cell 01 first.")
+else:
+    from IPython.display import display
+
+    print(f"  deposit_long: {len(deposit_long):,} rows, "
+          f"{len(deposit_long.columns)} columns")
+    print(f"  Snapshots: {deposit_long['snapshot'].unique().tolist() if 'snapshot' in deposit_long.columns else 'N/A'}")
+
+    # Per-column stats
+    _rows = []
+    for col in deposit_long.columns:
+        _vals = deposit_long[col]
+        _nn = _vals.notna().sum()
+        _row = {
+            'Column': col,
+            'Type': str(_vals.dtype),
+            'Non-Null': _nn,
+            'Coverage': _nn / len(deposit_long) * 100,
+            'Unique': _vals.nunique(),
+        }
+        # Stats for numeric columns
+        _numeric = pd.to_numeric(_vals, errors='coerce')
+        if _numeric.notna().sum() > 0:
+            _row['Min'] = _numeric.min()
+            _row['Median'] = _numeric.median()
+            _row['Mean'] = _numeric.mean()
+            _row['Max'] = _numeric.max()
+            _row['Zeros'] = (_numeric == 0).sum()
+            _row['% Zero'] = (_numeric == 0).sum() / _nn * 100 if _nn > 0 else 0
+
+        _rows.append(_row)
+
+    _inv_df = pd.DataFrame(_rows)
+
+    _fmt = {
+        'Non-Null': '{:,.0f}', 'Coverage': '{:.1f}%', 'Unique': '{:,.0f}',
+        'Min': '{:,.1f}', 'Median': '{:,.1f}', 'Mean': '{:,.1f}',
+        'Max': '{:,.1f}', 'Zeros': '{:,.0f}', '% Zero': '{:.1f}%',
+    }
+
+    _styled = (
+        _inv_df.style.hide(axis='index')
+        .format({k: v for k, v in _fmt.items() if k in _inv_df.columns}, na_rep='--')
+        .bar(subset=['Coverage'], color='rgba(46, 196, 182, 0.3)', vmin=0, vmax=100)
+        .set_properties(**{'font-size': '11px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '6px 8px'})
+        .set_properties(subset=['Column'], **{
+            'text-align': 'left', 'color': GEN_COLORS['primary']})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size': '11px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '6px 8px')]},
+            {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                ('padding-bottom', '12px')]},
+        ])
+        .set_caption("Z5 Field Inventory: Every Column in deposit_long")
+    )
+    display(_styled)
