@@ -1,0 +1,302 @@
+# ===========================================================================
+# PRESENTATION VISUALS: High-Impact Charts for Slides
+# ===========================================================================
+# Designed for screenshots / PPTX insertion. Bold, clean, no clutter.
+#
+# Depends on: rewards_df, _acct (cell 04), PROGRAM_SEG_ORDER, GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+elif '_acct' not in dir():
+    print("    Run cell 04 first.")
+else:
+    from matplotlib.patches import FancyBboxPatch
+
+    _eligible = rewards_df.reindex(_acct.index)
+    _r_mask = _acct['ever_responded']
+    _nr_mask = _acct['was_mailed'] & ~_acct['ever_responded']
+    _n_mailed = _acct['was_mailed'].sum()
+    _n_resp = _r_mask.sum()
+    _n_nr = _nr_mask.sum()
+    _resp_rate = _n_resp / _n_mailed * 100
+
+    _r_swipe = _acct.loc[_r_mask, 'mo_swipes_3mo'].median()
+    _nr_swipe = _acct.loc[_nr_mask, 'mo_swipes_3mo'].median()
+    _r_spend = _acct.loc[_r_mask, 'mo_spend_3mo'].median()
+    _nr_spend = _acct.loc[_nr_mask, 'mo_spend_3mo'].median()
+    _has_dep = 'mo_dep_amt' in _acct.columns
+    _r_dep = _acct.loc[_r_mask, 'mo_dep_amt'].median() if _has_dep else 0
+    _nr_dep = _acct.loc[_nr_mask, 'mo_dep_amt'].median() if _has_dep else 0
+
+    # =================================================================
+    # VISUAL 1: Program KPI Dashboard (single slide hero)
+    # =================================================================
+    fig = plt.figure(figsize=(16, 5))
+    fig.patch.set_facecolor('#1B2A4A')
+
+    _kpis = [
+        (f'{_n_mailed:,}', 'Accounts\nMailed', '#FFFFFF'),
+        (f'{_n_resp:,}', 'Responders', '#2EC4B6'),
+        (f'{_resp_rate:.0f}%', 'Response\nRate', '#2EC4B6'),
+        (f'{_r_swipe / _nr_swipe:.1f}x', 'Swipe Lift\n(R vs NR)', '#FF9F1C'),
+        (f'+${_r_spend - _nr_spend:,.0f}', 'Spend Lift\nper Account/mo', '#FF9F1C'),
+    ]
+
+    for i, (val, label, color) in enumerate(_kpis):
+        _cx = (i + 0.5) / len(_kpis)
+        fig.text(_cx, 0.62, val, ha='center', va='center',
+                 fontsize=42, fontweight='800', color=color,
+                 fontfamily='sans-serif')
+        fig.text(_cx, 0.22, label, ha='center', va='center',
+                 fontsize=14, fontweight='bold', color='#8899AA',
+                 fontfamily='sans-serif', linespacing=1.4)
+
+    fig.text(0.5, 0.92, f'{CLIENT_NAME} ARS Program Results',
+             ha='center', va='center', fontsize=14, fontweight='bold',
+             color='#556677', fontfamily='sans-serif',
+             fontstyle='italic')
+
+    plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+    plt.show()
+
+    # =================================================================
+    # VISUAL 2: Revenue Waterfall
+    # =================================================================
+    _spend_lift = _r_spend - _nr_spend
+    _interchange_rate = 0.015
+    _monthly_per_acct = _spend_lift * _interchange_rate
+    _monthly_total = _monthly_per_acct * _n_resp
+    _annual_total = _monthly_total * 12
+
+    _steps = [
+        ('NR Spend\nBaseline', _nr_spend, 'base'),
+        ('Responder\nSpend Lift', _spend_lift, 'add'),
+        ('R Spend\nTotal', _r_spend, 'total'),
+    ]
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    _running = 0
+    _x_pos = []
+    _bottoms = []
+    _heights = []
+    _colors = []
+    _labels_text = []
+
+    for i, (label, val, stype) in enumerate(_steps):
+        if stype == 'base':
+            _bottoms.append(0)
+            _heights.append(val)
+            _colors.append(GEN_COLORS['muted'])
+            _running = val
+        elif stype == 'add':
+            _bottoms.append(_running)
+            _heights.append(val)
+            _colors.append(GEN_COLORS['success'])
+            _running += val
+        elif stype == 'total':
+            _bottoms.append(0)
+            _heights.append(val)
+            _colors.append(GEN_COLORS['primary'])
+        _x_pos.append(i)
+        _labels_text.append(label)
+
+    bars = ax.bar(_x_pos, _heights, bottom=_bottoms, color=_colors,
+                  edgecolor='white', linewidth=2, width=0.5, zorder=3)
+
+    for bar, bottom, height, color in zip(bars, _bottoms, _heights, _colors):
+        ax.text(bar.get_x() + bar.get_width() / 2,
+                bottom + height + 15,
+                f'${height:,.0f}/mo', ha='center', va='bottom',
+                fontsize=14, fontweight='bold', color=color)
+
+    # Connector line from base to lift
+    ax.plot([0.25, 0.75], [_nr_spend, _nr_spend],
+            color=GEN_COLORS['grid'], linewidth=1.5, linestyle='--', zorder=2)
+
+    ax.set_xticks(_x_pos)
+    ax.set_xticklabels(_labels_text, fontsize=13, fontweight='bold')
+    ax.set_ylabel("Monthly Card Spend ($)", fontsize=14,
+                   fontweight='bold', labelpad=10)
+    ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+    gen_clean_axes(ax)
+    ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+    ax.set_axisbelow(True)
+
+    ax.set_title("Responder Spend Lift", fontsize=24,
+                  fontweight='bold', color=GEN_COLORS['dark_text'],
+                  pad=40, loc='left')
+    ax.text(0.0, 1.04,
+            f"+${_spend_lift:,.0f}/mo per responder  |  "
+            f"At 1.5% interchange = ${_monthly_per_acct:,.2f}/acct/mo  |  "
+            f"{_n_resp:,} responders = ${_annual_total:,.0f}/yr",
+            transform=ax.transAxes, fontsize=12,
+            color=GEN_COLORS['muted'], style='italic')
+
+    plt.tight_layout()
+    plt.show()
+
+    # =================================================================
+    # VISUAL 3: Response Rate Heatmap by Segment x Mailer
+    # =================================================================
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+
+    _mail_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
+        key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
+    _resp_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Resp')],
+        key=lambda c: pd.to_datetime(c.replace(' Resp', ''), format='%b%y'))
+
+    def _parse_seg(val):
+        if pd.isna(val): return None
+        v = str(val).strip().upper()
+        if 'TH-25' in v or 'TH 25' in v or 'TH25' in v: return 'TH-25'
+        if 'TH-20' in v or 'TH 20' in v or 'TH20' in v: return 'TH-20'
+        if 'TH-15' in v or 'TH 15' in v or 'TH15' in v: return 'TH-15'
+        if 'TH-10' in v or 'TH 10' in v or 'TH10' in v: return 'TH-10'
+        if v.startswith('NU') or 'NON-USER' in v: return 'NU'
+        return None
+
+    def _is_success(val):
+        if pd.isna(val): return False
+        v = str(val).strip().upper()
+        if not v or v == 'NAN': return False
+        if 'NU' in v: return '5+' in v or '5 +' in v
+        return True
+
+    _heat_data = {}
+    _mailer_labels = []
+    for mc, rc in zip(_mail_cols, _resp_cols):
+        _period = mc.replace(' Mail', '')
+        if rc not in _eligible.columns:
+            continue
+        _seg = _eligible[mc].apply(_parse_seg)
+        _resp = _eligible[rc].apply(_is_success)
+        _mailed = _eligible[mc].notna()
+
+        _any_data = False
+        for seg in PROGRAM_SEG_ORDER:
+            _sm = _mailed & (_seg == seg)
+            _n = _sm.sum()
+            if _n > 0:
+                _rate = (_sm & _resp).sum() / _n * 100
+                if seg not in _heat_data:
+                    _heat_data[seg] = {}
+                _heat_data[seg][_period] = _rate
+                _any_data = True
+        if _any_data:
+            _mailer_labels.append(_period)
+
+    if _heat_data and _mailer_labels:
+        _heat_df = pd.DataFrame(_heat_data, index=_mailer_labels).T
+        _heat_df = _heat_df.reindex(PROGRAM_SEG_ORDER).dropna(how='all')
+
+        fig, ax = plt.subplots(figsize=(max(10, len(_mailer_labels) * 0.9), 4))
+
+        _cmap = sns.color_palette("YlGn", as_cmap=True)
+        sns.heatmap(_heat_df, annot=True, fmt='.0f', cmap=_cmap,
+                    linewidths=2, linecolor='white',
+                    cbar_kws={'label': 'Response Rate %', 'shrink': 0.8},
+                    ax=ax, vmin=0,
+                    annot_kws={'fontsize': 12, 'fontweight': 'bold'})
+
+        ax.set_xlabel('')
+        ax.set_ylabel('')
+        ax.set_xticklabels(ax.get_xticklabels(), fontsize=11,
+                            fontweight='bold', rotation=45, ha='right')
+        ax.set_yticklabels(ax.get_yticklabels(), fontsize=13,
+                            fontweight='bold', rotation=0)
+        ax.set_title("Response Rate: Segment x Mailer",
+                      fontsize=20, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=15)
+
+        plt.tight_layout()
+        plt.show()
+
+    # =================================================================
+    # VISUAL 4: The Money Slide — NU Deposits (bigger, bolder)
+    # =================================================================
+    def _is_nu_partial(val):
+        if pd.isna(val): return False
+        v = str(val).strip().upper()
+        return v in ('NU 1-4', 'NU1-4', 'NU 1', 'NU 2', 'NU 3', 'NU 4')
+
+    _nu_mask = _acct['program_segment'] == 'NU'
+    _nu_mailed = _nu_mask & _acct['was_mailed']
+
+    _ever_5plus = pd.Series(False, index=_acct.index)
+    _ever_1to4 = pd.Series(False, index=_acct.index)
+    for rc in _resp_cols:
+        if rc not in _eligible.columns:
+            continue
+        _ever_5plus |= _eligible[rc].apply(_is_success)
+        _ever_1to4 |= _eligible[rc].apply(_is_nu_partial)
+
+    _nu_5plus = _nu_mailed & _ever_5plus
+    _nu_1to4 = _nu_mailed & ~_ever_5plus & _ever_1to4
+    _nu_zero = _nu_mailed & ~_ever_5plus & ~_ever_1to4
+
+    if _has_dep and _nu_5plus.sum() > 0:
+        _dep_5 = _acct.loc[_nu_5plus, 'mo_dep_amt'].median()
+        _dep_14 = _acct.loc[_nu_1to4, 'mo_dep_amt'].median() if _nu_1to4.sum() > 0 else 0
+        _dep_0 = _acct.loc[_nu_zero, 'mo_dep_amt'].median() if _nu_zero.sum() > 0 else 0
+        _n5 = _nu_5plus.sum()
+        _n14 = _nu_1to4.sum()
+        _n0 = _nu_zero.sum()
+
+        fig, ax = plt.subplots(figsize=(12, 7))
+
+        _vals = [_dep_5, _dep_14, _dep_0]
+        _colors = [GEN_COLORS['success'], GEN_COLORS['warning'], GEN_COLORS['muted']]
+        _labels = [
+            f'NU 5+\nConverted\n(n={_n5:,})',
+            f'NU 1-4\nPartial\n(n={_n14:,})',
+            f'NU 0\nNever Activated\n(n={_n0:,})',
+        ]
+        _x = np.arange(3)
+
+        bars = ax.bar(_x, _vals, color=_colors, edgecolor='white',
+                      linewidth=2, width=0.45, zorder=3)
+
+        for bar, val, color in zip(bars, _vals, _colors):
+            ax.text(bar.get_x() + bar.get_width() / 2,
+                    bar.get_height() + bar.get_height() * 0.015,
+                    f'${val:,.0f}', ha='center', va='bottom',
+                    fontsize=22, fontweight='800', color=color)
+
+        ax.set_xticks(_x)
+        ax.set_xticklabels(_labels, fontsize=13, fontweight='bold',
+                            linespacing=1.3)
+        ax.set_ylabel('')
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
+        gen_clean_axes(ax, keep_left=False)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.5)
+        ax.set_axisbelow(True)
+        ax.tick_params(left=False, labelleft=False)
+
+        # Lift annotation
+        if _dep_0 > 0:
+            _lift_pct = (_dep_5 - _dep_0) / _dep_0 * 100
+            ax.annotate(
+                f'+{_lift_pct:.0f}%', xy=(0, _dep_5 * 0.5),
+                fontsize=28, fontweight='800', color=GEN_COLORS['success'],
+                ha='center',
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
+                          edgecolor=GEN_COLORS['success'], linewidth=2))
+
+        ax.set_title("Card Activation Drives Deposits",
+                      fontsize=26, fontweight='800',
+                      color=GEN_COLORS['dark_text'], pad=40, loc='left')
+        ax.text(0.0, 1.04,
+                "Non-user accounts only  |  "
+                "Same starting population, different program response  |  "
+                "Median monthly deposits",
+                transform=ax.transAxes, fontsize=12,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()
+
+    print(f"\n  4 visuals generated.")
+    print(f"  Screenshot these or re-run cell 99 to include in PPTX.")
