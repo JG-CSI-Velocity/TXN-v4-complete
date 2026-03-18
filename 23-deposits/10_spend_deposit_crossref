@@ -1,0 +1,279 @@
+# ===========================================================================
+# SPEND + DEPOSIT CROSS-REFERENCE: ODDD 3-Month Activity vs Z5 Deposits
+# ===========================================================================
+# Joins ODDD last-3-month spend/swipe behavior with Z5 deposit metrics
+# (depAmt365, depCount365) from the latest snapshot.
+#
+# Shows the relationship between card activity and deposit behavior
+# by segment and response grouping.
+#
+# Depends on: rewards_df (00-setup/08), deposit_long (23/01),
+#             DEPOSIT_JOIN_KEY_ODDD, DEPOSIT_JOIN_KEY_DEPOSIT,
+#             SNAPSHOT_ORDER, GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available. Run 00-setup cells first.")
+elif 'deposit_long' not in dir() or len(deposit_long) == 0:
+    print("    deposit_long not available. Run cell 01 first.")
+elif 'DEPOSIT_JOIN_KEY_ODDD' not in dir() or 'DEPOSIT_JOIN_KEY_DEPOSIT' not in dir():
+    print("    Join keys not established. Run cell 01 first.")
+else:
+    from IPython.display import display
+
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+
+    # -----------------------------------------------------------------
+    # 1. Compute last 3 months of spend + swipes from ODDD
+    # -----------------------------------------------------------------
+    _spend_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Spend')
+         and c.strip()[0].isupper()
+         and len(c.strip().split(' ')[0]) in (5, 6)
+         and c.strip().split(' ')[0][:3] in _VALID_MON],
+        key=lambda c: pd.to_datetime(c.strip().replace(' Spend', ''), format='%b%y'))
+
+    _swipe_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Swipes')
+         and c.strip()[0].isupper()
+         and len(c.strip().split(' ')[0]) in (5, 6)
+         and c.strip().split(' ')[0][:3] in _VALID_MON],
+        key=lambda c: pd.to_datetime(c.strip().replace(' Swipes', ''), format='%b%y'))
+
+    _last3_spend = _spend_cols[-3:] if len(_spend_cols) >= 3 else _spend_cols
+    _last3_swipe = _swipe_cols[-3:] if len(_swipe_cols) >= 3 else _swipe_cols
+
+    _spend_labels = [c.replace(' Spend', '') for c in _last3_spend]
+    _swipe_labels = [c.replace(' Swipes', '') for c in _last3_swipe]
+
+    print(f"  Last 3 Spend months: {_spend_labels}")
+    print(f"  Last 3 Swipe months: {_swipe_labels}")
+
+    # Build per-account ODDD metrics
+    _oddd = pd.DataFrame(index=rewards_df.index)
+    _oddd['_join_key'] = rewards_df[DEPOSIT_JOIN_KEY_ODDD].astype(str).str.strip()
+
+    # Individual months
+    for col in _last3_spend:
+        _label = col.replace(' Spend', '')
+        _oddd[f'{_label} Spend'] = pd.to_numeric(rewards_df[col], errors='coerce').fillna(0)
+
+    for col in _last3_swipe:
+        _label = col.replace(' Swipes', '')
+        _oddd[f'{_label} Swipes'] = pd.to_numeric(rewards_df[col], errors='coerce').fillna(0)
+
+    # 3-month totals and averages
+    _spend_matrix = rewards_df[_last3_spend].apply(pd.to_numeric, errors='coerce').fillna(0)
+    _swipe_matrix = rewards_df[_last3_swipe].apply(pd.to_numeric, errors='coerce').fillna(0)
+
+    _oddd['Spend 3mo Total'] = _spend_matrix.sum(axis=1)
+    _oddd['Spend 3mo Avg'] = _spend_matrix.mean(axis=1)
+    _oddd['Swipes 3mo Total'] = _swipe_matrix.sum(axis=1)
+    _oddd['Swipes 3mo Avg'] = _swipe_matrix.mean(axis=1)
+
+    # Segment from latest Mail column
+    _mail_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
+        key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
+
+    def _mail_segment(val):
+        if pd.isna(val): return None
+        v = str(val).strip().upper()
+        if 'TH-25' in v or 'TH 25' in v or 'TH25' in v: return 'TH-25'
+        if 'TH-20' in v or 'TH 20' in v or 'TH20' in v: return 'TH-20'
+        if 'TH-15' in v or 'TH 15' in v or 'TH15' in v: return 'TH-15'
+        if 'TH-10' in v or 'TH 10' in v or 'TH10' in v: return 'TH-10'
+        if v.startswith('NU') or 'NON-USER' in v: return 'NU'
+        return None
+
+    _seg = pd.Series(np.nan, index=rewards_df.index, dtype='object')
+    for mc in _mail_cols:
+        _parsed = rewards_df[mc].apply(_mail_segment)
+        _has = _parsed.notna()
+        _seg = _seg.where(~_has, _parsed)
+    _oddd['Segment'] = _seg
+
+    # Response Grouping
+    if 'Response Grouping' in rewards_df.columns:
+        _oddd['Response Grouping'] = rewards_df['Response Grouping'].astype(str).str.strip()
+
+    # -----------------------------------------------------------------
+    # 2. Pull dep365 from latest Z5 snapshot
+    # -----------------------------------------------------------------
+    _latest_snap = SNAPSHOT_ORDER[-1] if 'SNAPSHOT_ORDER' in dir() else None
+    _dep_metrics = {}
+
+    if _latest_snap:
+        _snap_data = deposit_long[deposit_long['snapshot'] == _latest_snap].copy()
+        if DEPOSIT_JOIN_KEY_DEPOSIT in _snap_data.columns:
+            _snap_data['_join_key'] = (
+                _snap_data[DEPOSIT_JOIN_KEY_DEPOSIT].astype(str).str.strip())
+
+            _dep_cols = []
+            for col in ['depAmt365', 'depCount365', 'balance']:
+                if col in _snap_data.columns:
+                    _dep_cols.append(col)
+
+            if _dep_cols:
+                _dep = (_snap_data[['_join_key'] + _dep_cols]
+                        .drop_duplicates(subset='_join_key')
+                        .set_index('_join_key'))
+                print(f"  Z5 snapshot: {_latest_snap}, {len(_dep):,} accounts, "
+                      f"cols: {_dep_cols}")
+            else:
+                _dep = pd.DataFrame()
+                print(f"  Z5 snapshot: {_latest_snap} -- no dep365 columns found")
+        else:
+            _dep = pd.DataFrame()
+            print(f"  Z5: join key {DEPOSIT_JOIN_KEY_DEPOSIT} not in snapshot")
+    else:
+        _dep = pd.DataFrame()
+        print("  No SNAPSHOT_ORDER available")
+
+    # -----------------------------------------------------------------
+    # 3. Join ODDD + Z5
+    # -----------------------------------------------------------------
+    if len(_dep) > 0:
+        _joined = _oddd.join(_dep, on='_join_key', how='left')
+        _match_count = _joined[_dep_cols[0]].notna().sum()
+        print(f"  Joined: {_match_count:,} / {len(_joined):,} accounts matched "
+              f"({_match_count / len(_joined) * 100:.1f}%)")
+    else:
+        _joined = _oddd.copy()
+        print("  No Z5 data to join")
+
+    # -----------------------------------------------------------------
+    # 4. Summary table by Segment
+    # -----------------------------------------------------------------
+    _SEG_ORDER = ['NU', 'TH-10', 'TH-15', 'TH-20', 'TH-25']
+    _summary_rows = []
+
+    # Add "All Mailed" and "Not Mailed" groups
+    _groups = [('All Mailed', _joined['Segment'].notna())]
+    for seg in _SEG_ORDER:
+        _groups.append((seg, _joined['Segment'] == seg))
+    _groups.append(('Not Mailed', _joined['Segment'].isna()))
+
+    _metric_cols = (['Spend 3mo Avg', 'Swipes 3mo Avg']
+                    + [c for c in ['depAmt365', 'depCount365', 'balance']
+                       if c in _joined.columns])
+
+    for grp_name, mask in _groups:
+        _g = _joined[mask]
+        if len(_g) == 0:
+            continue
+        _row = {'Group': grp_name, 'Accounts': len(_g)}
+        for mc in _metric_cols:
+            if mc in _g.columns:
+                _row[mc] = _g[mc].mean()
+        _summary_rows.append(_row)
+
+    _summary_df = pd.DataFrame(_summary_rows)
+
+    # Style
+    _fmt = {'Accounts': '{:,.0f}'}
+    for mc in _metric_cols:
+        if mc in _summary_df.columns:
+            if 'Count' in mc or 'count' in mc:
+                _fmt[mc] = '{:,.1f}'
+            else:
+                _fmt[mc] = '${:,.0f}'
+
+    _agg_idx = set(_summary_df[
+        _summary_df['Group'].isin(['All Mailed', 'Not Mailed'])].index)
+
+    def _style_rows(row):
+        if row.name in _agg_idx:
+            return ['font-weight: bold; border-top: 2px solid #1B2A4A; '
+                    'background-color: rgba(27, 42, 74, 0.05)'] * len(row)
+        return [''] * len(row)
+
+    _styled = (
+        _summary_df.style
+        .hide(axis='index')
+        .format(_fmt, na_rep='--')
+        .apply(_style_rows, axis=1)
+        .set_properties(**{
+            'font-size': '13px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF',
+            'padding': '8px 10px',
+        })
+        .set_properties(subset=['Group'], **{
+            'text-align': 'left', 'color': GEN_COLORS['primary'],
+        })
+        .set_table_styles([
+            {'selector': 'th', 'props': [
+                ('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '14px'),
+                ('font-weight', 'bold'), ('text-align', 'center'),
+                ('padding', '10px 12px'),
+            ]},
+            {'selector': 'caption', 'props': [
+                ('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']),
+                ('text-align', 'left'), ('padding-bottom', '12px'),
+            ]},
+        ])
+        .set_caption(f"ODDD Spend/Swipe (3mo) + Z5 Deposits by Segment  "
+                      f"({_spend_labels[0]}-{_spend_labels[-1]}  |  "
+                      f"Z5: {_latest_snap})")
+    )
+    display(_styled)
+
+    # -----------------------------------------------------------------
+    # 5. Individual month detail table
+    # -----------------------------------------------------------------
+    _month_cols = ([f'{l} Spend' for l in _spend_labels]
+                   + [f'{l} Swipes' for l in _swipe_labels])
+    _detail_cols = _month_cols + [c for c in ['depAmt365', 'depCount365', 'balance']
+                                   if c in _joined.columns]
+
+    _detail_rows = []
+    for grp_name, mask in _groups:
+        _g = _joined[mask]
+        if len(_g) == 0:
+            continue
+        _row = {'Group': grp_name, 'N': len(_g)}
+        for dc in _detail_cols:
+            if dc in _g.columns:
+                _row[dc] = _g[dc].mean()
+        _detail_rows.append(_row)
+
+    _detail_df = pd.DataFrame(_detail_rows)
+
+    _fmt_detail = {'N': '{:,.0f}'}
+    for dc in _detail_cols:
+        if dc in _detail_df.columns:
+            if 'Count' in dc or 'count' in dc or 'Swipes' in dc:
+                _fmt_detail[dc] = '{:,.1f}'
+            else:
+                _fmt_detail[dc] = '${:,.0f}'
+
+    _styled_detail = (
+        _detail_df.style
+        .hide(axis='index')
+        .format(_fmt_detail, na_rep='--')
+        .apply(_style_rows, axis=1)
+        .set_properties(**{
+            'font-size': '12px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF',
+            'padding': '7px 8px',
+        })
+        .set_properties(subset=['Group'], **{
+            'text-align': 'left', 'color': GEN_COLORS['primary'],
+        })
+        .set_table_styles([
+            {'selector': 'th', 'props': [
+                ('background-color', GEN_COLORS['info']),
+                ('color', 'white'), ('font-size', '12px'),
+                ('font-weight', 'bold'), ('text-align', 'center'),
+                ('padding', '7px 8px'),
+            ]},
+            {'selector': 'caption', 'props': [
+                ('font-size', '20px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']),
+                ('text-align', 'left'), ('padding-bottom', '10px'),
+            ]},
+        ])
+        .set_caption("Monthly Detail: Individual Months + Z5 Deposits")
+    )
+    display(_styled_detail)
