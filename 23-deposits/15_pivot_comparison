@@ -17,18 +17,30 @@ else:
     _pivot_rows = []
     for tier in _TIERS + ['TOTAL']:
         _row = {'Tier': tier}
+        _grp_data = {}
         for grp in _GROUPS:
             _g = (_acct[(_acct['swipe_tier'] == tier) & (_acct['group'] == grp)]
                   if tier != 'TOTAL'
                   else _acct[_acct['group'] == grp])
-            _prefix = grp[:4]
-            _row[f'{_prefix} N'] = len(_g)
-            _row[f'{_prefix} Dep $'] = _g['mo_dep_amt'].median() if 'mo_dep_amt' in _g.columns and len(_g) > 0 else np.nan
-            _row[f'{_prefix} Bal'] = _g['balance'].median() if 'balance' in _g.columns and len(_g) > 0 else np.nan
+            _prefix = 'Resp' if grp == 'Responder' else 'NR'
+            _grp_data[_prefix] = _g
 
-        _r = _row.get('Resp Dep $')
-        _nr = _row.get('Non- Dep $')
-        _row['R - NR Diff'] = _r - _nr if pd.notna(_r) and pd.notna(_nr) else np.nan
+        # Columns grouped by metric, side by side
+        _row['Resp N'] = len(_grp_data['Resp'])
+        _row['NR N'] = len(_grp_data['NR'])
+
+        for _p, _g in _grp_data.items():
+            _row[f'{_p} Mo Dep $'] = _g['mo_dep_amt'].median() if 'mo_dep_amt' in _g.columns and len(_g) > 0 else np.nan
+        _r_dep = _row.get('Resp Mo Dep $')
+        _nr_dep = _row.get('NR Mo Dep $')
+        _row['Dep $ Diff'] = _r_dep - _nr_dep if pd.notna(_r_dep) and pd.notna(_nr_dep) else np.nan
+
+        for _p, _g in _grp_data.items():
+            _row[f'{_p} Bal'] = _g['balance'].median() if 'balance' in _g.columns and len(_g) > 0 else np.nan
+        _r_bal = _row.get('Resp Bal')
+        _nr_bal = _row.get('NR Bal')
+        _row['Bal Diff'] = _r_bal - _nr_bal if pd.notna(_r_bal) and pd.notna(_nr_bal) else np.nan
+
         _pivot_rows.append(_row)
 
     _pivot_df = pd.DataFrame(_pivot_rows)
@@ -41,7 +53,7 @@ else:
         return [''] * len(row)
 
     def _color_diff(col):
-        if col.name != 'R - NR Diff':
+        if 'Diff' not in col.name:
             return [''] * len(col)
         return [
             f'color: {GEN_COLORS["success"]}' if pd.notna(v) and v > 0
@@ -52,7 +64,7 @@ else:
     _fmt = {}
     for c in _pivot_df.columns:
         if c == 'Tier': continue
-        elif 'N' in c and 'Diff' not in c and 'Dep' not in c and 'Bal' not in c:
+        elif c.endswith(' N'):
             _fmt[c] = '{:,.0f}'
         elif 'Diff' in c:
             _fmt[c] = lambda v: (f"+${v:,.1f}" if pd.notna(v) and v >= 0
