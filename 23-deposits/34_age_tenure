@@ -1,0 +1,130 @@
+# ===========================================================================
+# AGE & TENURE: Demographics by Response Group
+# ===========================================================================
+# Which demographics respond best and maintain deposits?
+#
+# Depends on: rewards_df, _acct (cell 13), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+elif '_acct' not in dir():
+    print("    Run cell 13 first.")
+else:
+    from IPython.display import display
+
+    _group = _acct['group'].reindex(rewards_df.index).fillna('Not Mailed')
+    _GROUPS = ['Responder', 'Non-Responder']
+
+    # -----------------------------------------------------------------
+    # Holder Age bands
+    # -----------------------------------------------------------------
+    if 'Account Holder Age' in rewards_df.columns:
+        _age = pd.to_numeric(rewards_df['Account Holder Age'], errors='coerce')
+        _AGE_BINS = [0, 25, 35, 45, 55, 65, 200]
+        _AGE_LABELS = ['18-25', '26-35', '36-45', '46-55', '56-65', '65+']
+
+        _age_band = pd.cut(_age, bins=_AGE_BINS, labels=_AGE_LABELS, right=True)
+
+        _rows = []
+        for band in _AGE_LABELS:
+            _row = {'Age Band': band}
+            for grp in _GROUPS:
+                _mask = (_group == grp) & (_age_band == band)
+                _n = _mask.sum()
+                _prefix = 'R' if grp == 'Responder' else 'NR'
+                _row[f'{_prefix} N'] = _n
+                _g = _acct.reindex(rewards_df.index[_mask])
+                if 'mo_dep_amt' in _g.columns and len(_g) > 0:
+                    _row[f'{_prefix} Med Dep $'] = _g['mo_dep_amt'].median()
+                if 'mo_swipes' in _g.columns and len(_g) > 0:
+                    _row[f'{_prefix} Swipes'] = _g['mo_swipes'].mean()
+            _rows.append(_row)
+
+        _df = pd.DataFrame(_rows)
+
+        _fmt = {}
+        for c in _df.columns:
+            if c == 'Age Band': continue
+            elif ' N' in c: _fmt[c] = '{:,.0f}'
+            elif 'Dep $' in c: _fmt[c] = '${:,.1f}'
+            else: _fmt[c] = '{:,.1f}'
+
+        _styled = (
+            _df.style.hide(axis='index')
+            .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+            .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+            .set_properties(subset=['Age Band'], **{
+                'text-align': 'left', 'color': GEN_COLORS['primary']})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                    ('color', 'white'), ('font-size': '13px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '8px 10px')]},
+                {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                    ('padding-bottom', '12px')]},
+            ])
+            .set_caption("Holder Age: Resp vs NR Deposit Behavior")
+        )
+        display(_styled)
+
+    # -----------------------------------------------------------------
+    # Account Tenure bands
+    # -----------------------------------------------------------------
+    if 'Account Age' in rewards_df.columns:
+        _tenure = pd.to_numeric(rewards_df['Account Age'], errors='coerce')
+        # Account Age might be in months or years -- check max
+        _max_t = _tenure.max()
+        _is_months = _max_t > 100  # likely months if > 100
+
+        if _is_months:
+            _T_BINS = [0, 12, 36, 60, 120, 240, 9999]
+            _T_LABELS = ['<1yr', '1-3yr', '3-5yr', '5-10yr', '10-20yr', '20yr+']
+        else:
+            _T_BINS = [0, 1, 3, 5, 10, 20, 999]
+            _T_LABELS = ['<1yr', '1-3yr', '3-5yr', '5-10yr', '10-20yr', '20yr+']
+
+        _tenure_band = pd.cut(_tenure, bins=_T_BINS, labels=_T_LABELS, right=True)
+
+        _rows = []
+        for band in _T_LABELS:
+            _row = {'Tenure': band}
+            for grp in _GROUPS:
+                _mask = (_group == grp) & (_tenure_band == band)
+                _n = _mask.sum()
+                _prefix = 'R' if grp == 'Responder' else 'NR'
+                _row[f'{_prefix} N'] = _n
+                _g = _acct.reindex(rewards_df.index[_mask])
+                if 'mo_dep_amt' in _g.columns and len(_g) > 0:
+                    _row[f'{_prefix} Med Dep $'] = _g['mo_dep_amt'].median()
+                if 'mo_swipes' in _g.columns and len(_g) > 0:
+                    _row[f'{_prefix} Swipes'] = _g['mo_swipes'].mean()
+            _rows.append(_row)
+
+        _df_t = pd.DataFrame(_rows)
+
+        _fmt_t = {}
+        for c in _df_t.columns:
+            if c == 'Tenure': continue
+            elif ' N' in c: _fmt_t[c] = '{:,.0f}'
+            elif 'Dep $' in c: _fmt_t[c] = '${:,.1f}'
+            else: _fmt_t[c] = '{:,.1f}'
+
+        _styled_t = (
+            _df_t.style.hide(axis='index')
+            .format({k: v for k, v in _fmt_t.items() if k in _df_t.columns}, na_rep='--')
+            .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+            .set_properties(subset=['Tenure'], **{
+                'text-align': 'left', 'color': GEN_COLORS['primary']})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', GEN_COLORS['info']),
+                    ('color', 'white'), ('font-size': '13px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '8px 10px')]},
+                {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                    ('padding-bottom', '12px')]},
+            ])
+            .set_caption("Account Tenure: Resp vs NR Deposit Behavior")
+        )
+        display(_styled_t)
