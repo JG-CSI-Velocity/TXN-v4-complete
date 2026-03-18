@@ -83,6 +83,15 @@ else:
                         .set_index('_join_key'))
                 _acct = _acct.join(_dep, on='_join_key', how='left')
 
+    # Diagnostic: raw deposit column values
+    for _dc in ['DepCount99', 'DepAmt99', 'depCount365', 'depAmt365', 'balance']:
+        if _dc in _acct.columns:
+            _vals = _acct[_dc].dropna()
+            print(f"  RAW {_dc}: n={len(_vals):,}, "
+                  f"mean={_vals.mean():,.1f}, median={_vals.median():,.1f}, "
+                  f"min={_vals.min():,.1f}, max={_vals.max():,.1f}, "
+                  f"nunique={_vals.nunique():,}")
+
     if 'DepCount99' in _acct.columns:
         _acct['mo_dep_count'] = _acct['DepCount99'] / 3.3
     if 'DepAmt99' in _acct.columns:
