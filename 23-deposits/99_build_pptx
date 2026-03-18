@@ -47,47 +47,43 @@ else:
         plt.close(fig)
         return path
 
+    # Template layout indices (from 2025-CSI-PPT-Template.pptx)
+    _LY_TITLE_ARS = 18    # 4_Title Slide_ARS: Title 1, Subtitle 2
+    _LY_SECTION = 4       # 2_Section Header: Title 1, Text Placeholder 2
+    _LY_CONTENT = 2       # Title and Content: Title 1, Content Placeholder 2
+    _LY_CHART = 8         # Custom Layout: Title 1 (no content placeholder)
+    _LY_BLANK = 11        # Blank: no placeholders
+
     def _add_title_slide(title, subtitle=''):
-        """Add a slide using layout 0 (title slide)."""
-        slide = prs.slides.add_slide(prs.slide_layouts[0])
-        if slide.placeholders:
-            slide.placeholders[0].text = title
-            if len(slide.placeholders) > 1 and subtitle:
-                slide.placeholders[1].text = subtitle
+        slide = prs.slides.add_slide(prs.slide_layouts[_LY_TITLE_ARS])
+        slide.placeholders[0].text = title
+        if subtitle:
+            slide.placeholders[1].text = subtitle
         return slide
 
-    def _add_content_slide(title, subtitle=''):
-        """Add a slide using layout 1 (title + content) or layout 5 (blank)."""
-        # Try layout 1 first (usually title + content), fall back to 5 (blank)
-        _layout_idx = 1 if len(prs.slide_layouts) > 1 else 0
-        slide = prs.slides.add_slide(prs.slide_layouts[_layout_idx])
-        if slide.placeholders:
-            slide.placeholders[0].text = title
+    def _add_section_slide(title, subtitle=''):
+        slide = prs.slides.add_slide(prs.slide_layouts[_LY_SECTION])
+        slide.placeholders[0].text = title
+        if subtitle:
+            slide.placeholders[1].text = subtitle
         return slide
 
-    def _add_blank_slide():
-        """Add a blank slide (last layout or layout 6)."""
-        _idx = min(6, len(prs.slide_layouts) - 1)
-        # Find a blank layout
-        for i, layout in enumerate(prs.slide_layouts):
-            if 'blank' in layout.name.lower():
-                _idx = i
-                break
-        return prs.slides.add_slide(prs.slide_layouts[_idx])
+    def _add_content_slide(title):
+        slide = prs.slides.add_slide(prs.slide_layouts[_LY_CONTENT])
+        slide.placeholders[0].text = title
+        return slide
 
-    def _add_image_slide(title, img_path, subtitle=''):
-        """Add a slide with title and full-width image."""
-        slide = _add_content_slide(title, subtitle)
-        # Remove content placeholder if it exists (keep title)
-        for ph in list(slide.placeholders):
-            if ph.placeholder_format.idx > 0 and ph.placeholder_format.idx != 10:
-                sp = ph._element
-                sp.getparent().remove(sp)
-        # Add image centered, below title area
+    def _add_chart_slide(title):
+        slide = prs.slides.add_slide(prs.slide_layouts[_LY_CHART])
+        slide.placeholders[0].text = title
+        return slide
+
+    def _add_image_slide(title, img_path):
+        slide = _add_chart_slide(title)
         _sw = prs.slide_width
         _sh = prs.slide_height
-        _img_top = Inches(1.5)
-        _img_height = _sh - _img_top - Inches(0.3)
+        _img_top = Inches(1.4)
+        _img_height = _sh - _img_top - Inches(0.2)
         _img_width = _sw - Inches(0.6)
         slide.shapes.add_picture(img_path,
                                   Inches(0.3), _img_top,
@@ -96,12 +92,7 @@ else:
 
     def _add_table_slide(title, df, col_widths=None):
         """Add a slide with a data table."""
-        slide = _add_content_slide(title)
-        # Remove content placeholder
-        for ph in list(slide.placeholders):
-            if ph.placeholder_format.idx > 0 and ph.placeholder_format.idx != 10:
-                sp = ph._element
-                sp.getparent().remove(sp)
+        slide = _add_chart_slide(title)
 
         rows, cols = df.shape
         rows += 1  # header row
@@ -178,28 +169,13 @@ else:
     # =================================================================
     # SLIDE 2: Program Overview
     # =================================================================
-    slide = _add_content_slide("Program Overview")
-    for ph in list(slide.placeholders):
-        if ph.placeholder_format.idx > 0:
-            sp = ph._element
-            sp.getparent().remove(sp)
-
     _overview_text = (
-        f"Accounts Mailed: {_n_mailed:,}\n"
-        f"Responders: {_n_resp:,} ({_resp_rate:.1f}%)\n"
-        f"Mailer Waves: {len(_mail_cols_local)}\n"
-        f"Program Segments: {', '.join(PROGRAM_SEG_ORDER)}\n"
+        f"Accounts Mailed: {_n_mailed:,}  |  "
+        f"Responders: {_n_resp:,} ({_resp_rate:.1f}%)  |  "
+        f"Waves: {len(_mail_cols_local)}  |  "
+        f"Segments: {', '.join(PROGRAM_SEG_ORDER)}"
     )
-    txBox = slide.shapes.add_textbox(Inches(0.5), Inches(1.8),
-                                      Inches(8), Inches(3))
-    tf = txBox.text_frame
-    tf.word_wrap = True
-    for line in _overview_text.strip().split('\n'):
-        p = tf.add_paragraph()
-        p.text = line
-        p.font.size = Pt(18)
-        p.font.bold = True
-        p.space_after = Pt(8)
+    _add_section_slide("Program Overview", _overview_text)
 
     # =================================================================
     # SLIDE 3: Response by Segment (table)
