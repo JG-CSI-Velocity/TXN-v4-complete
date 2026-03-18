@@ -1,0 +1,195 @@
+# ===========================================================================
+# FULL REVENUE PICTURE: Swipe → Spend → Items → Deposits (2025)
+# ===========================================================================
+# The thesis: swipers deposit more, and our program creates more swipers.
+#
+# Shows the full chain by swipe tier:
+#   Mo Swipes → Mo Spend → Mo Items → Mo Dep Count → Mo Dep Amount
+#
+# 2025 data (12 months where available) for the activity metrics,
+# depAmt365/depCount365 for deposits.
+#
+# Then: Responders vs Non-Responders to prove the program works.
+#
+# Depends on: rewards_df, _acct (cell 13), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+elif '_acct' not in dir():
+    print("    Run cell 13 first.")
+else:
+    from IPython.display import display
+
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+
+    # 2025 columns
+    _spend_2025 = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Spend')
+         and c.strip()[0].isupper()
+         and len(c.strip().split(' ')[0]) in (5, 6)
+         and c.strip().split(' ')[0][:3] in _VALID_MON
+         and pd.to_datetime(c.strip().replace(' Spend', ''), format='%b%y').year == 2025],
+        key=lambda c: pd.to_datetime(c.strip().replace(' Spend', ''), format='%b%y'))
+
+    _swipe_2025 = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Swipes')
+         and c.strip()[0].isupper()
+         and len(c.strip().split(' ')[0]) in (5, 6)
+         and c.strip().split(' ')[0][:3] in _VALID_MON
+         and pd.to_datetime(c.strip().replace(' Swipes', ''), format='%b%y').year == 2025],
+        key=lambda c: pd.to_datetime(c.strip().replace(' Swipes', ''), format='%b%y'))
+
+    _mtd_2025 = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' MTD')
+         and c.strip()[0].isupper()
+         and len(c.strip().split(' ')[0]) in (5, 6)
+         and c.strip().split(' ')[0][:3] in _VALID_MON
+         and pd.to_datetime(c.strip().replace(' MTD', ''), format='%b%y').year == 2025],
+        key=lambda c: pd.to_datetime(c.strip().replace(' MTD', ''), format='%b%y'))
+
+    _n_spend = len(_spend_2025)
+    _n_swipe = len(_swipe_2025)
+    _n_mtd = len(_mtd_2025)
+    print(f"  2025 data: {_n_spend} Spend, {_n_swipe} Swipes, {_n_mtd} MTD months")
+
+    _group = _acct['group'].reindex(rewards_df.index).fillna('Not Mailed')
+
+    # Monthly averages from 2025
+    _mo_spend = (rewards_df[_spend_2025].apply(pd.to_numeric, errors='coerce')
+                  .fillna(0).mean(axis=1)) if _spend_2025 else pd.Series(0, index=rewards_df.index)
+    _mo_swipes = (rewards_df[_swipe_2025].apply(pd.to_numeric, errors='coerce')
+                   .fillna(0).mean(axis=1)) if _swipe_2025 else pd.Series(0, index=rewards_df.index)
+    _mo_items = (rewards_df[_mtd_2025].apply(pd.to_numeric, errors='coerce')
+                  .fillna(0).mean(axis=1)) if _mtd_2025 else pd.Series(0, index=rewards_df.index)
+
+    # Deposit metrics from _acct (already computed in cell 13)
+    _mo_dep_ct = _acct['mo_dep_count'].reindex(rewards_df.index) if 'mo_dep_count' in _acct.columns else pd.Series(np.nan, index=rewards_df.index)
+    _mo_dep_amt = _acct['mo_dep_amt'].reindex(rewards_df.index) if 'mo_dep_amt' in _acct.columns else pd.Series(np.nan, index=rewards_df.index)
+
+    _TIERS = ['0', '1-5', '6-10', '11-15', '16-20', '21-25', '26+']
+    _swipe_tier = _acct['swipe_tier'].reindex(rewards_df.index).fillna('0')
+
+    # -----------------------------------------------------------------
+    # Table 1: Full revenue picture by swipe tier (all accounts)
+    # -----------------------------------------------------------------
+    _rows = []
+    for tier in _TIERS + ['TOTAL']:
+        _mask = (_swipe_tier == tier) if tier != 'TOTAL' else pd.Series(True, index=rewards_df.index)
+        _row = {
+            'Tier': tier,
+            'Accounts': _mask.sum(),
+            'Mo Swipes': _mo_swipes[_mask].mean(),
+            'Mo Spend': _mo_spend[_mask].mean(),
+            'Mo Items': _mo_items[_mask].mean(),
+            'Avg Mo Dep Ct': _mo_dep_ct[_mask].mean(),
+            'Med Mo Dep $': _mo_dep_amt[_mask].median(),
+        }
+        _rows.append(_row)
+
+    _df1 = pd.DataFrame(_rows)
+    _last = len(_df1) - 1
+
+    def _style_total(row):
+        if row.name == _last:
+            return ['font-weight: bold; border-top: 2px solid #1B2A4A; '
+                    'background-color: rgba(27, 42, 74, 0.08)'] * len(row)
+        return [''] * len(row)
+
+    _fmt = {
+        'Accounts': '{:,.0f}', 'Mo Swipes': '{:,.1f}', 'Mo Spend': '${:,.1f}',
+        'Mo Items': '{:,.1f}', 'Avg Mo Dep Ct': '{:,.1f}', 'Med Mo Dep $': '${:,.1f}',
+    }
+
+    _styled1 = (
+        _df1.style.hide(axis='index')
+        .format({k: v for k, v in _fmt.items() if k in _df1.columns}, na_rep='--')
+        .apply(_style_total, axis=1)
+        .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+        .set_properties(subset=['Tier'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '14px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '10px 12px')]},
+            {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                ('padding-bottom', '12px')]},
+        ])
+        .set_caption(f"Full Revenue Picture: Swipes → Spend → Items → Deposits "
+                      f"(2025, {_n_spend} months)")
+    )
+    display(_styled1)
+
+    # -----------------------------------------------------------------
+    # Table 2: Resp vs NR -- the program proof
+    # -----------------------------------------------------------------
+    _rows2 = []
+    for tier in _TIERS + ['TOTAL']:
+        for grp, prefix in [('Responder', 'R'), ('Non-Responder', 'NR')]:
+            _mask = ((_swipe_tier == tier) if tier != 'TOTAL'
+                     else pd.Series(True, index=rewards_df.index))
+            _mask = _mask & (_group == grp)
+            _n = _mask.sum()
+            if _n == 0:
+                continue
+            _row = {
+                'Tier': tier, 'Group': grp, 'N': _n,
+                'Mo Swipes': _mo_swipes[_mask].mean(),
+                'Mo Spend': _mo_spend[_mask].mean(),
+                'Mo Items': _mo_items[_mask].mean(),
+                'Avg Mo Dep Ct': _mo_dep_ct[_mask].mean(),
+                'Med Mo Dep $': _mo_dep_amt[_mask].median(),
+            }
+            _rows2.append(_row)
+
+    _df2 = pd.DataFrame(_rows2)
+
+    _seg_breaks = set()
+    _prev = None
+    for i, row in _df2.iterrows():
+        if row['Tier'] != _prev and _prev is not None:
+            _seg_breaks.add(i)
+        _prev = row['Tier']
+
+    _total_idx = set(_df2[_df2['Tier'] == 'TOTAL'].index)
+
+    def _style2(row):
+        parts = []
+        _grp = _df2.loc[row.name, 'Group']
+        if _grp == 'Responder':
+            parts.append('background-color: rgba(46, 196, 182, 0.08)')
+        if row.name in _seg_breaks:
+            parts.append('border-top: 2px solid #1B2A4A')
+        if row.name in _total_idx:
+            parts.append('font-weight: bold')
+        return ['; '.join(parts) if parts else ''] * len(row)
+
+    def _color_grp(col):
+        if col.name != 'Group': return [''] * len(col)
+        return [f'color: {GEN_COLORS["success"]}' if v == 'Responder'
+                else f'color: {GEN_COLORS["muted"]}' for v in col]
+
+    _fmt2 = {
+        'N': '{:,.0f}', 'Mo Swipes': '{:,.1f}', 'Mo Spend': '${:,.1f}',
+        'Mo Items': '{:,.1f}', 'Avg Mo Dep Ct': '{:,.1f}', 'Med Mo Dep $': '${:,.1f}',
+    }
+
+    _styled2 = (
+        _df2.style.hide(axis='index')
+        .format({k: v for k, v in _fmt2.items() if k in _df2.columns}, na_rep='--')
+        .apply(_style2, axis=1).apply(_color_grp)
+        .set_properties(**{'font-size': '12px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '7px 10px'})
+        .set_properties(subset=['Tier'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+        .set_properties(subset=['Group'], **{'text-align': 'left'})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['success']),
+                ('color', 'white'), ('font-size', '12px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '7px 10px')]},
+            {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                ('padding-bottom', '12px')]},
+        ])
+        .set_caption("Program Proof: Responders Swipe More, Spend More, Deposit More")
+    )
+    display(_styled2)

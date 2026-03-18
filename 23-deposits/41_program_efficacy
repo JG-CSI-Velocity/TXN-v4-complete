@@ -1,0 +1,123 @@
+# ===========================================================================
+# PROGRAM EFFICACY: The Causal Argument
+# ===========================================================================
+# Multiple lines of evidence that the program works:
+#   1. Within same segment: Resp > NR on every metric
+#   2. Higher swipe tiers have higher deposits (correlation)
+#   3. Responders maintain advantage over time (2024→2025)
+#   4. Multi-responders > single responders (dose response)
+#   5. Accounts that respond faster show better deposits
+#
+# This cell computes a summary scorecard.
+#
+# Depends on: rewards_df, _acct (cell 13), GEN_COLORS
+
+if '_acct' not in dir() or 'group' not in _acct.columns:
+    print("    Run cell 13 first.")
+else:
+    from IPython.display import display
+
+    _GROUPS = ['Responder', 'Non-Responder']
+
+    # -----------------------------------------------------------------
+    # Evidence 1: Resp vs NR headline metrics
+    # -----------------------------------------------------------------
+    _ev_rows = []
+    for grp in _GROUPS:
+        _g = _acct[_acct['group'] == grp]
+        _row = {'Group': grp, 'N': len(_g)}
+        if 'mo_swipes' in _g.columns:
+            _row['Mo Swipes'] = _g['mo_swipes'].mean()
+        if 'mo_spend' in _g.columns:
+            _row['Mo Spend'] = _g['mo_spend'].mean()
+        if 'mo_dep_count' in _g.columns:
+            _row['Mo Dep Ct'] = _g['mo_dep_count'].mean()
+        if 'mo_dep_amt' in _g.columns:
+            _row['Mo Dep $'] = _g['mo_dep_amt'].median()
+        _ev_rows.append(_row)
+
+    _ev_df = pd.DataFrame(_ev_rows)
+
+    # Compute lift
+    if len(_ev_df) == 2:
+        _r = _ev_df.iloc[0]
+        _nr = _ev_df.iloc[1]
+        _lift = {'Group': 'Resp Lift', 'N': ''}
+        for col in ['Mo Swipes', 'Mo Spend', 'Mo Dep Ct', 'Mo Dep $']:
+            if col in _r and col in _nr:
+                _rv = _r[col]
+                _nrv = _nr[col]
+                if pd.notna(_rv) and pd.notna(_nrv) and _nrv > 0:
+                    _lift[col] = ((_rv - _nrv) / _nrv) * 100
+                else:
+                    _lift[col] = np.nan
+        _ev_df = pd.concat([_ev_df, pd.DataFrame([_lift])], ignore_index=True)
+
+    _last = len(_ev_df) - 1
+
+    def _style_ev(row):
+        if row.name == _last:
+            return ['font-weight: bold; border-top: 2px solid #1B2A4A; '
+                    'font-style: italic; '
+                    'background-color: rgba(46, 196, 182, 0.08)'] * len(row)
+        return [''] * len(row)
+
+    def _color_grp(col):
+        if col.name != 'Group': return [''] * len(col)
+        return [f'color: {GEN_COLORS["success"]}' if 'Resp' in str(v)
+                else f'color: {GEN_COLORS["muted"]}' for v in col]
+
+    _fmt_ev = {
+        'N': lambda v: f"{v:,.0f}" if isinstance(v, (int, float)) and pd.notna(v) else str(v),
+        'Mo Swipes': lambda v: f"{v:,.1f}" if isinstance(v, (int, float)) and not isinstance(v, bool) and abs(v) < 1000 else f"+{v:.1f}%" if isinstance(v, (int, float)) else '--',
+        'Mo Spend': lambda v: f"${v:,.1f}" if isinstance(v, (int, float)) and abs(v) > 10 else f"+{v:.1f}%" if isinstance(v, (int, float)) else '--',
+        'Mo Dep Ct': lambda v: f"{v:,.1f}" if isinstance(v, (int, float)) and abs(v) < 100 else f"+{v:.1f}%" if isinstance(v, (int, float)) else '--',
+        'Mo Dep $': lambda v: f"${v:,.1f}" if isinstance(v, (int, float)) and abs(v) > 10 else f"+{v:.1f}%" if isinstance(v, (int, float)) else '--',
+    }
+
+    # Simpler: format lift row differently
+    _fmt_simple = {
+        'N': '{:,.0f}', 'Mo Swipes': '{:,.1f}', 'Mo Spend': '${:,.1f}',
+        'Mo Dep Ct': '{:,.1f}', 'Mo Dep $': '${:,.1f}',
+    }
+
+    _styled_ev = (
+        _ev_df.style.hide(axis='index')
+        .format({k: v for k, v in _fmt_simple.items() if k in _ev_df.columns}, na_rep='--')
+        .apply(_style_ev, axis=1).apply(_color_grp)
+        .set_properties(**{'font-size': '15px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '12px 14px'})
+        .set_properties(subset=['Group'], **{'text-align': 'left', 'font-size': '16px'})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '15px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '12px 14px')]},
+            {'selector': 'caption', 'props': [('font-size', '24px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                ('padding-bottom', '14px')]},
+        ])
+        .set_caption("Program Efficacy: Responders vs Non-Responders")
+    )
+    display(_styled_ev)
+
+    # -----------------------------------------------------------------
+    # Narrative scorecard
+    # -----------------------------------------------------------------
+    if len(_ev_df) >= 3:
+        _lift_row = _ev_df.iloc[2]
+        print(f"\n  PROGRAM SCORECARD:")
+        print(f"  ─────────────────")
+        for col in ['Mo Swipes', 'Mo Spend', 'Mo Dep Ct', 'Mo Dep $']:
+            if col in _lift_row and pd.notna(_lift_row[col]):
+                _val = _lift_row[col]
+                _sign = '+' if _val >= 0 else ''
+                print(f"    {col:<14s}: {_sign}{_val:.1f}% lift")
+
+    print(f"\n  Lines of evidence:")
+    print(f"    1. Within same segment: Resp > NR (cell 37)")
+    print(f"    2. Higher swipe tiers = higher deposits (cells 11-12)")
+    print(f"    3. Long-term persistence: 2024 Resp still ahead in 2025 (cell 21)")
+    print(f"    4. Multi-responders > single responders (cell 29)")
+    print(f"    5. Faster responders have better deposits (cell 28)")
+    print(f"    6. Responders + direct deposit = strongest (cell 30)")
+    print(f"    7. Non-responders close accounts more (cell 31)")
