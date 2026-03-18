@@ -1,0 +1,130 @@
+# ===========================================================================
+# DEPOSIT LAYER: Per-Mailer by Segment
+# ===========================================================================
+# One table per mailer. Rows = segments. Shows deposit metrics
+# for Responder vs Non-Responder within each segment.
+#
+# Depends on: _segment_cohort_df (cell 22), _acct (cell 04),
+#             rewards_df, PROGRAM_SEG_ORDER, GEN_COLORS
+
+if '_segment_cohort_df' not in dir() or len(_segment_cohort_df) == 0:
+    print("    Run cell 22 first.")
+elif '_acct' not in dir():
+    print("    Run cell 04 first.")
+else:
+    from IPython.display import display
+
+    _mail_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
+        key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
+
+    def _parse_seg(val):
+        if pd.isna(val): return None
+        v = str(val).strip().upper()
+        if 'TH-25' in v or 'TH 25' in v or 'TH25' in v: return 'TH-25'
+        if 'TH-20' in v or 'TH 20' in v or 'TH20' in v: return 'TH-20'
+        if 'TH-15' in v or 'TH 15' in v or 'TH15' in v: return 'TH-15'
+        if 'TH-10' in v or 'TH 10' in v or 'TH10' in v: return 'TH-10'
+        if v.startswith('NU') or 'NON-USER' in v: return 'NU'
+        return None
+
+    def _is_success(val):
+        if pd.isna(val): return False
+        v = str(val).strip().upper()
+        if not v or v == 'NAN': return False
+        if 'NU' in v: return '5+' in v or '5 +' in v
+        return True
+
+    _eligible = rewards_df.reindex(_acct.index)
+
+    _mailers = sorted(_segment_cohort_df['Mailer'].unique(),
+                       key=lambda m: pd.to_datetime(m, format='%b%y'))
+
+    for mailer in _mailers:
+        mc = f"{mailer} Mail"
+        _rc = f"{mailer} Resp"
+        if mc not in _eligible.columns or _rc not in _eligible.columns:
+            continue
+
+        _mailed = _eligible[mc].notna()
+        _resp = _eligible[_rc].apply(_is_success)
+        _segments = _eligible[mc].apply(_parse_seg)
+
+        _rows = []
+        for seg in PROGRAM_SEG_ORDER:
+            _seg_mask = _segments == seg
+            _r = _mailed & _resp & _seg_mask
+            _nr = _mailed & ~_resp & _seg_mask
+
+            if _r.sum() == 0 and _nr.sum() == 0:
+                continue
+
+            _row = {'Segment': seg, 'R': _r.sum(), 'NR': _nr.sum()}
+
+            for col, label, agg in [
+                ('mo_dep_count', 'R Dep Ct', 'mean'),
+                ('mo_dep_count', 'NR Dep Ct', 'mean'),
+                ('mo_dep_amt', 'R Med Dep $', 'median'),
+                ('mo_dep_amt', 'NR Med Dep $', 'median'),
+                ('mo_dep_amt', 'R Avg Dep $', 'mean'),
+                ('mo_dep_amt', 'NR Avg Dep $', 'mean'),
+            ]:
+                if col not in _acct.columns:
+                    continue
+                _is_r = 'R ' in label and not label.startswith('NR')
+                _mask = _r if _is_r else _nr
+                if _mask.sum() == 0:
+                    _row[label] = np.nan
+                else:
+                    _row[label] = (_acct.loc[_mask, col].median() if agg == 'median'
+                                    else _acct.loc[_mask, col].mean())
+
+            # Deposit acceleration
+            if 'dep_accel_amt' in _acct.columns:
+                _row['R Accel'] = _acct.loc[_r, 'dep_accel_amt'].median() if _r.sum() > 0 else np.nan
+                _row['NR Accel'] = _acct.loc[_nr, 'dep_accel_amt'].median() if _nr.sum() > 0 else np.nan
+
+            _rows.append(_row)
+
+        if not _rows:
+            continue
+
+        _df = pd.DataFrame(_rows)
+        for _rc_col in _df.columns:
+            if _rc_col not in ('Segment', 'R', 'NR') and _df[_rc_col].dtype in ('float64', 'float32'):
+                _df[_rc_col] = _df[_rc_col].round(1)
+
+        def _color_accel(col):
+            if 'Accel' not in col.name: return [''] * len(col)
+            return [f'color: {GEN_COLORS["success"]}' if pd.notna(v) and v > 1.05
+                    else f'color: {GEN_COLORS["accent"]}' if pd.notna(v) and v < 0.95
+                    else '' for v in col]
+
+        _fmt = {'R': '{:,.0f}', 'NR': '{:,.0f}'}
+        for c in _df.columns:
+            if c in ('Segment', 'R', 'NR'): continue
+            elif 'Accel' in c: _fmt[c] = '{:.2f}x'
+            elif '$' in c: _fmt[c] = '${:,.1f}'
+            else: _fmt[c] = '{:,.1f}'
+
+        _total_mailed = sum(r['R'] + r['NR'] for r in _rows)
+        _total_resp = sum(r['R'] for r in _rows)
+
+        _styled = (
+            _df.style.hide(axis='index')
+            .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+            .apply(_color_accel)
+            .set_properties(**{'font-size': '12px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '7px 10px'})
+            .set_properties(subset=['Segment'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', GEN_COLORS['success']),
+                    ('color', 'white'), ('font-size', '11px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '7px 10px')]},
+                {'selector': 'caption', 'props': [('font-size', '18px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '8px')]},
+            ])
+            .set_caption(f"{mailer} Mailer -- Deposits by Segment "
+                          f"({_total_mailed:,} mailed, {_total_resp:,} responded)")
+        )
+        display(_styled)
