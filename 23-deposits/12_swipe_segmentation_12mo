@@ -1,16 +1,15 @@
 # ===========================================================================
-# SWIPE SEGMENTATION (3-MONTH): Activity Tiers vs Deposit Behavior
+# SWIPE SEGMENTATION (12-MONTH): Activity Tiers vs Deposit Behavior
 # ===========================================================================
-# Creates swipe-based segments from the 3-month monthly swipe average,
-# then shows 99-day deposit behavior for each tier.
+# Same as cell 11 but using 12-month swipe/spend averages and
+# 365-day deposit values. Compare against cell 11 to see if the
+# longer window changes the story.
 #
 # All metrics normalized to monthly:
-#   Swipes: last 3 months / 3
-#   Spend: last 3 months / 3
-#   Deposit Count: DepCount99 / 3.3
-#   Deposit Amount: DepAmt99 / 3.3
-#
-# Total Open only -- full portfolio, no Mail/Resp segmentation.
+#   Swipes: last 12 months / 12
+#   Spend: last 12 months / 12
+#   Deposit Count: depCount365 / 12
+#   Deposit Amount: depAmt365 / 12
 #
 # Depends on: rewards_df (00-setup/08), deposit_long (23/01),
 #             DEPOSIT_JOIN_KEY_ODDD, DEPOSIT_JOIN_KEY_DEPOSIT,
@@ -28,7 +27,7 @@ else:
     _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
 
     # -----------------------------------------------------------------
-    # 1. Compute monthly swipe average from last 3 months
+    # 1. Compute monthly swipe/spend average from last 12 months
     # -----------------------------------------------------------------
     _swipe_cols = sorted(
         [c.strip() for c in rewards_df.columns if c.strip().endswith(' Swipes')
@@ -44,11 +43,12 @@ else:
          and c.strip().split(' ')[0][:3] in _VALID_MON],
         key=lambda c: pd.to_datetime(c.strip().replace(' Spend', ''), format='%b%y'))
 
-    _last3_swipe = _swipe_cols[-3:] if len(_swipe_cols) >= 3 else _swipe_cols
-    _last3_spend = _spend_cols[-3:] if len(_spend_cols) >= 3 else _spend_cols
+    _last12_swipe = _swipe_cols[-12:] if len(_swipe_cols) >= 12 else _swipe_cols
+    _last12_spend = _spend_cols[-12:] if len(_spend_cols) >= 12 else _spend_cols
 
-    _swipe_labels = [c.replace(' Swipes', '') for c in _last3_swipe]
-    print(f"  Swipe months: {_swipe_labels}")
+    _swipe_labels = [c.replace(' Swipes', '') for c in _last12_swipe]
+    _n_months = len(_last12_swipe)
+    print(f"  Swipe months ({_n_months}): {_swipe_labels[0]} to {_swipe_labels[-1]}")
 
     # -----------------------------------------------------------------
     # Filter to program-eligible accounts
@@ -72,14 +72,14 @@ else:
     _acct = pd.DataFrame(index=_eligible.index)
     _acct['_join_key'] = _eligible[DEPOSIT_JOIN_KEY_ODDD].astype(str).str.strip()
 
-    _swipe_matrix = _eligible[_last3_swipe].apply(pd.to_numeric, errors='coerce').fillna(0)
-    _spend_matrix = _eligible[_last3_spend].apply(pd.to_numeric, errors='coerce').fillna(0)
+    _swipe_matrix = _eligible[_last12_swipe].apply(pd.to_numeric, errors='coerce').fillna(0)
+    _spend_matrix = _eligible[_last12_spend].apply(pd.to_numeric, errors='coerce').fillna(0)
 
     _acct['mo_swipes'] = _swipe_matrix.mean(axis=1)
     _acct['mo_spend'] = _spend_matrix.mean(axis=1)
 
     # -----------------------------------------------------------------
-    # 2. Pull deposit metrics from latest Z5 snapshot, normalize monthly
+    # 2. Pull 365-day deposit metrics from latest Z5 snapshot
     # -----------------------------------------------------------------
     _latest_snap = SNAPSHOT_ORDER[-1] if 'SNAPSHOT_ORDER' in dir() else None
 
@@ -87,7 +87,7 @@ else:
         _snap = deposit_long[deposit_long['snapshot'] == _latest_snap].copy()
         if DEPOSIT_JOIN_KEY_DEPOSIT in _snap.columns:
             _snap['_join_key'] = _snap[DEPOSIT_JOIN_KEY_DEPOSIT].astype(str).str.strip()
-            _dep_cols = [c for c in ['DepAmt99', 'DepCount99', 'balance']
+            _dep_cols = [c for c in ['depAmt365', 'depCount365', 'balance']
                           if c in _snap.columns]
             if _dep_cols:
                 _dep = (_snap[['_join_key'] + _dep_cols]
@@ -96,14 +96,14 @@ else:
                 _acct = _acct.join(_dep, on='_join_key', how='left')
                 print(f"  Z5: {_latest_snap}, matched {_acct[_dep_cols[0]].notna().sum():,} accounts")
 
-    # Normalize to monthly (99 days ~ 3.3 months)
-    if 'DepCount99' in _acct.columns:
-        _acct['mo_dep_count'] = _acct['DepCount99'] / 3.3
-    if 'DepAmt99' in _acct.columns:
-        _acct['mo_dep_amt'] = _acct['DepAmt99'] / 3.3
+    # Normalize to monthly
+    if 'depCount365' in _acct.columns:
+        _acct['mo_dep_count'] = _acct['depCount365'] / 12
+    if 'depAmt365' in _acct.columns:
+        _acct['mo_dep_amt'] = _acct['depAmt365'] / 12
 
     # -----------------------------------------------------------------
-    # 3. Create swipe-based tiers
+    # 3. Create swipe-based tiers (same as cell 11)
     # -----------------------------------------------------------------
     _TIERS = [
         ('0', 0, 0),
@@ -115,13 +115,13 @@ else:
         ('26+', 25.01, float('inf')),
     ]
 
-    _acct['swipe_tier'] = 'Inactive (0)'
+    _acct['swipe_tier'] = '0'
     for tier_name, lo, hi in _TIERS:
         _mask = (_acct['mo_swipes'] >= lo) & (_acct['mo_swipes'] <= hi)
         _acct.loc[_mask, 'swipe_tier'] = tier_name
 
     # -----------------------------------------------------------------
-    # 4. Summary table: Total Open, then by swipe tier
+    # 4. Summary table
     # -----------------------------------------------------------------
     _tier_order = [t[0] for t in _TIERS]
 
@@ -136,7 +136,6 @@ else:
 
     _rows = []
 
-    # Per tier first
     for tier in _tier_order:
         _g = _acct[_acct['swipe_tier'] == tier]
         if len(_g) == 0:
@@ -147,7 +146,6 @@ else:
                 _row[label] = _g[col].median() if agg == 'median' else _g[col].mean()
         _rows.append(_row)
 
-    # Total row at the bottom
     _total_row = {'Tier': 'TOTAL', 'Accounts': len(_acct)}
     for label, agg, col in _metric_defs:
         if col and col in _acct.columns:
@@ -156,7 +154,6 @@ else:
 
     _summary_df = pd.DataFrame(_rows)
 
-    # Format
     _fmt = {
         'Accounts': '{:,.0f}',
         'Mo Swipes': '{:,.1f}',
@@ -201,16 +198,14 @@ else:
                 ('text-align', 'left'), ('padding-bottom', '12px'),
             ]},
         ])
-        .set_caption(f"Swipe Segmentation: Activity Tiers vs Deposit Behavior  "
-                      f"(All metrics monthly  |  Z5: {_latest_snap})")
+        .set_caption(f"12-Month Swipe Segmentation: Activity Tiers vs Deposit Behavior  "
+                      f"({_swipe_labels[0]}-{_swipe_labels[-1]}  |  "
+                      f"Z5: {_latest_snap})")
     )
     display(_styled)
 
-    # -----------------------------------------------------------------
-    # Tier distribution print
-    # -----------------------------------------------------------------
-    print(f"\n  Swipe tiers (monthly avg from {_swipe_labels[0]}-{_swipe_labels[-1]}):")
+    print(f"\n  Swipe tiers (monthly avg from {_n_months} months):")
     for tier in _tier_order:
         _n = (_acct['swipe_tier'] == tier).sum()
         _pct = _n / len(_acct) * 100
-        print(f"    {tier:<22s}: {_n:>7,} ({_pct:.1f}%)")
+        print(f"    {tier:<10s}: {_n:>7,} ({_pct:.1f}%)")
