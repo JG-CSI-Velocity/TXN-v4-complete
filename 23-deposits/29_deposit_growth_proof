@@ -292,10 +292,12 @@ else:
             plt.show()
 
             # Quick summary: responder advantage
-            _r_all = _responded & _has_both
-            _nr_all = _mailed & ~_responded & _has_both
+            _r_all = _responded.reindex(_acct.index, fill_value=False) & _has_both
+            _nr_all = (_mailed.reindex(_acct.index, fill_value=False)
+                       & ~_responded.reindex(_acct.index, fill_value=False)
+                       & _has_both)
 
-            if _r_all.sum() > 0 and _nr_all.sum() > 0:
+            if int(_r_all.sum()) > 0 and int(_nr_all.sum()) > 0:
                 _r_med = _acct.loc[_r_all, 'mo_dep_amt_delta'].median()
                 _nr_med = _acct.loc[_nr_all, 'mo_dep_amt_delta'].median()
                 _adv = _r_med - _nr_med
