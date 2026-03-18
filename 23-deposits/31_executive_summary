@@ -1,0 +1,418 @@
+# ===========================================================================
+# EXECUTIVE SUMMARY: ARS Program Results — Presentation Ready
+# ===========================================================================
+# Single cell that produces all key findings in presentation format.
+# Run after cells 01-30. Screenshots each output for slides.
+#
+# Depends on: rewards_df, _acct (cell 04), deposit_long, SNAPSHOT_ORDER,
+#             SNAPSHOT_CONFIG, PROGRAM_SEG_ORDER, GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+elif '_acct' not in dir():
+    print("    Run cell 04 first.")
+else:
+    from IPython.display import display, HTML
+
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+
+    def _find_monthly(suffix):
+        return sorted(
+            [c.strip() for c in rewards_df.columns if c.strip().endswith(suffix)
+             and c.strip()[0].isupper()
+             and len(c.strip().split(' ')[0]) in (5, 6)
+             and c.strip().split(' ')[0][:3] in _VALID_MON],
+            key=lambda c: pd.to_datetime(c.strip().replace(suffix, ''), format='%b%y'))
+
+    _swipe_cols = _find_monthly(' Swipes')
+    _spend_cols = _find_monthly(' Spend')
+    _mail_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
+        key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
+    _resp_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Resp')],
+        key=lambda c: pd.to_datetime(c.replace(' Resp', ''), format='%b%y'))
+
+    def _is_success(val):
+        if pd.isna(val): return False
+        v = str(val).strip().upper()
+        if not v or v == 'NAN': return False
+        if 'NU' in v: return '5+' in v or '5 +' in v
+        return True
+
+    _eligible = rewards_df.reindex(_acct.index)
+
+    # =================================================================
+    # Key metrics
+    # =================================================================
+    _n_total = len(_acct)
+    _n_mailed = _acct['was_mailed'].sum()
+    _n_resp = _acct['ever_responded'].sum()
+    _n_nr = (_acct['was_mailed'] & ~_acct['ever_responded']).sum()
+    _resp_rate = _n_resp / _n_mailed * 100 if _n_mailed > 0 else 0
+
+    # Per-segment response rates
+    _seg_rates = {}
+    for seg in PROGRAM_SEG_ORDER:
+        _seg_mask = _acct['program_segment'] == seg
+        _seg_mailed = (_seg_mask & _acct['was_mailed']).sum()
+        _seg_resp = (_seg_mask & _acct['ever_responded']).sum()
+        if _seg_mailed > 0:
+            _seg_rates[seg] = {
+                'mailed': _seg_mailed,
+                'responded': _seg_resp,
+                'rate': _seg_resp / _seg_mailed * 100,
+            }
+
+    # Swipe/Spend metrics
+    _r_mask = _acct['ever_responded']
+    _nr_mask = _acct['was_mailed'] & ~_acct['ever_responded']
+
+    _r_swipe_3 = _acct.loc[_r_mask, 'mo_swipes_3mo'].median()
+    _nr_swipe_3 = _acct.loc[_nr_mask, 'mo_swipes_3mo'].median()
+    _r_swipe_12 = _acct.loc[_r_mask, 'mo_swipes_12mo'].median()
+    _nr_swipe_12 = _acct.loc[_nr_mask, 'mo_swipes_12mo'].median()
+
+    _r_spend_3 = _acct.loc[_r_mask, 'mo_spend_3mo'].median()
+    _nr_spend_3 = _acct.loc[_nr_mask, 'mo_spend_3mo'].median()
+    _r_spend_12 = _acct.loc[_r_mask, 'mo_spend_12mo'].median()
+    _nr_spend_12 = _acct.loc[_nr_mask, 'mo_spend_12mo'].median()
+
+    # Deposit metrics
+    _has_dep = 'mo_dep_amt' in _acct.columns
+    if _has_dep:
+        _r_dep = _acct.loc[_r_mask, 'mo_dep_amt'].median()
+        _nr_dep = _acct.loc[_nr_mask, 'mo_dep_amt'].median()
+
+    # =================================================================
+    # SLIDE 1: Program Overview — Hero Numbers
+    # =================================================================
+    display(HTML(f"""
+    <div style="font-family: system-ui, -apple-system, sans-serif; max-width: 900px;
+                padding: 30px; background: linear-gradient(135deg, #1B2A4A 0%, #2a3f6e 100%);
+                border-radius: 12px; color: white; margin-bottom: 20px;">
+        <h1 style="margin: 0 0 8px 0; font-size: 28px; font-weight: 800; letter-spacing: -0.5px;">
+            ARS Rewards Program Results</h1>
+        <p style="margin: 0 0 24px 0; font-size: 14px; opacity: 0.7;">
+            {_n_total:,} eligible accounts  |  {len(_mail_cols)} mailer waves  |
+            {_swipe_cols[0].replace(' Swipes','')} - {_swipe_cols[-1].replace(' Swipes','')}</p>
+        <div style="display: flex; gap: 20px;">
+            <div style="flex: 1; background: rgba(255,255,255,0.1); border-radius: 8px; padding: 20px; text-align: center;">
+                <div style="font-size: 36px; font-weight: 800;">{_n_mailed:,}</div>
+                <div style="font-size: 13px; opacity: 0.7; margin-top: 4px;">Accounts Mailed</div>
+            </div>
+            <div style="flex: 1; background: rgba(255,255,255,0.1); border-radius: 8px; padding: 20px; text-align: center;">
+                <div style="font-size: 36px; font-weight: 800; color: #2EC4B6;">{_n_resp:,}</div>
+                <div style="font-size: 13px; opacity: 0.7; margin-top: 4px;">Responders</div>
+            </div>
+            <div style="flex: 1; background: rgba(255,255,255,0.1); border-radius: 8px; padding: 20px; text-align: center;">
+                <div style="font-size: 36px; font-weight: 800; color: #2EC4B6;">{_resp_rate:.1f}%</div>
+                <div style="font-size: 13px; opacity: 0.7; margin-top: 4px;">Response Rate</div>
+            </div>
+            <div style="flex: 1; background: rgba(255,255,255,0.1); border-radius: 8px; padding: 20px; text-align: center;">
+                <div style="font-size: 36px; font-weight: 800; color: #FF9F1C;">
+                    {_r_swipe_3 / _nr_swipe_3:.1f}x</div>
+                <div style="font-size: 13px; opacity: 0.7; margin-top: 4px;">Swipe Lift (R vs NR)</div>
+            </div>
+        </div>
+    </div>
+    """))
+
+    # =================================================================
+    # SLIDE 2: Response by Segment
+    # =================================================================
+    _seg_rows = []
+    for seg in PROGRAM_SEG_ORDER:
+        if seg in _seg_rates:
+            _s = _seg_rates[seg]
+            _seg_rows.append({
+                'Segment': seg,
+                'Mailed': _s['mailed'],
+                'Responded': _s['responded'],
+                'Rate': _s['rate'] / 100,
+            })
+
+    if _seg_rows:
+        _seg_df = pd.DataFrame(_seg_rows)
+        _seg_df.loc[len(_seg_df)] = {
+            'Segment': 'ALL',
+            'Mailed': _n_mailed,
+            'Responded': _n_resp,
+            'Rate': _resp_rate / 100,
+        }
+
+        _styled = (
+            _seg_df.style.hide(axis='index')
+            .format({'Mailed': '{:,.0f}', 'Responded': '{:,.0f}', 'Rate': '{:.1%}'})
+            .set_properties(**{'font-size': '15px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF',
+                'padding': '12px 16px'})
+            .set_properties(subset=['Segment'], **{'text-align': 'left'})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                    ('color', 'white'), ('font-size': '14px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '12px 16px')]},
+                {'selector': 'caption', 'props': [('font-size', '22px'),
+                    ('font-weight', 'bold'), ('color', GEN_COLORS['dark_text']),
+                    ('text-align', 'left'), ('padding-bottom', '12px')]},
+            ])
+            .set_caption("Response Rate by Program Segment")
+        )
+        display(_styled)
+
+    # =================================================================
+    # SLIDE 3: Behavioral Impact — R vs NR Side-by-Side
+    # =================================================================
+    _impact_rows = [
+        {'Metric': 'Median Swipes/mo (recent 3mo)',
+         'Responder': _r_swipe_3, 'Non-Responder': _nr_swipe_3,
+         'Lift': f'{_r_swipe_3 / _nr_swipe_3:.1f}x' if _nr_swipe_3 > 0 else '--'},
+        {'Metric': 'Median Swipes/mo (12mo avg)',
+         'Responder': _r_swipe_12, 'Non-Responder': _nr_swipe_12,
+         'Lift': f'{_r_swipe_12 / _nr_swipe_12:.1f}x' if _nr_swipe_12 > 0 else '--'},
+        {'Metric': 'Median Spend/mo (recent 3mo)',
+         'Responder': _r_spend_3, 'Non-Responder': _nr_spend_3,
+         'Lift': f'${_r_spend_3 - _nr_spend_3:+,.0f}'},
+        {'Metric': 'Median Spend/mo (12mo avg)',
+         'Responder': _r_spend_12, 'Non-Responder': _nr_spend_12,
+         'Lift': f'${_r_spend_12 - _nr_spend_12:+,.0f}'},
+    ]
+    if _has_dep:
+        _impact_rows.append({
+            'Metric': 'Median Deposits/mo (365d)',
+            'Responder': _r_dep, 'Non-Responder': _nr_dep,
+            'Lift': f'${_r_dep - _nr_dep:+,.0f}',
+        })
+
+    _imp_df = pd.DataFrame(_impact_rows)
+
+    def _fmt_val(v):
+        if isinstance(v, str): return v
+        if abs(v) >= 100: return f'${v:,.0f}'
+        return f'{v:,.1f}'
+
+    _fmt = {}
+    for c in ['Responder', 'Non-Responder']:
+        _fmt[c] = lambda v: f'${v:,.0f}' if abs(v) >= 100 else f'{v:.1f}'
+
+    _styled = (
+        _imp_df.style.hide(axis='index')
+        .format({'Responder': lambda v: f'${v:,.0f}' if abs(v) >= 100 else f'{v:.1f}',
+                 'Non-Responder': lambda v: f'${v:,.0f}' if abs(v) >= 100 else f'{v:.1f}'})
+        .set_properties(**{'font-size': '15px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF',
+            'padding': '12px 16px'})
+        .set_properties(subset=['Metric'], **{'text-align': 'left'})
+        .set_properties(subset=['Lift'], **{
+            'color': GEN_COLORS['success'], 'font-size': '16px'})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '14px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '12px 16px')]},
+            {'selector': 'caption', 'props': [('font-size', '22px'),
+                ('font-weight', 'bold'), ('color', GEN_COLORS['dark_text']),
+                ('text-align', 'left'), ('padding-bottom', '12px')]},
+        ])
+        .set_caption("Behavioral Impact: Responder vs Non-Responder")
+    )
+    display(_styled)
+
+    # =================================================================
+    # SLIDE 4: Per-Segment Swipe Lift (Grouped Bar)
+    # =================================================================
+    _seg_order = [s for s in PROGRAM_SEG_ORDER
+                   if ((_acct['program_segment'] == s) & _r_mask).sum() > 0]
+
+    if _seg_order:
+        fig, ax = plt.subplots(figsize=(12, 6))
+        _x = np.arange(len(_seg_order))
+        _bw = 0.35
+        _r_vals = []
+        _nr_vals = []
+
+        for seg in _seg_order:
+            _sm = _acct['program_segment'] == seg
+            _r_vals.append(_acct.loc[_sm & _r_mask, 'mo_swipes_3mo'].median())
+            _nr_vals.append(_acct.loc[_sm & _nr_mask, 'mo_swipes_3mo'].median())
+
+        bars_r = ax.bar(_x - _bw/2, _r_vals, _bw,
+                        color=GEN_COLORS['success'], edgecolor='white',
+                        linewidth=1.5, label='Responder', zorder=3)
+        bars_nr = ax.bar(_x + _bw/2, _nr_vals, _bw,
+                         color=GEN_COLORS['muted'], edgecolor='white',
+                         linewidth=1.5, label='Non-Responder', zorder=3)
+
+        for bar, val in zip(bars_r, _r_vals):
+            if pd.notna(val):
+                ax.text(bar.get_x() + bar.get_width() / 2,
+                        bar.get_height() + 0.3,
+                        f'{val:.0f}', ha='center', va='bottom',
+                        fontsize=12, fontweight='bold',
+                        color=GEN_COLORS['success'])
+
+        for bar, val in zip(bars_nr, _nr_vals):
+            if pd.notna(val):
+                ax.text(bar.get_x() + bar.get_width() / 2,
+                        bar.get_height() + 0.3,
+                        f'{val:.0f}', ha='center', va='bottom',
+                        fontsize=12, fontweight='bold',
+                        color=GEN_COLORS['muted'])
+
+        ax.set_xticks(_x)
+        ax.set_xticklabels(_seg_order, fontsize=13, fontweight='bold')
+        ax.set_ylabel("Median Swipes/mo (Recent 3mo)", fontsize=13,
+                       fontweight='bold', labelpad=10)
+        gen_clean_axes(ax)
+        ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+        ax.legend(fontsize=12, loc='upper left', frameon=True,
+                  facecolor='white', edgecolor=GEN_COLORS['grid'])
+        ax.set_title("Card Usage by Segment: Responder vs Non-Responder",
+                      fontsize=20, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=15)
+
+        plt.tight_layout()
+        plt.show()
+
+    # =================================================================
+    # SLIDE 5: Sustained Engagement (3mo vs 12mo)
+    # =================================================================
+    if 'mo_swipes_3mo' in _acct.columns and 'mo_swipes_12mo' in _acct.columns:
+        _persist_rows = []
+        for seg in PROGRAM_SEG_ORDER:
+            _sm = _acct['program_segment'] == seg
+            for label, mask in [('R', _sm & _r_mask), ('NR', _sm & _nr_mask)]:
+                _g = _acct[mask]
+                if len(_g) < 10:
+                    continue
+                _s3 = _g['mo_swipes_3mo'].median()
+                _s12 = _g['mo_swipes_12mo'].median()
+                _ratio = _s3 / _s12 if _s12 > 0 else np.nan
+                _persist_rows.append({
+                    'Segment': f'{seg} {label}',
+                    '12mo Avg': _s12,
+                    'Recent 3mo': _s3,
+                    'Trend': _ratio,
+                })
+
+        if _persist_rows:
+            _p_df = pd.DataFrame(_persist_rows)
+            _p_df = _p_df.round(1)
+
+            def _trend_color(col):
+                if col.name != 'Trend': return [''] * len(col)
+                return [f'color: {GEN_COLORS["success"]}' if v >= 1.0
+                        else f'color: {GEN_COLORS["accent"]}' for v in col]
+
+            def _grp_color(col):
+                if col.name != 'Segment': return [''] * len(col)
+                return [f'color: {GEN_COLORS["success"]}' if ' R' in str(v)
+                        else f'color: {GEN_COLORS["muted"]}' for v in col]
+
+            _nr_start = None
+            for i, row in _p_df.iterrows():
+                if ' NR' in str(row['Segment']) and _nr_start is None:
+                    _nr_start = i
+
+            def _sep(row):
+                if row.name == _nr_start:
+                    return ['border-top: 2px solid #1B2A4A'] * len(row)
+                if ' R' in str(_p_df.loc[row.name, 'Segment']):
+                    return ['background-color: rgba(46, 196, 182, 0.06)'] * len(row)
+                return [''] * len(row)
+
+            _styled = (
+                _p_df.style.hide(axis='index')
+                .format({'12mo Avg': '{:.1f}', 'Recent 3mo': '{:.1f}',
+                         'Trend': '{:.2f}x'})
+                .apply(_trend_color)
+                .apply(_grp_color)
+                .apply(_sep, axis=1)
+                .set_properties(**{'font-size': '14px', 'font-weight': 'bold',
+                    'text-align': 'center', 'border': '1px solid #E9ECEF',
+                    'padding': '10px 12px'})
+                .set_properties(subset=['Segment'], **{'text-align': 'left'})
+                .set_table_styles([
+                    {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                        ('color', 'white'), ('font-size', '14px'), ('font-weight', 'bold'),
+                        ('text-align', 'center'), ('padding', '10px 12px')]},
+                    {'selector': 'caption', 'props': [('font-size', '22px'),
+                        ('font-weight', 'bold'), ('color', GEN_COLORS['dark_text']),
+                        ('text-align', 'left'), ('padding-bottom', '12px')]},
+                ])
+                .set_caption("Sustained Engagement: Recent 3mo vs 12mo Average (Swipes)")
+            )
+            display(_styled)
+
+    # =================================================================
+    # SLIDE 6: Deposit Context
+    # =================================================================
+    if _has_dep:
+        _dep_context = [
+            {'Metric': 'Median Monthly Deposits',
+             'Responder': f'${_r_dep:,.0f}',
+             'Non-Responder': f'${_nr_dep:,.0f}',
+             'Takeaway': 'Comparable deposit base'},
+            {'Metric': 'Median Monthly Card Spend',
+             'Responder': f'${_r_spend_12:,.0f}',
+             'Non-Responder': f'${_nr_spend_12:,.0f}',
+             'Takeaway': 'Responders spend more on card'},
+        ]
+        if _r_dep > 0 and _nr_dep > 0:
+            _r_act = _r_spend_12 / (_r_dep) if _r_dep > 0 else 0
+            _nr_act = _nr_spend_12 / (_nr_dep) if _nr_dep > 0 else 0
+            _dep_context.append({
+                'Metric': 'Card Spend / Deposits',
+                'Responder': f'{_r_act:.1%}',
+                'Non-Responder': f'{_nr_act:.1%}',
+                'Takeaway': 'Higher deposit utilization',
+            })
+            _spend_lift = _r_spend_12 - _nr_spend_12
+            _monthly_interchange = _spend_lift * 0.015
+            _dep_context.append({
+                'Metric': 'Incremental Interchange/mo',
+                'Responder': f'${_monthly_interchange:,.2f}/acct',
+                'Non-Responder': '--',
+                'Takeaway': f'x {_n_resp:,} = ${_monthly_interchange * _n_resp:,.0f}/mo',
+            })
+
+        _dep_df = pd.DataFrame(_dep_context)
+        _styled = (
+            _dep_df.style.hide(axis='index')
+            .set_properties(**{'font-size': '15px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF',
+                'padding': '12px 16px'})
+            .set_properties(subset=['Metric', 'Takeaway'], **{'text-align': 'left'})
+            .set_properties(subset=['Takeaway'], **{
+                'color': GEN_COLORS['info'], 'font-style': 'italic'})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                    ('color', 'white'), ('font-size', '14px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '12px 16px')]},
+                {'selector': 'caption', 'props': [('font-size', '22px'),
+                    ('font-weight', 'bold'), ('color', GEN_COLORS['dark_text']),
+                    ('text-align', 'left'), ('padding-bottom', '12px')]},
+            ])
+            .set_caption("Deposit Context: Same Base, More Revenue")
+        )
+        display(_styled)
+
+    # =================================================================
+    # Print summary for notes
+    # =================================================================
+    print("\n" + "=" * 60)
+    print("  EXECUTIVE SUMMARY")
+    print("=" * 60)
+    print(f"  Accounts mailed:   {_n_mailed:,}")
+    print(f"  Responders:        {_n_resp:,} ({_resp_rate:.1f}%)")
+    print(f"  Swipe lift (3mo):  {_r_swipe_3:.1f} vs {_nr_swipe_3:.1f} "
+          f"({_r_swipe_3 / _nr_swipe_3:.1f}x)" if _nr_swipe_3 > 0 else "")
+    print(f"  Spend lift (3mo):  ${_r_spend_3:,.0f} vs ${_nr_spend_3:,.0f} "
+          f"(+${_r_spend_3 - _nr_spend_3:,.0f})")
+    if _has_dep:
+        print(f"  Deposits (R):      ${_r_dep:,.0f}/mo")
+        print(f"  Deposits (NR):     ${_nr_dep:,.0f}/mo")
+        _lift = _r_spend_12 - _nr_spend_12
+        print(f"  Interchange lift:  ~${_lift * 0.015:,.2f}/acct/mo "
+              f"x {_n_resp:,} = ${_lift * 0.015 * _n_resp:,.0f}/mo")
+    print("=" * 60)
