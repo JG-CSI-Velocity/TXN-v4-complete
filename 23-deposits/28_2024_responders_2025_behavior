@@ -200,43 +200,68 @@ else:
     display(_styled)
 
     # -----------------------------------------------------------------
-    # Bar chart: Median Deposit $ by group
+    # Bar chart: Grouped bars -- Resp vs NR side by side per segment
     # -----------------------------------------------------------------
     if 'Med Dep $' in _df.columns:
-        _chart_df = _df[['Group', 'Med Dep $']].dropna()
-        if len(_chart_df) > 0:
+        # Build paired data: for each segment, R bar and NR bar next to each other
+        _seg_order = [s for s in PROGRAM_SEG_ORDER
+                       if f'{s} Resp' in _df['Group'].values
+                       or f'{s} NR' in _df['Group'].values]
+
+        if _seg_order:
             fig, ax = plt.subplots(figsize=(14, 7))
 
-            _x = np.arange(len(_chart_df))
-            _colors = [GEN_COLORS['success'] if 'Resp' in g
-                        else GEN_COLORS['muted'] for g in _chart_df['Group']]
+            _x = np.arange(len(_seg_order))
+            _bw = 0.35
+            _r_vals = []
+            _nr_vals = []
 
-            bars = ax.bar(_x, _chart_df['Med Dep $'], color=_colors,
-                          edgecolor='white', linewidth=1.5, width=0.6, zorder=3)
+            for seg in _seg_order:
+                _r_row = _df[_df['Group'] == f'{seg} Resp']
+                _nr_row = _df[_df['Group'] == f'{seg} NR']
+                _r_vals.append(_r_row['Med Dep $'].iloc[0] if len(_r_row) > 0 else 0)
+                _nr_vals.append(_nr_row['Med Dep $'].iloc[0] if len(_nr_row) > 0 else 0)
 
-            for bar, val in zip(bars, _chart_df['Med Dep $']):
-                ax.text(bar.get_x() + bar.get_width() / 2,
-                        bar.get_height() + 20,
-                        f"${val:,.0f}",
-                        ha='center', va='bottom', fontsize=13,
-                        fontweight='bold', color=GEN_COLORS['dark_text'])
+            bars_r = ax.bar(_x - _bw/2, _r_vals, _bw,
+                            color=GEN_COLORS['success'], edgecolor='white',
+                            linewidth=1.5, label='Responder', zorder=3)
+            bars_nr = ax.bar(_x + _bw/2, _nr_vals, _bw,
+                             color=GEN_COLORS['muted'], edgecolor='white',
+                             linewidth=1.5, label='Non-Responder', zorder=3)
+
+            for bar, val in zip(bars_r, _r_vals):
+                if val > 0:
+                    ax.text(bar.get_x() + bar.get_width() / 2,
+                            bar.get_height() + 20,
+                            f"${val:,.0f}",
+                            ha='center', va='bottom', fontsize=11,
+                            fontweight='bold', color=GEN_COLORS['success'])
+
+            for bar, val in zip(bars_nr, _nr_vals):
+                if val > 0:
+                    ax.text(bar.get_x() + bar.get_width() / 2,
+                            bar.get_height() + 20,
+                            f"${val:,.0f}",
+                            ha='center', va='bottom', fontsize=11,
+                            fontweight='bold', color=GEN_COLORS['muted'])
 
             ax.set_xticks(_x)
-            ax.set_xticklabels(_chart_df['Group'], fontsize=12, fontweight='bold',
-                                rotation=15, ha='right')
+            ax.set_xticklabels(_seg_order, fontsize=13, fontweight='bold')
             ax.set_ylabel("Median Monthly Deposit ($)", fontsize=14,
                            fontweight='bold', labelpad=10)
             ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
             gen_clean_axes(ax)
             ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
             ax.set_axisbelow(True)
+            ax.legend(fontsize=13, loc='upper left', frameon=True,
+                      facecolor='white', edgecolor=GEN_COLORS['grid'])
 
-            ax.set_title("2024 Responders: Median Monthly Deposits by Segment",
+            ax.set_title("2024 Responder vs Non-Responder: Median Monthly Deposits",
                           fontsize=22, fontweight='bold',
-                          color=GEN_COLORS['dark_text'], pad=15, loc='left')
+                          color=GEN_COLORS['dark_text'], pad=35, loc='left')
             ax.text(0.0, 1.02,
-                    "Higher response tier = higher deposits  |  "
-                    "Gray = never responded in 2024",
+                    "Same segment, same mailer assignment  |  "
+                    "Teal = responded, Gray = did not",
                     transform=ax.transAxes, fontsize=12,
                     color=GEN_COLORS['muted'], style='italic')
 
