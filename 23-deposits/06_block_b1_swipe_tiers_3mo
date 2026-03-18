@@ -9,32 +9,33 @@ else:
     from IPython.display import display
 
     _tier_col = 'swipe_tier_3mo'
+    _metrics = [
+        ('mo_swipes_3mo', 'Med Swipes', 'median'),
+        ('mo_swipes_3mo', 'Avg Swipes', 'mean'),
+        ('mo_spend_3mo', 'Med Spend', 'median'),
+        ('mo_spend_3mo', 'Avg Spend', 'mean'),
+        ('mo_items_3mo', 'Med Items', 'median'),
+        ('mo_items_3mo', 'Avg Items', 'mean'),
+        ('mo_dep_count', 'Med Dep Ct', 'median'),
+        ('mo_dep_amt', 'Med Dep $', 'median'),
+        ('mo_dep_amt', 'Avg Dep $', 'mean'),
+    ]
+
     _rows = []
     for tier in SWIPE_TIER_ORDER:
         _g = _acct[_acct[_tier_col] == tier]
         if len(_g) == 0:
             continue
         _row = {'Tier': tier, 'Accounts': len(_g)}
-        for col, label in [
-            ('mo_swipes_3mo', 'Mo Swipes'), ('mo_spend_3mo', 'Mo Spend'),
-            ('mo_items_3mo', 'Mo Items'),
-            
-            ('mo_dep_count', 'Mo Dep Ct'), ('mo_dep_amt', 'Mo Dep $'),
-        ]:
+        for col, label, agg in _metrics:
             if col in _g.columns:
-                _row[label] = _g[col].median()
+                _row[label] = _g[col].median() if agg == 'median' else _g[col].mean()
         _rows.append(_row)
 
-    # TOTAL
     _total = {'Tier': 'TOTAL', 'Accounts': len(_acct)}
-    for col, label in [
-        ('mo_swipes_3mo', 'Mo Swipes'), ('mo_spend_3mo', 'Mo Spend'),
-        ('mo_items_3mo', 'Mo Items'),
-        
-        ('mo_dep_count', 'Mo Dep Ct'), ('mo_dep_amt', 'Mo Dep $'),
-    ]:
+    for col, label, agg in _metrics:
         if col in _acct.columns:
-            _total[label] = _acct[col].median()
+            _total[label] = _acct[col].median() if agg == 'median' else _acct[col].mean()
     _rows.append(_total)
 
     _df = pd.DataFrame(_rows)
@@ -59,16 +60,16 @@ else:
         _df.style.hide(axis='index')
         .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
         .apply(_style, axis=1)
-        .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
-            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+        .set_properties(**{'font-size': '12px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '7px 8px'})
         .set_properties(subset=['Tier'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
         .set_table_styles([
             {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
-                ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
-                ('text-align', 'center'), ('padding', '8px 10px')]},
+                ('color', 'white'), ('font-size', '12px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '7px 8px')]},
             {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
                 ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
         ])
-        .set_caption("Block B1: Swipe Segmentation (3-Month Avg)")
+        .set_caption("Block B1: Swipe Segmentation (3-Month Avg) -- Median and Average")
     )
     display(_styled)
