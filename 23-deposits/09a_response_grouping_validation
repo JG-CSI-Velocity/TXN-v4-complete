@@ -1,0 +1,128 @@
+# ===========================================================================
+# RESPONSE GROUPING VALIDATION: Cross-Check Pre-Computed vs Calculated
+# ===========================================================================
+# Counts actual offers (Mail non-null) and successful responses
+# (Resp with NU 5+ or TH hit) per account, then compares against
+# the pre-computed Response Grouping field.
+#
+# Depends on: rewards_df (00-setup/08), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+else:
+    from IPython.display import display
+
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+
+    _mail_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
+        key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
+    _resp_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Resp')],
+        key=lambda c: pd.to_datetime(c.replace(' Resp', ''), format='%b%y'))
+
+    # Exclude months with zero Resp data
+    _valid_resp = [rc for rc in _resp_cols
+                    if rewards_df[rc].notna().sum() > 0]
+    _excluded = [rc.replace(' Resp', '') for rc in _resp_cols
+                  if rewards_df[rc].notna().sum() == 0]
+    if _excluded:
+        print(f"  Excluded Resp months with zero data: {_excluded}")
+
+    def _is_success(val):
+        if pd.isna(val): return False
+        v = str(val).strip().upper()
+        if not v or v == 'NAN': return False
+        if 'NU' in v: return '5+' in v or '5 +' in v
+        return True
+
+    # Count per account
+    _n_offers = rewards_df[_mail_cols].notna().sum(axis=1)
+    _n_responses = pd.Series(0, index=rewards_df.index)
+    for rc in _valid_resp:
+        _n_responses += rewards_df[rc].apply(_is_success).astype(int)
+
+    # Build calculated grouping
+    _calc_group = pd.Series('Unknown', index=rewards_df.index)
+    _calc_group[_n_offers == 0] = 'No Offer (0 mail)'
+    _calc_group[(_n_offers > 0) & (_n_responses == 0)] = f'Non-Resp ({_n_offers[(_n_offers > 0) & (_n_responses == 0)].median():.0f} offers avg)'
+    # More specific
+    _calc_group[_n_offers == 0] = 'No Offer'
+    _calc_group[(_n_offers == 1) & (_n_responses == 0)] = 'SO-NR (1 offer, 0 resp)'
+    _calc_group[(_n_offers == 1) & (_n_responses >= 1)] = 'SO-SR (1 offer, 1 resp)'
+    _calc_group[(_n_offers >= 2) & (_n_responses == 0)] = 'MO-NR (2+ offers, 0 resp)'
+    _calc_group[(_n_offers >= 2) & (_n_responses == 1)] = 'MO-SR (2+ offers, 1 resp)'
+    _calc_group[(_n_offers >= 2) & (_n_responses >= 2)] = 'MR (2+ offers, 2+ resp)'
+
+    # Cross-tab: pre-computed vs calculated
+    if 'Response Grouping' in rewards_df.columns:
+        _pre = rewards_df['Response Grouping'].astype(str).str.strip()
+        _xtab = pd.crosstab(_pre, _calc_group, margins=True, margins_name='Total')
+
+        _styled = (
+            _xtab.style
+            .format('{:,.0f}')
+            .set_properties(**{'font-size': '12px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF',
+                'padding': '7px 10px'})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', GEN_COLORS['info']),
+                    ('color', 'white'), ('font-size', '12px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '7px 10px')]},
+                {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                    ('padding-bottom', '12px')]},
+            ])
+            .set_caption("Validation: Pre-Computed (rows) vs Calculated (columns)")
+        )
+        display(_styled)
+
+    # Summary table: one row per pre-computed group showing calc stats
+    if 'Response Grouping' in rewards_df.columns:
+        _summary_rows = []
+        for grp in sorted(_pre.unique()):
+            _mask = _pre == grp
+            _row = {
+                'Pre-Computed': grp,
+                'Accounts': _mask.sum(),
+                'Avg Offers': _n_offers[_mask].mean(),
+                'Avg Responses': _n_responses[_mask].mean(),
+                'Min Offers': _n_offers[_mask].min(),
+                'Max Offers': _n_offers[_mask].max(),
+                'Min Resp': _n_responses[_mask].min(),
+                'Max Resp': _n_responses[_mask].max(),
+            }
+            _summary_rows.append(_row)
+
+        _sum_df = pd.DataFrame(_summary_rows)
+
+        _fmt = {
+            'Accounts': '{:,.0f}', 'Avg Offers': '{:,.1f}',
+            'Avg Responses': '{:,.1f}',
+            'Min Offers': '{:,.0f}', 'Max Offers': '{:,.0f}',
+            'Min Resp': '{:,.0f}', 'Max Resp': '{:,.0f}',
+        }
+
+        _styled2 = (
+            _sum_df.style.hide(axis='index')
+            .format({k: v for k, v in _fmt.items() if k in _sum_df.columns}, na_rep='--')
+            .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF',
+                'padding': '8px 10px'})
+            .set_properties(subset=['Pre-Computed'], **{
+                'text-align': 'left', 'color': GEN_COLORS['primary']})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                    ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '8px 10px')]},
+                {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                    ('padding-bottom', '12px')]},
+            ])
+            .set_caption("Response Grouping: Offer and Response Counts per Group")
+        )
+        display(_styled2)
+
+    print(f"\n  Mail columns: {len(_mail_cols)}")
+    print(f"  Valid Resp columns: {len(_valid_resp)}")
+    print(f"  NU 5+ only counts as response (NU 1-4 excluded)")
