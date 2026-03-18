@@ -1,0 +1,109 @@
+# ===========================================================================
+# THE DEPOSIT PAYOFF: Sustained Activity → Higher Deposits
+# ===========================================================================
+# Groups accounts by sustained swipe behavior, shows deposit metrics.
+# The bridge: sustained card activity → higher deposits.
+#
+# Groups:
+#   Sustained Responder: responded AND 3mo swipes > pre-response level
+#   Faded Responder: responded BUT 3mo swipes declined
+#   Non-Responder: mailed, never responded
+#
+# Depends on: rewards_df, _acct (cell 04), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+elif '_acct' not in dir():
+    print("    Run cell 04 first.")
+else:
+    from IPython.display import display
+
+    # Use 3mo vs 12mo swipes as a proxy for sustained lift
+    # If 3mo avg > 12mo avg, account is currently more active than historical
+    if 'mo_swipes_3mo' in _acct.columns and 'mo_swipes_12mo' in _acct.columns:
+        _acct['swipe_trend'] = np.where(
+            _acct['mo_swipes_3mo'] > _acct['mo_swipes_12mo'] * 1.1,
+            'Growing',
+            np.where(_acct['mo_swipes_3mo'] < _acct['mo_swipes_12mo'] * 0.9,
+                      'Declining', 'Stable'))
+
+    _groups = []
+    if 'swipe_trend' in _acct.columns:
+        _groups = [
+            ('Resp + Growing', (_acct['ever_responded']) & (_acct['swipe_trend'] == 'Growing')),
+            ('Resp + Stable', (_acct['ever_responded']) & (_acct['swipe_trend'] == 'Stable')),
+            ('Resp + Declining', (_acct['ever_responded']) & (_acct['swipe_trend'] == 'Declining')),
+            ('NR + Growing', (_acct['was_mailed']) & (~_acct['ever_responded']) & (_acct['swipe_trend'] == 'Growing')),
+            ('NR + Stable', (_acct['was_mailed']) & (~_acct['ever_responded']) & (_acct['swipe_trend'] == 'Stable')),
+            ('NR + Declining', (_acct['was_mailed']) & (~_acct['ever_responded']) & (_acct['swipe_trend'] == 'Declining')),
+        ]
+    else:
+        _groups = [
+            ('Responder', _acct['ever_responded']),
+            ('Non-Responder', (_acct['was_mailed']) & (~_acct['ever_responded'])),
+        ]
+
+    _rows = []
+    for label, mask in _groups:
+        _g = _acct[mask]
+        if len(_g) == 0:
+            continue
+        _row = {'Group': label, 'N': len(_g)}
+        for col, metric, agg in [
+            ('mo_swipes_3mo', 'Avg Swipes (3mo)', 'mean'),
+            ('mo_spend_3mo', 'Avg Spend (3mo)', 'mean'),
+            ('mo_dep_count', 'Med Dep Ct', 'median'),
+            ('mo_dep_count', 'Avg Dep Ct', 'mean'),
+            ('mo_dep_amt', 'Med Dep $', 'median'),
+            ('mo_dep_amt', 'Avg Dep $', 'mean'),
+        ]:
+            if col in _g.columns:
+                _row[metric] = _g[col].median() if agg == 'median' else _g[col].mean()
+        if 'dep_accel_amt' in _g.columns:
+            _row['Dep Accel'] = _g['dep_accel_amt'].median()
+        _rows.append(_row)
+
+    _df = pd.DataFrame(_rows)
+    for _rc in _df.columns:
+        if _rc not in ('Group', 'N') and _df[_rc].dtype in ('float64', 'float32'):
+            _df[_rc] = _df[_rc].round(1)
+
+    # Color: Resp rows teal, NR gray
+    def _color_grp(col):
+        if col.name != 'Group': return [''] * len(col)
+        return [f'color: {GEN_COLORS["success"]}' if 'Resp' in str(v)
+                else f'color: {GEN_COLORS["muted"]}' for v in col]
+
+    def _color_accel(col):
+        if col.name != 'Dep Accel': return [''] * len(col)
+        return [f'color: {GEN_COLORS["success"]}' if pd.notna(v) and v > 1.05
+                else f'color: {GEN_COLORS["accent"]}' if pd.notna(v) and v < 0.95
+                else '' for v in col]
+
+    _fmt = {'N': '{:,.0f}', 'Dep Accel': '{:.2f}x'}
+    for c in _df.columns:
+        if c in ('Group', 'N', 'Dep Accel'): continue
+        elif '$' in c or 'Spend' in c: _fmt[c] = '${:,.1f}'
+        else: _fmt[c] = '{:,.1f}'
+
+    _styled = (
+        _df.style.hide(axis='index')
+        .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+        .apply(_color_grp).apply(_color_accel)
+        .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+        .set_properties(subset=['Group'], **{'text-align': 'left'})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '14px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '10px 12px')]},
+            {'selector': 'caption', 'props': [('font-size', '24px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '14px')]},
+        ])
+        .set_caption("The Deposit Payoff: Sustained Activity → Higher Deposits")
+    )
+    display(_styled)
+
+    print(f"\n  Growing = 3mo swipes > 12mo avg by 10%+")
+    print(f"  Declining = 3mo swipes < 12mo avg by 10%+")
+    print(f"  Resp + Growing = the best outcome: responded AND sustaining higher activity")

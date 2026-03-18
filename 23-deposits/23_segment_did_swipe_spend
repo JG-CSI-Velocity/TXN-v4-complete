@@ -1,0 +1,71 @@
+# ===========================================================================
+# WITHIN-SEGMENT DID: Swipe & Spend -- Same Challenge, Two Outcomes
+# ===========================================================================
+# Per segment: DID for swipes and spend across all mailers.
+#
+# Depends on: _segment_cohort_df (cell 22), PROGRAM_SEG_ORDER, GEN_COLORS
+
+if '_segment_cohort_df' not in dir() or len(_segment_cohort_df) == 0:
+    print("    Run cell 22 first.")
+else:
+    from IPython.display import display
+
+    # Aggregate DID by segment (average across mailers)
+    _rows = []
+    for seg in PROGRAM_SEG_ORDER:
+        _sd = _segment_cohort_df[_segment_cohort_df['Segment'] == seg]
+        if len(_sd) == 0:
+            continue
+        _row = {
+            'Segment': seg,
+            'Mailers': len(_sd),
+            'Avg R N': _sd['R N'].mean(),
+            'Avg NR N': _sd['NR N'].mean(),
+        }
+        for metric in ['Swipes', 'Spend', 'Items']:
+            _col = f'{metric} DID'
+            if _col in _sd.columns:
+                _vals = _sd[_col].dropna()
+                _row[f'{metric} DID'] = _vals.mean() if len(_vals) > 0 else np.nan
+                _row[f'{metric} +DID'] = (_vals > 0).sum()
+                _row[f'{metric} Mailers'] = len(_vals)
+        _rows.append(_row)
+
+    _df = pd.DataFrame(_rows)
+    for _rc in _df.columns:
+        if _rc not in ('Segment', 'Mailers') and _df[_rc].dtype in ('float64', 'float32'):
+            _df[_rc] = _df[_rc].round(1)
+
+    def _color_did(col):
+        if 'DID' not in col.name or '+' in col.name: return [''] * len(col)
+        return [f'color: {GEN_COLORS["success"]}' if pd.notna(v) and v > 0
+                else f'color: {GEN_COLORS["accent"]}' if pd.notna(v) and v < 0
+                else '' for v in col]
+
+    _fmt = {'Mailers': '{:,.0f}', 'Avg R N': '{:,.0f}', 'Avg NR N': '{:,.0f}'}
+    for c in _df.columns:
+        if 'DID' in c and '+' not in c:
+            _fmt[c] = '${:,.1f}' if 'Spend' in c else '{:,.1f}'
+        elif '+DID' in c or 'Mailers' in c:
+            _fmt[c] = '{:,.0f}'
+
+    _styled = (
+        _df.style.hide(axis='index')
+        .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+        .apply(_color_did)
+        .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+        .set_properties(subset=['Segment'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['accent']),
+                ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '8px 10px')]},
+            {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
+        ])
+        .set_caption("Within-Segment DID: Same Challenge, Two Outcomes (Avg Across Mailers)")
+    )
+    display(_styled)
+
+    print(f"\n  +DID = number of mailers with positive DID for that segment")
+    print(f"  NU 5+ = Responder. Same challenge comparison only.")

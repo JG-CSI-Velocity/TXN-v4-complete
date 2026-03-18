@@ -1,0 +1,148 @@
+# ===========================================================================
+# SUSTAINED LIFT: First-Time Responder Trajectory
+# ===========================================================================
+# Track accounts from their FIRST response through subsequent months.
+# Cleanest signal -- no repeat-response noise.
+# 3mo pre, 6mo post, monthly swipes and spend.
+#
+# Depends on: rewards_df, _acct (cell 04), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+elif '_acct' not in dir():
+    print("    Run cell 04 first.")
+else:
+    from IPython.display import display
+
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+
+    def _find_cols(suffix):
+        return sorted(
+            [c.strip() for c in rewards_df.columns if c.strip().endswith(suffix)
+             and c.strip()[0].isupper()
+             and len(c.strip().split(' ')[0]) in (5, 6)
+             and c.strip().split(' ')[0][:3] in _VALID_MON],
+            key=lambda c: pd.to_datetime(c.strip().replace(suffix, ''), format='%b%y'))
+
+    _swipe_cols = _find_cols(' Swipes')
+    _spend_cols = _find_cols(' Spend')
+    _swipe_dates = [pd.to_datetime(c.replace(' Swipes', ''), format='%b%y') for c in _swipe_cols]
+    _spend_dates = [pd.to_datetime(c.replace(' Spend', ''), format='%b%y') for c in _spend_cols]
+
+    _mail_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
+        key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
+
+    def _is_success(val):
+        if pd.isna(val): return False
+        v = str(val).strip().upper()
+        if not v or v == 'NAN': return False
+        if 'NU' in v: return '5+' in v or '5 +' in v
+        return True
+
+    _eligible = rewards_df.reindex(_acct.index)
+
+    # Find first response mailer per account
+    _first_resp_date = pd.Series(pd.NaT, index=_acct.index)
+    for mc in _mail_cols:
+        _month = mc.replace(' Mail', '')
+        _rc = f"{_month} Resp"
+        if _rc not in rewards_df.columns:
+            continue
+        _wd = pd.to_datetime(_month, format='%b%y')
+        _resp = _eligible[_rc].apply(_is_success)
+        _mailed = _eligible[mc].notna()
+        _first_here = _mailed & _resp & _first_resp_date.isna()
+        _first_resp_date[_first_here] = _wd
+
+    _has_first = _first_resp_date.notna()
+    print(f"  First-time responders: {_has_first.sum():,}")
+
+    if _has_first.sum() > 0:
+        # For each first-time responder, compute swipes/spend at relative offsets
+        _offsets = list(range(-3, 7))  # -3 to +6
+        _offset_data = {o: {'r_swipes': [], 'r_spend': [], 'nr_swipes': [], 'nr_spend': []}
+                        for o in _offsets}
+
+        # Non-responders for comparison (mailed but never responded)
+        _nr_mask = _acct['was_mailed'] & ~_acct['ever_responded']
+
+        for idx in _acct.index:
+            _fd = _first_resp_date[idx]
+            _is_r = pd.notna(_fd)
+
+            if not _is_r and not _nr_mask.get(idx, False):
+                continue
+
+            _ref = _fd if _is_r else None
+
+            # For NR, use median mailer date as reference
+            if not _is_r:
+                _mailed_dates = []
+                for mc in _mail_cols:
+                    if pd.notna(_eligible.loc[idx, mc]):
+                        _mailed_dates.append(pd.to_datetime(mc.replace(' Mail', ''), format='%b%y'))
+                if _mailed_dates:
+                    _ref = sorted(_mailed_dates)[len(_mailed_dates) // 2]
+                else:
+                    continue
+
+            for o in _offsets:
+                _target = _ref + pd.DateOffset(months=o)
+                # Find matching swipe/spend column
+                for sc, sd in zip(_swipe_cols, _swipe_dates):
+                    if sd.year == _target.year and sd.month == _target.month:
+                        _v = pd.to_numeric(_eligible.loc[idx, sc], errors='coerce')
+                        if pd.notna(_v):
+                            _key = 'r_swipes' if _is_r else 'nr_swipes'
+                            _offset_data[o][_key].append(_v)
+                        break
+                for sc, sd in zip(_spend_cols, _spend_dates):
+                    if sd.year == _target.year and sd.month == _target.month:
+                        _v = pd.to_numeric(_eligible.loc[idx, sc], errors='coerce')
+                        if pd.notna(_v):
+                            _key = 'r_spend' if _is_r else 'nr_spend'
+                            _offset_data[o][_key].append(_v)
+                        break
+
+        # Build table
+        _rows = []
+        for o in _offsets:
+            _d = _offset_data[o]
+            _row = {'Offset': f"{o:+d}mo"}
+            _row['R Avg Swipes'] = np.mean(_d['r_swipes']) if _d['r_swipes'] else np.nan
+            _row['NR Avg Swipes'] = np.mean(_d['nr_swipes']) if _d['nr_swipes'] else np.nan
+            _row['R Avg Spend'] = np.mean(_d['r_spend']) if _d['r_spend'] else np.nan
+            _row['NR Avg Spend'] = np.mean(_d['nr_spend']) if _d['nr_spend'] else np.nan
+            _rows.append(_row)
+
+        _df = pd.DataFrame(_rows)
+        for _rc in _df.columns:
+            if _rc != 'Offset' and _df[_rc].dtype in ('float64', 'float32'):
+                _df[_rc] = _df[_rc].round(1)
+
+        _fmt = {}
+        for c in _df.columns:
+            if c == 'Offset': continue
+            elif 'Spend' in c: _fmt[c] = '${:,.1f}'
+            else: _fmt[c] = '{:,.1f}'
+
+        _styled = (
+            _df.style.hide(axis='index')
+            .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+            .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+            .set_properties(subset=['Offset'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                    ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '8px 10px')]},
+                {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
+            ])
+            .set_caption("First-Time Responder: Monthly Trajectory (3mo pre, 6mo post)")
+        )
+        display(_styled)
+
+        print(f"\n  Offset relative to first response date")
+        print(f"  NR reference = median mailer date for each NR account")

@@ -1,0 +1,109 @@
+# ===========================================================================
+# SUSTAINED LIFT: All Responders per Mailer Trajectory
+# ===========================================================================
+# Track ALL responders at each mailer (includes repeats).
+# Monthly swipes/spend trajectory vs NR at same mailer.
+#
+# Depends on: rewards_df, _acct (cell 04), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available.")
+elif '_acct' not in dir():
+    print("    Run cell 04 first.")
+else:
+    from IPython.display import display
+
+    _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+
+    def _find_cols(suffix):
+        return sorted(
+            [c.strip() for c in rewards_df.columns if c.strip().endswith(suffix)
+             and c.strip()[0].isupper()
+             and len(c.strip().split(' ')[0]) in (5, 6)
+             and c.strip().split(' ')[0][:3] in _VALID_MON],
+            key=lambda c: pd.to_datetime(c.strip().replace(suffix, ''), format='%b%y'))
+
+    _swipe_cols = _find_cols(' Swipes')
+    _spend_cols = _find_cols(' Spend')
+    _swipe_dates = [pd.to_datetime(c.replace(' Swipes', ''), format='%b%y') for c in _swipe_cols]
+    _spend_dates = [pd.to_datetime(c.replace(' Spend', ''), format='%b%y') for c in _spend_cols]
+
+    _mail_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
+        key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
+
+    def _is_success(val):
+        if pd.isna(val): return False
+        v = str(val).strip().upper()
+        if not v or v == 'NAN': return False
+        if 'NU' in v: return '5+' in v or '5 +' in v
+        return True
+
+    _eligible = rewards_df.reindex(_acct.index)
+
+    # Per-mailer trajectory tables
+    _offsets = list(range(-3, 7))
+
+    for mc in _mail_cols:
+        _month = mc.replace(' Mail', '')
+        _rc = f"{_month} Resp"
+        if _rc not in rewards_df.columns or rewards_df[_rc].notna().sum() == 0:
+            continue
+
+        _wd = pd.to_datetime(_month, format='%b%y')
+        _mailed = _eligible[mc].notna()
+        _resp = _eligible[_rc].apply(_is_success)
+        _r = _mailed & _resp
+        _nr = _mailed & ~_resp
+
+        if _r.sum() < 5 or _nr.sum() < 5:
+            continue
+
+        _rows = []
+        for o in _offsets:
+            _target = _wd + pd.DateOffset(months=o)
+            _row = {'Offset': f"{o:+d}mo"}
+
+            for metric_cols, metric_dates, label in [
+                (_swipe_cols, _swipe_dates, 'Swipes'),
+                (_spend_cols, _spend_dates, 'Spend'),
+            ]:
+                _match = None
+                for sc, sd in zip(metric_cols, metric_dates):
+                    if sd.year == _target.year and sd.month == _target.month:
+                        _match = sc
+                        break
+                if _match:
+                    _rv = pd.to_numeric(_eligible.loc[_r, _match], errors='coerce').fillna(0).mean()
+                    _nrv = pd.to_numeric(_eligible.loc[_nr, _match], errors='coerce').fillna(0).mean()
+                    _row[f'R {label}'] = _rv
+                    _row[f'NR {label}'] = _nrv
+            _rows.append(_row)
+
+        _df = pd.DataFrame(_rows)
+        for _rc_col in _df.columns:
+            if _rc_col != 'Offset' and _df[_rc_col].dtype in ('float64', 'float32'):
+                _df[_rc_col] = _df[_rc_col].round(1)
+
+        _fmt = {}
+        for c in _df.columns:
+            if c == 'Offset': continue
+            elif 'Spend' in c: _fmt[c] = '${:,.1f}'
+            else: _fmt[c] = '{:,.1f}'
+
+        _styled = (
+            _df.style.hide(axis='index')
+            .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+            .set_properties(**{'font-size': '12px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '6px 8px'})
+            .set_properties(subset=['Offset'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', GEN_COLORS['info']),
+                    ('color', 'white'), ('font-size', '12px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '6px 8px')]},
+                {'selector': 'caption', 'props': [('font-size', '18px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '8px')]},
+            ])
+            .set_caption(f"{_month} Mailer: R ({_r.sum():,}) vs NR ({_nr.sum():,}) Monthly Trajectory")
+        )
+        display(_styled)

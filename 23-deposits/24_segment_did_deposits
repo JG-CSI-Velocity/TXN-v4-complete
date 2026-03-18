@@ -1,0 +1,107 @@
+# ===========================================================================
+# WITHIN-SEGMENT DID: Deposit Connection
+# ===========================================================================
+# Per segment: do responders show better deposit metrics?
+# Uses Z5 snapshot data (365d/12 monthly + acceleration).
+#
+# Depends on: _segment_cohort_df (cell 22), _acct (cell 04),
+#             rewards_df, PROGRAM_SEG_ORDER, GEN_COLORS
+
+if '_segment_cohort_df' not in dir() or len(_segment_cohort_df) == 0:
+    print("    Run cell 22 first.")
+elif '_acct' not in dir():
+    print("    Run cell 04 first.")
+else:
+    from IPython.display import display
+
+    _mail_cols = sorted(
+        [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
+        key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
+
+    def _parse_seg(val):
+        if pd.isna(val): return None
+        v = str(val).strip().upper()
+        if 'TH-25' in v or 'TH 25' in v or 'TH25' in v: return 'TH-25'
+        if 'TH-20' in v or 'TH 20' in v or 'TH20' in v: return 'TH-20'
+        if 'TH-15' in v or 'TH 15' in v or 'TH15' in v: return 'TH-15'
+        if 'TH-10' in v or 'TH 10' in v or 'TH10' in v: return 'TH-10'
+        if v.startswith('NU') or 'NON-USER' in v: return 'NU'
+        return None
+
+    def _is_success(val):
+        if pd.isna(val): return False
+        v = str(val).strip().upper()
+        if not v or v == 'NAN': return False
+        if 'NU' in v: return '5+' in v or '5 +' in v
+        return True
+
+    # For each segment, get all-time R vs NR deposit metrics
+    _rows = []
+    for seg in PROGRAM_SEG_ORDER:
+        _seg_accts = _acct[_acct['program_segment'] == seg]
+        _r = _seg_accts[_seg_accts['ever_responded'] == True]
+        _nr = _seg_accts[(_seg_accts['was_mailed'] == True) & (_seg_accts['ever_responded'] == False)]
+
+        if len(_r) == 0 and len(_nr) == 0:
+            continue
+
+        _row = {'Segment': seg, 'R N': len(_r), 'NR N': len(_nr)}
+
+        for col, label, agg in [
+            ('mo_dep_count', 'Med Dep Ct', 'median'),
+            ('mo_dep_count', 'Avg Dep Ct', 'mean'),
+            ('mo_dep_amt', 'Med Dep $', 'median'),
+            ('mo_dep_amt', 'Avg Dep $', 'mean'),
+        ]:
+            if col in _acct.columns:
+                _r_val = _r[col].median() if agg == 'median' else _r[col].mean() if len(_r) > 0 else np.nan
+                _nr_val = _nr[col].median() if agg == 'median' else _nr[col].mean() if len(_nr) > 0 else np.nan
+                _row[f'R {label}'] = _r_val
+                _row[f'NR {label}'] = _nr_val
+
+        if 'dep_accel_amt' in _acct.columns:
+            _row['R Accel'] = _r['dep_accel_amt'].median() if len(_r) > 0 else np.nan
+            _row['NR Accel'] = _nr['dep_accel_amt'].median() if len(_nr) > 0 else np.nan
+
+        _rows.append(_row)
+
+    if _rows:
+        _df = pd.DataFrame(_rows)
+        for _rc in _df.columns:
+            if _rc not in ('Segment', 'R N', 'NR N') and _df[_rc].dtype in ('float64', 'float32'):
+                _df[_rc] = _df[_rc].round(1)
+
+        def _color_accel(col):
+            if 'Accel' not in col.name: return [''] * len(col)
+            return [f'color: {GEN_COLORS["success"]}' if pd.notna(v) and v > 1.05
+                    else f'color: {GEN_COLORS["accent"]}' if pd.notna(v) and v < 0.95
+                    else '' for v in col]
+
+        _fmt = {'R N': '{:,.0f}', 'NR N': '{:,.0f}'}
+        for c in _df.columns:
+            if c in ('Segment', 'R N', 'NR N'): continue
+            elif 'Accel' in c: _fmt[c] = '{:.2f}x'
+            elif '$' in c: _fmt[c] = '${:,.1f}'
+            else: _fmt[c] = '{:,.1f}'
+
+        _styled = (
+            _df.style.hide(axis='index')
+            .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+            .apply(_color_accel)
+            .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+            .set_properties(subset=['Segment'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', GEN_COLORS['success']),
+                    ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '8px 10px')]},
+                {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
+            ])
+            .set_caption("Within-Segment Deposits: Responder vs NR (Z5 365d/12)")
+        )
+        display(_styled)
+
+        print(f"\n  Deposit metrics from Z5 snapshot")
+        print(f"  Accel = DepAmt33/DepAmt66 (>1.0x = accelerating)")
+        print(f"  Same segment comparison: NU-R vs NU-NR, TH-10-R vs TH-10-NR")
