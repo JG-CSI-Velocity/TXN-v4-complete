@@ -171,8 +171,6 @@ else:
          'Responders: Swipe Tiers vs Deposit Behavior'),
         ('Non-Responder', GEN_COLORS['muted'],
          'Non-Responders: Swipe Tiers vs Deposit Behavior'),
-        ('Not Mailed', GEN_COLORS['warning'],
-         'Not Mailed (Control): Swipe Tiers vs Deposit Behavior'),
     ]:
         _g = _acct[_acct['group'] == _grp_name]
         if len(_g) == 0:

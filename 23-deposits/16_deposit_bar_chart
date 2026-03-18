@@ -9,11 +9,10 @@ if '_acct' not in dir() or 'group' not in _acct.columns:
     print("    Run cell 13 first.")
 else:
     _TIERS = ['0', '1-5', '6-10', '11-15', '16-20', '21-25', '26+']
-    _GROUPS = ['Responder', 'Non-Responder', 'Not Mailed']
+    _GROUPS = ['Responder', 'Non-Responder']
     _GROUP_COLORS = {
         'Responder': GEN_COLORS['success'],
         'Non-Responder': GEN_COLORS['muted'],
-        'Not Mailed': GEN_COLORS['warning'],
     }
 
     fig, ax = plt.subplots(figsize=(14, 7))

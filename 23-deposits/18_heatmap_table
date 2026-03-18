@@ -12,7 +12,7 @@ else:
     from IPython.display import display
 
     _TIERS = ['0', '1-5', '6-10', '11-15', '16-20', '21-25', '26+']
-    _GROUPS = ['Responder', 'Non-Responder', 'Not Mailed']
+    _GROUPS = ['Responder', 'Non-Responder']
 
     _heat_rows = []
     for tier in _TIERS + ['TOTAL']:

@@ -1,0 +1,211 @@
+# ===========================================================================
+# DEPOSIT AMOUNT TIERS: Responder vs Non-Responder (Data Validation)
+# ===========================================================================
+# Buckets accounts by annual deposit amount (depAmt365) into tiers,
+# then compares Responder vs Non-Responder behavior within each tier.
+#
+# Tiers: $0-$6K, $6K-$12K, $12K-$24K, $24K-$36K, $36K+
+#
+# Depends on: _acct (cell 13), GEN_COLORS
+
+if '_acct' not in dir() or 'group' not in _acct.columns:
+    print("    Run cell 13 first.")
+elif 'depAmt365' not in _acct.columns:
+    print("    depAmt365 not available in _acct. Check Z5 join in cell 13.")
+else:
+    from IPython.display import display
+
+    _GROUPS = ['Responder', 'Non-Responder']
+
+    _DEP_TIERS = [
+        ('$0-$6K', 0, 6000),
+        ('$6K-$12K', 6000.01, 12000),
+        ('$12K-$24K', 12000.01, 24000),
+        ('$24K-$36K', 24000.01, 36000),
+        ('$36K+', 36000.01, float('inf')),
+    ]
+    _dep_tier_order = [t[0] for t in _DEP_TIERS]
+
+    _acct['dep_tier'] = 'Unknown'
+    for tier_name, lo, hi in _DEP_TIERS:
+        _mask = (_acct['depAmt365'] >= lo) & (_acct['depAmt365'] <= hi)
+        _acct.loc[_mask, 'dep_tier'] = tier_name
+    # Handle NaN
+    _acct.loc[_acct['depAmt365'].isna(), 'dep_tier'] = 'No Data'
+
+    _metric_defs = [
+        ('Accounts', 'count', None),
+        ('Mo Swipes', 'mean', 'mo_swipes'),
+        ('Mo Spend', 'mean', 'mo_spend'),
+        ('Med Mo Dep Ct', 'median', 'mo_dep_count'),
+        ('Med Mo Dep $', 'median', 'mo_dep_amt'),
+        ('Med Balance', 'median', 'balance'),
+    ]
+
+    # -----------------------------------------------------------------
+    # Table 1: Responder vs Non-Responder by deposit tier
+    # -----------------------------------------------------------------
+    _rows = []
+    for tier in _dep_tier_order:
+        for grp in _GROUPS:
+            _g = _acct[(_acct['dep_tier'] == tier) & (_acct['group'] == grp)]
+            if len(_g) == 0:
+                continue
+            _row = {'Dep Tier': tier, 'Group': grp, 'Accounts': len(_g)}
+            for label, agg, col in _metric_defs:
+                if col and col in _g.columns:
+                    _row[label] = (_g[col].median() if agg == 'median'
+                                    else _g[col].mean())
+            _rows.append(_row)
+
+    # Totals
+    for grp in _GROUPS:
+        _g = _acct[_acct['group'] == grp]
+        if len(_g) == 0:
+            continue
+        _row = {'Dep Tier': 'TOTAL', 'Group': grp, 'Accounts': len(_g)}
+        for label, agg, col in _metric_defs:
+            if col and col in _g.columns:
+                _row[label] = (_g[col].median() if agg == 'median'
+                                else _g[col].mean())
+        _rows.append(_row)
+
+    _df = pd.DataFrame(_rows)
+
+    _tier_breaks = set()
+    _prev = None
+    for i, row in _df.iterrows():
+        if row['Dep Tier'] != _prev and _prev is not None:
+            _tier_breaks.add(i)
+        _prev = row['Dep Tier']
+
+    _total_idx = set(_df[_df['Dep Tier'] == 'TOTAL'].index)
+
+    _GRP_COLORS = {
+        'Responder': GEN_COLORS['success'],
+        'Non-Responder': GEN_COLORS['muted'],
+    }
+
+    def _style_rows(row):
+        parts = []
+        _grp = _df.loc[row.name, 'Group']
+        if _grp == 'Responder':
+            parts.append('background-color: rgba(46, 196, 182, 0.08)')
+        if row.name in _tier_breaks:
+            parts.append('border-top: 2px solid #1B2A4A')
+        if row.name in _total_idx:
+            parts.append('font-weight: bold')
+        return ['; '.join(parts) if parts else ''] * len(row)
+
+    def _color_grp(col):
+        if col.name != 'Group':
+            return [''] * len(col)
+        return [f'color: {_GRP_COLORS.get(v, "")}' for v in col]
+
+    _fmt = {
+        'Accounts': '{:,.0f}', 'Mo Swipes': '{:,.1f}', 'Mo Spend': '${:,.1f}',
+        'Med Mo Dep Ct': '{:,.1f}', 'Med Mo Dep $': '${:,.1f}',
+        'Med Balance': '${:,.1f}',
+    }
+
+    _styled = (
+        _df.style.hide(axis='index')
+        .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+        .apply(_style_rows, axis=1).apply(_color_grp)
+        .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+        .set_properties(subset=['Dep Tier'], **{
+            'text-align': 'left', 'color': GEN_COLORS['primary']})
+        .set_properties(subset=['Group'], **{'text-align': 'left'})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '8px 10px')]},
+            {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                ('padding-bottom', '12px')]},
+        ])
+        .set_caption("Deposit Amount Tiers: Responder vs Non-Responder")
+    )
+    display(_styled)
+
+    # -----------------------------------------------------------------
+    # Table 2: Delta (Resp minus NR) by deposit tier
+    # -----------------------------------------------------------------
+    _delta_rows = []
+    for tier in _dep_tier_order + ['TOTAL']:
+        _r = (_acct[(_acct['dep_tier'] == tier) & (_acct['group'] == 'Responder')]
+              if tier != 'TOTAL' else _acct[_acct['group'] == 'Responder'])
+        _nr = (_acct[(_acct['dep_tier'] == tier) & (_acct['group'] == 'Non-Responder')]
+               if tier != 'TOTAL' else _acct[_acct['group'] == 'Non-Responder'])
+
+        _row = {'Dep Tier': tier, 'Resp N': len(_r), 'NR N': len(_nr)}
+        for label, agg, col in [
+            ('Mo Swipes', 'mean', 'mo_swipes'),
+            ('Mo Spend', 'mean', 'mo_spend'),
+            ('Med Dep Ct', 'median', 'mo_dep_count'),
+            ('Med Dep $', 'median', 'mo_dep_amt'),
+            ('Med Bal', 'median', 'balance'),
+        ]:
+            if col in _acct.columns and len(_r) > 0 and len(_nr) > 0:
+                _rv = _r[col].median() if agg == 'median' else _r[col].mean()
+                _nrv = _nr[col].median() if agg == 'median' else _nr[col].mean()
+                _row[f'{label} Diff'] = _rv - _nrv if pd.notna(_rv) and pd.notna(_nrv) else np.nan
+        _delta_rows.append(_row)
+
+    _delta_df = pd.DataFrame(_delta_rows)
+    _last = len(_delta_df) - 1
+
+    def _style_delta(row):
+        if row.name == _last:
+            return ['font-weight: bold; border-top: 2px solid #1B2A4A; '
+                    'background-color: rgba(27, 42, 74, 0.08)'] * len(row)
+        return [''] * len(row)
+
+    def _color_diffs(col):
+        if 'Diff' not in col.name:
+            return [''] * len(col)
+        return [
+            f'color: {GEN_COLORS["success"]}' if pd.notna(v) and v > 0
+            else f'color: {GEN_COLORS["accent"]}' if pd.notna(v) and v < 0
+            else '' for v in col
+        ]
+
+    _fmt_d = {'Resp N': '{:,.0f}', 'NR N': '{:,.0f}'}
+    for c in _delta_df.columns:
+        if 'Diff' in c and ('$' in c or 'Spend' in c or 'Bal' in c):
+            _fmt_d[c] = lambda v: (f"+${v:,.1f}" if pd.notna(v) and v >= 0
+                                    else f"-${abs(v):,.1f}" if pd.notna(v) else '--')
+        elif 'Diff' in c:
+            _fmt_d[c] = lambda v: (f"+{v:,.1f}" if pd.notna(v) and v >= 0
+                                    else f"{v:,.1f}" if pd.notna(v) else '--')
+
+    _styled_delta = (
+        _delta_df.style.hide(axis='index')
+        .format(_fmt_d, na_rep='--')
+        .apply(_style_delta, axis=1).apply(_color_diffs)
+        .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+        .set_properties(subset=['Dep Tier'], **{
+            'text-align': 'left', 'color': GEN_COLORS['primary']})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['success']),
+                ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '8px 10px')]},
+            {'selector': 'caption', 'props': [('font-size', '20px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'),
+                ('padding-bottom', '10px')]},
+        ])
+        .set_caption("Deposit Tier Delta: Responder Advantage Over Non-Responder")
+    )
+    display(_styled_delta)
+
+    # Distribution print
+    print(f"\n  Deposit amount tiers (depAmt365):")
+    for tier in _dep_tier_order:
+        _n = (_acct['dep_tier'] == tier).sum()
+        _pct = _n / len(_acct) * 100
+        print(f"    {tier:<14s}: {_n:>7,} ({_pct:.1f}%)")
+    _no_data = (_acct['dep_tier'] == 'No Data').sum()
+    if _no_data > 0:
+        print(f"    {'No Data':<14s}: {_no_data:>7,} ({_no_data/len(_acct)*100:.1f}%)")
