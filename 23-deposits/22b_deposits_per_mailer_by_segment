@@ -79,11 +79,6 @@ else:
                     _row[label] = (_acct.loc[_mask, col].median() if agg == 'median'
                                     else _acct.loc[_mask, col].mean())
 
-            # Deposit acceleration
-            if 'dep_accel_amt' in _acct.columns:
-                _row['R Accel'] = _acct.loc[_r, 'dep_accel_amt'].median() if _r.sum() > 0 else np.nan
-                _row['NR Accel'] = _acct.loc[_nr, 'dep_accel_amt'].median() if _nr.sum() > 0 else np.nan
-
             _rows.append(_row)
 
         if not _rows:
@@ -94,16 +89,9 @@ else:
             if _rc_col not in ('Segment', 'R', 'NR') and _df[_rc_col].dtype in ('float64', 'float32'):
                 _df[_rc_col] = _df[_rc_col].round(1)
 
-        def _color_accel(col):
-            if 'Accel' not in col.name: return [''] * len(col)
-            return [f'color: {GEN_COLORS["success"]}' if pd.notna(v) and v > 1.05
-                    else f'color: {GEN_COLORS["accent"]}' if pd.notna(v) and v < 0.95
-                    else '' for v in col]
-
         _fmt = {'R': '{:,.0f}', 'NR': '{:,.0f}'}
         for c in _df.columns:
             if c in ('Segment', 'R', 'NR'): continue
-            elif 'Accel' in c: _fmt[c] = '{:.2f}x'
             elif '$' in c: _fmt[c] = '${:,.1f}'
             else: _fmt[c] = '{:,.1f}'
 
@@ -113,7 +101,6 @@ else:
         _styled = (
             _df.style.hide(axis='index')
             .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
-            .apply(_color_accel)
             .set_properties(**{'font-size': '12px', 'font-weight': 'bold',
                 'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '7px 10px'})
             .set_properties(subset=['Segment'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
