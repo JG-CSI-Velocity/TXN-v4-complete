@@ -13,9 +13,11 @@ else:
 
     _t0 = _time.time()
 
-    # Try openpyxl engine first (default), but if file is large,
-    # suggest converting to CSV for faster loads
-    rewards_df = pd.read_excel(odd_file)
+    # Auto-detect: CSV loads 10x faster than Excel
+    if odd_file.suffix.lower() == '.csv':
+        rewards_df = pd.read_csv(odd_file)
+    else:
+        rewards_df = pd.read_excel(odd_file)
 
     _elapsed = _time.time() - _t0
     print(f"Loaded: {len(rewards_df):,} rows x {len(rewards_df.columns)} columns "
