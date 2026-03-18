@@ -26,13 +26,19 @@ if 'odd_file' not in dir():
     print("    WARNING: odd_file not defined. Run 00-setup cells first.")
     print("    Skipping deposit data pipeline.")
 else:
-    _data_dir = odd_file.parent if hasattr(odd_file, 'parent') else Path(odd_file).parent
+    # Use ZACCOUNTS_DIR from setup cell 02 if defined, else search from ODDD dir
+    if 'ZACCOUNTS_DIR' in dir() and ZACCOUNTS_DIR is not None:
+        _data_dir = Path(ZACCOUNTS_DIR)
+        print(f"  Z accounts directory: {_data_dir} (from ZACCOUNTS_DIR)")
+    else:
+        _data_dir = odd_file.parent if hasattr(odd_file, 'parent') else Path(odd_file).parent
+        print(f"  Z accounts directory: {_data_dir} (auto from ODDD path)")
 
     # ---------------------------------------------------------------------------
     # 1a. Auto-discover zaccounts files in the data directory
     # ---------------------------------------------------------------------------
     # Searches for CSV files containing "zaccounts" (case-insensitive) in the
-    # ODDD directory and any parent/sibling directories. Assigns snapshot labels
+    # search directory and any parent/sibling directories. Assigns snapshot labels
     # based on dates found in the filename, or falls back to manual config.
 
     import re as _re

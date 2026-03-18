@@ -1,11 +1,16 @@
 # Load ODDD
-odd_file = Path(r"M:\ARS\Incoming\ODDD Files\JamesG\2026.02\1776\1776-2026-02-CoastHills CU-ODD.xlsx")
+# Uses ODD_FILE from cell 02-file-config. Falls back to odd_file if set.
+if 'ODD_FILE' not in dir() and 'odd_file' not in dir():
+    print("    WARNING: ODD_FILE not defined. Run 00-setup/02-file-config first.")
+else:
+    if 'ODD_FILE' in dir():
+        odd_file = ODD_FILE
 
-print("Loading rewards file...")
-rewards_df = pd.read_excel(odd_file)
-print(f"Loaded: {len(rewards_df):,} rows, {len(rewards_df.columns)} columns")
+    print(f"Loading rewards file: {odd_file}")
+    rewards_df = pd.read_excel(odd_file)
+    print(f"Loaded: {len(rewards_df):,} rows, {len(rewards_df.columns)} columns")
 
-# ODD Columns
-print("\nColumns:")
-for col in rewards_df.columns:
-    print(f"  {col}")
+    # ODD Columns
+    print("\nColumns:")
+    for col in rewards_df.columns:
+        print(f"  {col}")
