@@ -1,93 +1,297 @@
 # ===========================================================================
-# SPEND PERSISTENCE: Indexed Lift After Response (Conference Edition)
+# SPEND PERSISTENCE: Actual $ Trajectory by Mailer (Conference Edition)
 # ===========================================================================
-# Line chart for Hit accounts only. Indexes spend at pre=100 and plots
-# +1mo, +3mo, +6mo per segment level. Dashed baseline at 100.
+# Does the spend lift hold at +3 and +6 months? Shows actual dollar
+# trajectories for Responder (solid) vs Non-Responder (dashed) per
+# segment -- first pooled, then per-mailer faceted.
 #
 # Depends on: wave_cohort_df (23/11), SEGMENT_ORDER (23/11), GEN_COLORS
 
 if 'wave_cohort_df' not in dir() or len(wave_cohort_df) == 0:
-    print("    No segment cohort data. Run cell 11 first.")
+    print("    No cohort data. Run cell 11 first.")
 elif 'pre_spend' not in wave_cohort_df.columns:
     print("    pre_spend not available. Check cell 11 spend column discovery.")
 else:
-    _hits = wave_cohort_df[wave_cohort_df['outcome'] == 'Responder'].copy()
+    from IPython.display import display
 
-    if len(_hits) == 0:
-        print("    No Hit accounts found.")
+    _cohort = wave_cohort_df.rename(columns={'wave': 'mailer'})
+
+    _mailers = sorted(_cohort['mailer'].unique(),
+                       key=lambda m: pd.to_datetime(m, format='%b%y'))
+
+    # Time point columns that exist
+    _tp_map = {'Pre': 'pre_spend', '+3mo': 'post_spend_3mo', '+6mo': 'post_spend_6mo'}
+    _avail_tp = [(label, col) for label, col in _tp_map.items()
+                  if col in _cohort.columns]
+
+    if len(_avail_tp) < 2:
+        print("    Need at least pre + one post period.")
     else:
-        # Build indexed spend per segment
-        _time_points = ['Pre', '+1mo', '+3mo', '+6mo']
-        _spend_cols_map = {
-            'Pre': 'pre_spend',
-            '+1mo': 'post_spend_1mo',
-            '+3mo': 'post_spend_3mo',
-            '+6mo': 'post_spend_6mo',
+        _tp_labels = [t[0] for t in _avail_tp]
+        _tp_cols = [t[1] for t in _avail_tp]
+
+        _seg_colors = {
+            'NU':    GEN_COLORS['info'],
+            'TH-10': '#2EC4B6',
+            'TH-15': '#20A39E',
+            'TH-20': '#1B8A7A',
+            'TH-25': GEN_COLORS['primary'],
         }
 
-        # Only include time points that exist in the data
-        _avail_points = [tp for tp in _time_points
-                         if _spend_cols_map[tp] in _hits.columns]
+        # ---------------------------------------------------------------
+        # Helper: draw spend trajectory on one axis
+        # ---------------------------------------------------------------
+        def _draw_trajectory(ax, data, title, show_legend=True):
+            _x = np.arange(len(_tp_labels))
 
-        if len(_avail_points) < 2:
-            print("    Need at least pre + one post period for persistence chart.")
-        else:
-            _segment_colors = {
-                'NU':    GEN_COLORS['warning'],
-                'TH-10': GEN_COLORS['info'],
-                'TH-15': '#2EC4B6',
-                'TH-20': '#264653',
-                'TH-25': GEN_COLORS['accent'],
-            }
+            for seg in SEGMENT_ORDER:
+                _sub_r = data[(data['segment'] == seg) & (data['outcome'] == 'Responder')]
+                _sub_nr = data[(data['segment'] == seg) & (data['outcome'] == 'Non-Responder')]
+                _color = _seg_colors.get(seg, GEN_COLORS['muted'])
 
-            fig, ax = plt.subplots(figsize=(14, 7))
+                if len(_sub_r) > 0:
+                    _vals_r = [_sub_r[col].mean() for col in _tp_cols]
+                    ax.plot(_x, _vals_r, color=_color, linewidth=2.5,
+                            marker='o', markersize=7, markeredgecolor='white',
+                            markeredgewidth=1.5, label=f"{seg} Resp", zorder=5)
 
-            _x = np.arange(len(_avail_points))
-
-            for ch in SEGMENT_ORDER:
-                _sub = _hits[_hits['segment'] == ch]
-                if len(_sub) == 0:
-                    continue
-                _pre_mean = _sub['pre_spend'].mean()
-                if _pre_mean <= 0:
-                    continue
-
-                _indexed = []
-                for tp in _avail_points:
-                    col = _spend_cols_map[tp]
-                    _val = _sub[col].mean()
-                    _indexed.append(_val / _pre_mean * 100)
-
-                _color = _segment_colors.get(ch, GEN_COLORS['muted'])
-                ax.plot(_x, _indexed,
-                        color=_color, linewidth=2.5, marker='o',
-                        markersize=9, markeredgecolor='white', markeredgewidth=2,
-                        label=f"{ch} (n={len(_sub):,})", zorder=5)
-
-            # Baseline
-            ax.axhline(y=100, color=GEN_COLORS['dark_text'],
-                        linewidth=1.5, linestyle='--', alpha=0.5, zorder=2)
-            ax.text(len(_avail_points) - 0.5, 100.5, "Baseline (100)",
-                    fontsize=11, color=GEN_COLORS['muted'], va='bottom')
+                if len(_sub_nr) > 0:
+                    _vals_nr = [_sub_nr[col].mean() for col in _tp_cols]
+                    ax.plot(_x, _vals_nr, color=_color, linewidth=1.5,
+                            linestyle='--', alpha=0.5, marker='s', markersize=4,
+                            label=f"{seg} NR", zorder=4)
 
             ax.set_xticks(_x)
-            ax.set_xticklabels(_avail_points, fontsize=14, fontweight='bold')
-            ax.set_ylabel("Indexed Spend (Pre = 100)", fontsize=16,
-                          fontweight='bold', labelpad=10)
-
+            ax.set_xticklabels(_tp_labels, fontsize=11, fontweight='bold')
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
             gen_clean_axes(ax)
-            ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
+            ax.yaxis.grid(True, color=GEN_COLORS['grid'],
+                           linewidth=0.5, alpha=0.7)
             ax.set_axisbelow(True)
-            ax.legend(fontsize=13, loc='best', frameon=True,
-                      facecolor='white', edgecolor=GEN_COLORS['grid'])
+            ax.set_title(title, fontsize=14, fontweight='bold',
+                          color=GEN_COLORS['dark_text'], pad=6)
 
-            ax.set_title("Spend Lift Persistence After Response",
-                          fontsize=26, fontweight='bold',
-                          color=GEN_COLORS['dark_text'], pad=35, loc='left')
-            ax.text(0.0, 1.02,
-                    "Indexed to pre-response baseline (100) -- does the lift last?",
-                    transform=ax.transAxes, fontsize=14,
-                    color=GEN_COLORS['muted'], style='italic')
+            if show_legend:
+                ax.legend(fontsize=9, loc='best', frameon=True,
+                          facecolor='white', edgecolor=GEN_COLORS['grid'],
+                          ncol=2)
 
-            plt.tight_layout()
-            plt.show()
+        # ---------------------------------------------------------------
+        # Chart 1: All Mailers Pooled (full size)
+        # ---------------------------------------------------------------
+        fig, ax = plt.subplots(figsize=(14, 7))
+        _draw_trajectory(ax, _cohort, "All Mailers Pooled")
+
+        ax.set_ylabel("Avg Monthly Spend ($)", fontsize=16,
+                       fontweight='bold', labelpad=10)
+
+        # Override title for the main chart
+        ax.set_title("Spend Trajectory: Responded vs Did Not",
+                      fontsize=26, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], pad=35, loc='left')
+        ax.text(0.0, 1.02,
+                "Actual $/mo at each window  |  Solid = responded, dashed = did not  |  "
+                "All mailers pooled",
+                transform=ax.transAxes, fontsize=12,
+                color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()
+
+        # ---------------------------------------------------------------
+        # Chart 2: Per-mailer faceted
+        # ---------------------------------------------------------------
+        _n_mailers = len(_mailers)
+        _cols_grid = min(_n_mailers, 4)
+        _rows_grid = (_n_mailers + _cols_grid - 1) // _cols_grid
+
+        fig, axes = plt.subplots(_rows_grid, _cols_grid,
+                                  figsize=(5 * _cols_grid, 4.5 * _rows_grid))
+        if _n_mailers == 1:
+            axes = np.array([axes])
+        axes_flat = axes.flat if hasattr(axes, 'flat') else [axes]
+
+        for ax, mailer in zip(axes_flat, _mailers):
+            _mdf = _cohort[_cohort['mailer'] == mailer]
+            _draw_trajectory(ax, _mdf, mailer, show_legend=False)
+
+        for ax in list(axes_flat)[_n_mailers:]:
+            ax.axis('off')
+
+        # Single legend for the faceted chart
+        _handles, _labels = [], []
+        for seg in SEGMENT_ORDER:
+            _color = _seg_colors.get(seg, GEN_COLORS['muted'])
+            _handles.append(plt.Line2D([0], [0], color=_color, linewidth=2.5,
+                                        marker='o', markersize=6))
+            _labels.append(f"{seg} Resp")
+            _handles.append(plt.Line2D([0], [0], color=_color, linewidth=1.5,
+                                        linestyle='--', alpha=0.5))
+            _labels.append(f"{seg} NR")
+
+        fig.legend(_handles, _labels, loc='lower center',
+                   ncol=len(SEGMENT_ORDER), fontsize=10, frameon=True,
+                   bbox_to_anchor=(0.5, -0.02))
+
+        fig.suptitle("Spend Trajectory by Mailer",
+                      fontsize=22, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], x=0.02, ha='left', y=1.02)
+
+        plt.tight_layout()
+        plt.show()
+
+        # ---------------------------------------------------------------
+        # Styled table: segment x mailer spend at each time point
+        # ---------------------------------------------------------------
+        _table_rows = []
+
+        def _build_table_rows(data, mailer_label):
+            for seg in SEGMENT_ORDER:
+                _r = data[(data['segment'] == seg) & (data['outcome'] == 'Responder')]
+                _nr = data[(data['segment'] == seg) & (data['outcome'] == 'Non-Responder')]
+                if len(_r) == 0 and len(_nr) == 0:
+                    continue
+
+                _row = {'Segment': seg, 'Mailer': mailer_label, 'N (Resp)': len(_r)}
+
+                for label, col in _avail_tp:
+                    _row[f'Resp {label}'] = _r[col].mean() if len(_r) > 0 else np.nan
+                    _row[f'NR {label}'] = _nr[col].mean() if len(_nr) > 0 else np.nan
+
+                # Deltas: post - pre for each window
+                if 'Resp Pre' in _row and pd.notna(_row.get('Resp Pre')):
+                    for label in _tp_labels[1:]:
+                        _r_val = _row.get(f'Resp {label}')
+                        _nr_val = _row.get(f'NR {label}')
+                        _r_pre = _row.get('Resp Pre')
+                        _nr_pre = _row.get('NR Pre')
+                        if all(pd.notna(v) for v in [_r_val, _nr_val, _r_pre, _nr_pre]):
+                            _row[f'DID {label}'] = (
+                                (_r_val - _r_pre) - (_nr_val - _nr_pre)
+                            )
+
+                _table_rows.append(_row)
+
+        _build_table_rows(_cohort, 'ALL MAILERS')
+        for mailer in _mailers:
+            _build_table_rows(_cohort[_cohort['mailer'] == mailer], mailer)
+
+        _table_df = pd.DataFrame(_table_rows)
+
+        # Select display columns
+        _disp_cols = ['Segment', 'Mailer', 'N (Resp)']
+        for label in _tp_labels:
+            _disp_cols.append(f'Resp {label}')
+        for label in _tp_labels[1:]:
+            if f'DID {label}' in _table_df.columns:
+                _disp_cols.append(f'DID {label}')
+
+        _disp_cols = [c for c in _disp_cols if c in _table_df.columns]
+        _display_df = _table_df[_disp_cols].copy()
+
+        # Style helpers
+        _seg_breaks = set()
+        _prev_seg = None
+        for i, row in _display_df.iterrows():
+            if row['Segment'] != _prev_seg and _prev_seg is not None:
+                _seg_breaks.add(i)
+            _prev_seg = row['Segment']
+
+        _agg_rows = set(_display_df[_display_df['Mailer'] == 'ALL MAILERS'].index)
+
+        def _style_rows(row):
+            is_agg = row.name in _agg_rows
+            is_break = row.name in _seg_breaks
+            base = 'font-weight: bold' if is_agg else ''
+            sep = '; border-top: 2px solid #1B2A4A' if is_break else ''
+            bg = '; background-color: rgba(27, 42, 74, 0.05)' if is_agg else ''
+            return [base + sep + bg] * len(row)
+
+        def _color_did(col):
+            if 'DID' not in col.name:
+                return [''] * len(col)
+            return [
+                f'color: {GEN_COLORS["success"]}' if pd.notna(v) and v > 0
+                else f'color: {GEN_COLORS["accent"]}' if pd.notna(v) and v < 0
+                else ''
+                for v in col
+            ]
+
+        def _fmt_delta(v):
+            if pd.isna(v):
+                return '--'
+            sign = '+' if v >= 0 else '-'
+            return f"{sign}${abs(v):,.0f}/mo"
+
+        _fmt = {'N (Resp)': '{:,.0f}'}
+        for label in _tp_labels:
+            _fmt[f'Resp {label}'] = '${:,.0f}'
+        for label in _tp_labels[1:]:
+            if f'DID {label}' in _display_df.columns:
+                _fmt[f'DID {label}'] = _fmt_delta
+
+        _styled = (
+            _display_df.style
+            .hide(axis='index')
+            .format(_fmt, na_rep='--')
+            .apply(_style_rows, axis=1)
+            .apply(_color_did)
+            .set_properties(**{
+                'font-size': '13px', 'text-align': 'center',
+                'border': '1px solid #E9ECEF', 'padding': '8px 10px',
+            })
+            .set_properties(subset=['Segment'], **{
+                'font-weight': 'bold', 'text-align': 'left',
+                'color': GEN_COLORS['primary'],
+            })
+            .set_properties(subset=['Mailer'], **{
+                'text-align': 'left',
+            })
+            .set_table_styles([
+                {'selector': 'th', 'props': [
+                    ('background-color', GEN_COLORS['primary']),
+                    ('color', 'white'), ('font-size', '13px'),
+                    ('font-weight', 'bold'), ('text-align', 'center'),
+                    ('padding', '8px 10px'),
+                ]},
+                {'selector': 'caption', 'props': [
+                    ('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']),
+                    ('text-align', 'left'), ('padding-bottom', '12px'),
+                ]},
+            ])
+            .set_caption("Spend Persistence: Actual $/mo by Segment x Mailer")
+        )
+        display(_styled)
+
+        # ---------------------------------------------------------------
+        # Narrative
+        # ---------------------------------------------------------------
+        _agg_data = _table_df[_table_df['Mailer'] == 'ALL MAILERS']
+        print(f"\n  Avg monthly spend (actual $) at each window, all mailers pooled:")
+        for _, row in _agg_data.iterrows():
+            _parts = [f"    {row['Segment']:<8s}:"]
+            for label in _tp_labels:
+                _val = row.get(f'Resp {label}')
+                if pd.notna(_val):
+                    _parts.append(f"{label}=${_val:,.0f}")
+            _did_3 = row.get('DID +3mo')
+            _did_6 = row.get('DID +6mo')
+            if pd.notna(_did_3):
+                _parts.append(f"DID+3mo={'+' if _did_3 >= 0 else ''}${_did_3:,.0f}")
+            if pd.notna(_did_6):
+                _parts.append(f"DID+6mo={'+' if _did_6 >= 0 else ''}${_did_6:,.0f}")
+            print('  '.join(_parts))
+
+        # Persistence check: does DID grow or shrink from +3 to +6?
+        if 'DID +3mo' in _agg_data.columns and 'DID +6mo' in _agg_data.columns:
+            print(f"\n  Persistence check (does DID grow from +3mo to +6mo?):")
+            for _, row in _agg_data.iterrows():
+                _d3 = row.get('DID +3mo')
+                _d6 = row.get('DID +6mo')
+                if pd.notna(_d3) and pd.notna(_d6):
+                    _verdict = ('growing' if _d6 > _d3 + 5
+                                else 'fading' if _d6 < _d3 - 5
+                                else 'holding')
+                    print(f"    {row['Segment']:<8s}: "
+                          f"+3mo=${_d3:,.0f} -> +6mo=${_d6:,.0f} ({_verdict})")
