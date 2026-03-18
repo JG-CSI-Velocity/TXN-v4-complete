@@ -1,0 +1,58 @@
+# ===========================================================================
+# # OF OFFERS DISTRIBUTION (Data Validation)
+# ===========================================================================
+# Simple distribution of the pre-computed "# of Offers" field.
+# No segment breakdown -- just the count and percentage.
+#
+# Depends on: rewards_df (00-setup/08), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available. Run 00-setup cells first.")
+else:
+    from IPython.display import display
+
+    if '# of Offers' not in rewards_df.columns:
+        print("    '# of Offers' column not found.")
+    else:
+        _vals = pd.to_numeric(rewards_df['# of Offers'], errors='coerce').dropna()
+
+        if len(_vals) == 0:
+            print("    No data in # of Offers.")
+        else:
+            _vc = _vals.astype(int).value_counts().sort_index()
+            _dist_df = pd.DataFrame({
+                'Offers': _vc.index.astype(int),
+                'Accounts': _vc.values,
+                '% of Total': (_vc.values / len(rewards_df) * 100),
+            })
+
+            _styled = (
+                _dist_df.style
+                .hide(axis='index')
+                .format({'Accounts': '{:,.0f}', '% of Total': '{:.1f}%'})
+                .bar(subset=['% of Total'], color='rgba(46, 196, 182, 0.3)',
+                     vmin=0)
+                .set_properties(**{
+                    'font-size': '13px', 'font-weight': 'bold',
+                    'text-align': 'center', 'border': '1px solid #E9ECEF',
+                    'padding': '8px 10px',
+                })
+                .set_table_styles([
+                    {'selector': 'th', 'props': [
+                        ('background-color', GEN_COLORS['info']),
+                        ('color', 'white'), ('font-size', '14px'),
+                        ('font-weight', 'bold'), ('text-align', 'center'),
+                        ('padding', '10px 12px'),
+                    ]},
+                    {'selector': 'caption', 'props': [
+                        ('font-size', '22px'), ('font-weight', 'bold'),
+                        ('color', GEN_COLORS['dark_text']),
+                        ('text-align', 'left'), ('padding-bottom', '12px'),
+                    ]},
+                ])
+                .set_caption("# of Offers Distribution")
+            )
+            display(_styled)
+
+            print(f"\n  {len(rewards_df):,} total accounts")
+            print(f"  {(_vals > 0).sum():,} accounts received at least 1 offer")

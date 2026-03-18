@@ -1,0 +1,152 @@
+# ===========================================================================
+# RESPONSE GROUPING DISTRIBUTION (Data Validation)
+# ===========================================================================
+# Distribution of the pre-computed "Response Grouping" field with
+# segment breakdown from Resp columns.
+#
+# Custom order: MR, SR, SO, NO, NR
+#
+# Depends on: rewards_df (00-setup/08), GEN_COLORS
+
+if 'rewards_df' not in dir():
+    print("    rewards_df not available. Run 00-setup cells first.")
+else:
+    from IPython.display import display
+
+    if 'Response Grouping' not in rewards_df.columns:
+        print("    'Response Grouping' column not found.")
+    else:
+        # Parse segment from Resp values
+        def _resp_segment(val):
+            if pd.isna(val):
+                return None
+            v = str(val).strip().upper()
+            if not v or v == 'NAN':
+                return None
+            if 'NU' in v and ('1-4' in v or '1 -4' in v):
+                return None
+            if 'NU' in v and '0' == v.replace('NU', '').strip():
+                return None
+            if 'NU' in v and ('5+' in v or '5 +' in v):
+                return 'NU'
+            if 'TH-25' in v or 'TH 25' in v or 'TH25' in v: return 'TH-25'
+            if 'TH-20' in v or 'TH 20' in v or 'TH20' in v: return 'TH-20'
+            if 'TH-15' in v or 'TH 15' in v or 'TH15' in v: return 'TH-15'
+            if 'TH-10' in v or 'TH 10' in v or 'TH10' in v: return 'TH-10'
+            return None
+
+        # Find Resp columns, exclude months with zero data
+        _resp_cols = sorted(
+            [c.strip() for c in rewards_df.columns if c.strip().endswith(' Resp')],
+            key=lambda c: pd.to_datetime(c.replace(' Resp', ''), format='%b%y'))
+
+        _valid_resp = [rc for rc in _resp_cols
+                        if rewards_df[rc].notna().sum() > 0]
+
+        # Last response segment per account
+        _acct_resp_seg = pd.Series(np.nan, index=rewards_df.index, dtype='object')
+        for rc in _valid_resp:
+            _parsed = rewards_df[rc].apply(_resp_segment)
+            _has_seg = _parsed.notna()
+            _acct_resp_seg = _acct_resp_seg.where(~_has_seg, _parsed)
+
+        # Custom order
+        _RG_ORDER = ['MR', 'SR', 'SO', 'NO', 'NR']
+        _RG_LABELS = {
+            'MR': 'Multiple Response',
+            'SR': 'Single Response',
+            'SO': 'Single Offer',
+            'NR': 'Non Response',
+            'NO': 'No Offer',
+        }
+        _SEG_ORDER = ['NU', 'TH-10', 'TH-15', 'TH-20', 'TH-25']
+
+        _rg_vals = rewards_df['Response Grouping'].dropna().astype(str).str.strip()
+        _vc = _rg_vals.value_counts()
+
+        _dist_rows = []
+        _known = set()
+
+        for code in _RG_ORDER:
+            _match = None
+            for val in _vc.index:
+                _v = val.upper().strip()
+                if (_v == code
+                        or _v == _RG_LABELS.get(code, '').upper()
+                        or code.lower() in val.lower()
+                        or _RG_LABELS.get(code, '').lower() in val.lower()):
+                    _match = val
+                    break
+            if _match is None:
+                continue
+
+            _known.add(_match)
+            _mask = _rg_vals == _match
+            _row = {
+                'Grouping': _match,
+                'Accounts': _vc[_match],
+                '% of Total': _vc[_match] / len(rewards_df) * 100,
+            }
+            # Segment from Resp -- null for NO/NR (never responded)
+            _has_responses = code in ('MR', 'SR')
+            if _has_responses:
+                for seg in _SEG_ORDER:
+                    _row[seg] = (_mask & (_acct_resp_seg == seg)).sum()
+            else:
+                for seg in _SEG_ORDER:
+                    _row[seg] = np.nan
+            _dist_rows.append(_row)
+
+        # Append unmatched
+        for val in _vc.index:
+            if val not in _known:
+                _mask = _rg_vals == val
+                _row = {
+                    'Grouping': val,
+                    'Accounts': _vc[val],
+                    '% of Total': _vc[val] / len(rewards_df) * 100,
+                }
+                for seg in _SEG_ORDER:
+                    _row[seg] = (_mask & (_acct_resp_seg == seg)).sum()
+                _dist_rows.append(_row)
+
+        _dist_df = pd.DataFrame(_dist_rows)
+
+        _fmt = {'Accounts': '{:,.0f}', '% of Total': '{:.1f}%'}
+        for seg in _SEG_ORDER:
+            if seg in _dist_df.columns:
+                _fmt[seg] = '{:,.0f}'
+
+        _styled = (
+            _dist_df.style
+            .hide(axis='index')
+            .format(_fmt, na_rep='--')
+            .bar(subset=['% of Total'], color='rgba(46, 196, 182, 0.3)', vmin=0)
+            .set_properties(**{
+                'font-size': '13px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF',
+                'padding': '8px 10px',
+            })
+            .set_properties(subset=['Grouping'], **{
+                'text-align': 'left', 'color': GEN_COLORS['primary'],
+            })
+            .set_table_styles([
+                {'selector': 'th', 'props': [
+                    ('background-color', GEN_COLORS['info']),
+                    ('color', 'white'), ('font-size', '14px'),
+                    ('font-weight', 'bold'), ('text-align', 'center'),
+                    ('padding', '10px 12px'),
+                ]},
+                {'selector': 'caption', 'props': [
+                    ('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']),
+                    ('text-align', 'left'), ('padding-bottom', '12px'),
+                ]},
+            ])
+            .set_caption("Response Grouping Distribution (Segment from Resp columns)")
+        )
+        display(_styled)
+
+        print(f"\n  Segment columns show account counts from Resp columns only")
+        print(f"  NU = NU 5+ responses only (NU 1-4 excluded)")
+        print(f"  SO/NO/NR rows show -- (no response to derive segment from)")
