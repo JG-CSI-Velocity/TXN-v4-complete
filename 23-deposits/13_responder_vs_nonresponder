@@ -93,10 +93,10 @@ else:
                   f"nunique={_vals.nunique():,}, "
                   f"p25={_vals.quantile(0.25):,.1f}, p75={_vals.quantile(0.75):,.1f}")
 
-    if 'DepCount99' in _acct.columns:
-        _acct['mo_dep_count'] = _acct['DepCount99'] / 3.3
-    if 'DepAmt99' in _acct.columns:
-        _acct['mo_dep_amt'] = _acct['DepAmt99'] / 3.3
+    if 'depCount365' in _acct.columns:
+        _acct['mo_dep_count'] = _acct['depCount365'] / 12
+    if 'depAmt365' in _acct.columns:
+        _acct['mo_dep_amt'] = _acct['depAmt365'] / 12
 
     # -----------------------------------------------------------------
     # 2. Classify Responder vs Non-Responder from Resp columns
