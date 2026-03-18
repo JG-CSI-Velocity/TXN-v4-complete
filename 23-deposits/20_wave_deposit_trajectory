@@ -116,49 +116,51 @@ else:
             return valid, labels
 
         # ---------------------------------------------------------------
-        # Helper: draw 3-line trajectory on one axis
+        # Helper: draw 3-line DELTA trajectory (change from 1st snapshot)
         # ---------------------------------------------------------------
         def _draw_trajectory(ax, data, valid_snaps, snap_labels,
                               wave_date, title):
             _resp = data[data['outcome'] == 'Responder']
             _nr = data[data['outcome'] == 'Non-Responder']
             _x = range(len(valid_snaps))
+            _first_snap = valid_snaps[0]
 
-            # Responded line
+            # Responded line (delta from first snapshot)
             if len(_resp) > 0:
-                _vals = [_resp[_snap_bal_cols[sk]].mean()
+                _base = _resp[_snap_bal_cols[_first_snap]].mean()
+                _vals = [_resp[_snap_bal_cols[sk]].mean() - _base
                          for sk in valid_snaps]
                 ax.plot(_x, _vals, color=_COLOR_RESP, linewidth=3,
-                        marker='o', markersize=8, markeredgecolor='white',
+                        marker='o', markersize=9, markeredgecolor='white',
                         markeredgewidth=2,
                         label=f'Responded ({len(_resp):,})', zorder=5)
                 for i, v in enumerate(_vals):
-                    if pd.notna(v):
-                        ax.text(i, v + (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.02
-                                if ax.get_ylim()[1] > 0 else v + 50,
-                                gen_fmt_dollar(v, None),
-                                ha='center', va='bottom', fontsize=10,
+                    if pd.notna(v) and i > 0:
+                        _sign = '+' if v >= 0 else ''
+                        ax.text(i, v, f"{_sign}${v:,.0f}",
+                                ha='center', va='bottom', fontsize=11,
                                 fontweight='bold', color=_COLOR_RESP)
 
-            # Non-Responder line
+            # Non-Responder line (delta from first snapshot)
             if len(_nr) > 0:
-                _vals = [_nr[_snap_bal_cols[sk]].mean()
+                _base = _nr[_snap_bal_cols[_first_snap]].mean()
+                _vals = [_nr[_snap_bal_cols[sk]].mean() - _base
                          for sk in valid_snaps]
                 ax.plot(_x, _vals, color=_COLOR_NR, linewidth=3,
-                        marker='s', markersize=8, markeredgecolor='white',
+                        marker='s', markersize=9, markeredgecolor='white',
                         markeredgewidth=2,
                         label=f'Did Not Respond ({len(_nr):,})', zorder=4)
                 for i, v in enumerate(_vals):
-                    if pd.notna(v):
-                        ax.text(i, v - (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.02
-                                if ax.get_ylim()[1] > 0 else v - 50,
-                                gen_fmt_dollar(v, None),
-                                ha='center', va='top', fontsize=10,
+                    if pd.notna(v) and i > 0:
+                        _sign = '+' if v >= 0 else ''
+                        ax.text(i, v, f"{_sign}${v:,.0f}",
+                                ha='center', va='top', fontsize=11,
                                 fontweight='bold', color=_COLOR_NR)
 
-            # Never Mailed baseline
-            if _nm_snap_balances:
-                _nm_vals = [_nm_snap_balances.get(sk, np.nan)
+            # Never Mailed baseline (delta from first snapshot)
+            if _nm_snap_balances and _first_snap in _nm_snap_balances:
+                _nm_base = _nm_snap_balances[_first_snap]
+                _nm_vals = [_nm_snap_balances.get(sk, np.nan) - _nm_base
                             for sk in valid_snaps]
                 if any(pd.notna(v) for v in _nm_vals):
                     ax.plot(_x, _nm_vals, color=_COLOR_NM, linewidth=2.5,
@@ -166,31 +168,25 @@ else:
                             markeredgecolor='white', markeredgewidth=1.5,
                             label=f'Never Mailed ({_nm_n:,})', zorder=3)
 
-            # Mark closest-to-mailer snapshot
-            if wave_date:
-                for i, sk in enumerate(valid_snaps):
-                    if sk in _snap_dates_local:
-                        _sd = _snap_dates_local[sk]
-                        _diff = abs((_sd.year - wave_date.year) * 12
-                                    + (_sd.month - wave_date.month))
-                        if _diff <= 1:
-                            ax.axvline(x=i, color=GEN_COLORS['accent'],
-                                       linewidth=1.5, linestyle=':',
-                                       alpha=0.5, zorder=2)
+            # Zero baseline
+            ax.axhline(y=0, color=GEN_COLORS['dark_text'],
+                        linewidth=0.8, alpha=0.4, zorder=1)
 
             ax.set_xticks(list(_x))
             ax.set_xticklabels(snap_labels, fontsize=11, fontweight='bold')
-            ax.set_ylabel("Avg Balance", fontsize=14,
+            ax.set_ylabel("Deposit Change ($)", fontsize=14,
                            fontweight='bold', labelpad=8)
             ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
             gen_clean_axes(ax)
             ax.yaxis.grid(True, color=GEN_COLORS['grid'],
                            linewidth=0.5, alpha=0.7)
             ax.set_axisbelow(True)
-            ax.set_title(title, fontsize=18, fontweight='bold',
-                          color=GEN_COLORS['dark_text'], pad=10)
-            ax.legend(fontsize=11, loc='upper left', frameon=True,
-                      facecolor='white', edgecolor=GEN_COLORS['grid'])
+            ax.set_title(title, fontsize=20, fontweight='bold',
+                          color=GEN_COLORS['dark_text'], pad=30)
+            ax.legend(fontsize=11, loc='lower center',
+                      bbox_to_anchor=(0.5, -0.18), ncol=3,
+                      frameon=True, facecolor='white',
+                      edgecolor=GEN_COLORS['grid'])
 
         # ---------------------------------------------------------------
         # One full-size chart per mailer
@@ -203,14 +199,13 @@ else:
             if len(_valid) < 2:
                 continue
 
-            fig, ax = plt.subplots(figsize=(14, 7))
+            fig, ax = plt.subplots(figsize=(14, 7.5))
             _draw_trajectory(ax, _mdf, _valid, _labels, _wave_date,
-                              f"{mailer} Mailer: Deposit Balance Trajectory")
+                              f"{mailer} Mailer: Deposit Growth From Baseline")
 
-            ax.text(0.0, 1.02,
+            ax.text(0.0, 1.05,
                     f"{len(_mdf):,} accounts mailed  |  "
-                    f"Teal = responded, Gray = did not, "
-                    f"Amber dashed = never mailed (control)",
+                    f"Change from first snapshot -- above $0 = deposits grew",
                     transform=ax.transAxes, fontsize=12,
                     color=GEN_COLORS['muted'], style='italic')
 
