@@ -1,0 +1,126 @@
+# ===========================================================================
+# COHORT DID: Per-Mailer by Segment (3mo pre, 3mo post)
+# ===========================================================================
+# One table per mailer. Rows = segments within that mailer.
+# Shows the within-segment lift: NU-R vs NU-NR, TH-10-R vs TH-10-NR.
+#
+# Depends on: _segment_cohort_df (cell 22), PROGRAM_SEG_ORDER, GEN_COLORS
+
+if '_segment_cohort_df' not in dir() or len(_segment_cohort_df) == 0:
+    print("    Run cell 22 first.")
+else:
+    from IPython.display import display
+
+    _mailers = sorted(_segment_cohort_df['Mailer'].unique(),
+                       key=lambda m: pd.to_datetime(m, format='%b%y'))
+
+    for mailer in _mailers:
+        _mdf = _segment_cohort_df[_segment_cohort_df['Mailer'] == mailer]
+        if len(_mdf) == 0:
+            continue
+
+        _total_mailed = _mdf['R N'].sum() + _mdf['NR N'].sum()
+        _total_resp = _mdf['R N'].sum()
+
+        _rows = []
+        for _, row in _mdf.iterrows():
+            _r = {
+                'Segment': row['Segment'],
+                'R N': row.get('R N', 0),
+                'NR N': row.get('NR N', 0),
+            }
+
+            for metric in ['Swipes', 'Spend', 'Items']:
+                _r_pre = row.get(f'R {metric} Pre')
+                _r_post = row.get(f'R {metric} Post')
+                _nr_pre = row.get(f'NR {metric} Pre')
+                _nr_post = row.get(f'NR {metric} Post')
+                _did = row.get(f'{metric} DID')
+
+                _r[f'R {metric} Pre'] = _r_pre
+                _r[f'R {metric} Post'] = _r_post
+                if pd.notna(_r_pre) and pd.notna(_r_post):
+                    _r[f'R {metric} Delta'] = _r_post - _r_pre
+                _r[f'NR {metric} Pre'] = _nr_pre
+                _r[f'NR {metric} Post'] = _nr_post
+                if pd.notna(_nr_pre) and pd.notna(_nr_post):
+                    _r[f'NR {metric} Delta'] = _nr_post - _nr_pre
+                _r[f'{metric} DID'] = _did
+
+            _rows.append(_r)
+
+        _df = pd.DataFrame(_rows)
+
+        # Only show Swipes columns for cleaner view (Spend/Items in 18b/18c)
+        _swipe_cols_display = ['Segment', 'R N', 'NR N',
+                                'R Swipes Pre', 'R Swipes Post', 'R Swipes Delta',
+                                'NR Swipes Pre', 'NR Swipes Post', 'NR Swipes Delta',
+                                'Swipes DID']
+        _swipe_display = _df[[c for c in _swipe_cols_display if c in _df.columns]].copy()
+
+        for _rc in _swipe_display.columns:
+            if _rc not in ('Segment', 'R N', 'NR N') and _swipe_display[_rc].dtype in ('float64', 'float32'):
+                _swipe_display[_rc] = _swipe_display[_rc].round(1)
+
+        def _color_did(col):
+            if 'DID' not in col.name and 'Delta' not in col.name: return [''] * len(col)
+            return [f'color: {GEN_COLORS["success"]}' if pd.notna(v) and v > 0
+                    else f'color: {GEN_COLORS["accent"]}' if pd.notna(v) and v < 0
+                    else '' for v in col]
+
+        _fmt = {'R N': '{:,.0f}', 'NR N': '{:,.0f}'}
+        for c in _swipe_display.columns:
+            if c in ('Segment', 'R N', 'NR N'): continue
+            else: _fmt[c] = '{:,.1f}'
+
+        _styled = (
+            _swipe_display.style.hide(axis='index')
+            .format({k: v for k, v in _fmt.items() if k in _swipe_display.columns}, na_rep='--')
+            .apply(_color_did)
+            .set_properties(**{'font-size': '12px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '7px 10px'})
+            .set_properties(subset=['Segment'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                    ('color', 'white'), ('font-size', '11px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '7px 10px')]},
+                {'selector': 'caption', 'props': [('font-size', '18px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '8px')]},
+            ])
+            .set_caption(f"{mailer} Mailer -- Swipes by Segment ({_total_mailed:,} mailed, {_total_resp:,} responded)")
+        )
+        display(_styled)
+
+        # Spend table for same mailer
+        _spend_cols_display = ['Segment', 'R N', 'NR N',
+                                'R Spend Pre', 'R Spend Post', 'R Spend Delta',
+                                'NR Spend Pre', 'NR Spend Post', 'NR Spend Delta',
+                                'Spend DID']
+        _spend_display = _df[[c for c in _spend_cols_display if c in _df.columns]].copy()
+
+        for _rc in _spend_display.columns:
+            if _rc not in ('Segment', 'R N', 'NR N') and _spend_display[_rc].dtype in ('float64', 'float32'):
+                _spend_display[_rc] = _spend_display[_rc].round(1)
+
+        _fmt_s = {'R N': '{:,.0f}', 'NR N': '{:,.0f}'}
+        for c in _spend_display.columns:
+            if c in ('Segment', 'R N', 'NR N'): continue
+            else: _fmt_s[c] = '${:,.1f}'
+
+        _styled_s = (
+            _spend_display.style.hide(axis='index')
+            .format({k: v for k, v in _fmt_s.items() if k in _spend_display.columns}, na_rep='--')
+            .apply(_color_did)
+            .set_properties(**{'font-size': '12px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '7px 10px'})
+            .set_properties(subset=['Segment'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+            .set_table_styles([
+                {'selector': 'th', 'props': [('background-color', GEN_COLORS['info']),
+                    ('color', 'white'), ('font-size', '11px'), ('font-weight', 'bold'),
+                    ('text-align', 'center'), ('padding', '7px 10px')]},
+                {'selector': 'caption', 'props': [('font-size', '18px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '8px')]},
+            ])
+            .set_caption(f"{mailer} Mailer -- Spend by Segment")
+        )
+        display(_styled_s)
