@@ -1,8 +1,8 @@
 # ===========================================================================
 # # OF OFFERS DISTRIBUTION (Data Validation)
 # ===========================================================================
-# Simple distribution of the pre-computed "# of Offers" field.
-# No segment breakdown -- just the count and percentage.
+# Distribution of "# of Offers" with segment breakdown from Mail columns.
+# Mail columns contain the segment assignment: NU, TH-10, TH-15, etc.
 #
 # Depends on: rewards_df (00-setup/08), GEN_COLORS
 
@@ -14,45 +14,98 @@ else:
     if '# of Offers' not in rewards_df.columns:
         print("    '# of Offers' column not found.")
     else:
+        # Parse segment from Mail column value
+        def _mail_segment(val):
+            if pd.isna(val):
+                return None
+            v = str(val).strip().upper()
+            if not v or v == 'NAN':
+                return None
+            if 'TH-25' in v or 'TH 25' in v or 'TH25' in v: return 'TH-25'
+            if 'TH-20' in v or 'TH 20' in v or 'TH20' in v: return 'TH-20'
+            if 'TH-15' in v or 'TH 15' in v or 'TH15' in v: return 'TH-15'
+            if 'TH-10' in v or 'TH 10' in v or 'TH10' in v: return 'TH-10'
+            if v.startswith('NU') or 'NON-USER' in v or 'NON USER' in v: return 'NU'
+            return None
+
+        # Find Mail columns
+        _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
+        _mail_cols = sorted(
+            [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
+            key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
+
+        print(f"  Mail columns: {len(_mail_cols)}")
+        for mc in _mail_cols:
+            _filled = rewards_df[mc].notna().sum()
+            print(f"    {mc}: {_filled:,} assigned")
+
+        # Latest Mail segment per account (last non-null)
+        _SEG_ORDER = ['NU', 'TH-10', 'TH-15', 'TH-20', 'TH-25']
+        _acct_seg = pd.Series(np.nan, index=rewards_df.index, dtype='object')
+        for mc in _mail_cols:
+            _parsed = rewards_df[mc].apply(_mail_segment)
+            _has = _parsed.notna()
+            _acct_seg = _acct_seg.where(~_has, _parsed)
+
+        _seg_vc = _acct_seg.dropna().value_counts()
+        print(f"\n  Account segments (latest Mail): {dict(_seg_vc)}")
+
+        # Build distribution
         _vals = pd.to_numeric(rewards_df['# of Offers'], errors='coerce').dropna()
+        _vc = _vals.astype(int).value_counts().sort_index()
 
-        if len(_vals) == 0:
-            print("    No data in # of Offers.")
-        else:
-            _vc = _vals.astype(int).value_counts().sort_index()
-            _dist_df = pd.DataFrame({
-                'Offers': _vc.index.astype(int),
-                'Accounts': _vc.values,
-                '% of Total': (_vc.values / len(rewards_df) * 100),
+        _dist_rows = []
+        for val in sorted(_vc.index):
+            _row = {
+                'Offers': int(val),
+                'Accounts': _vc[val],
+                '% of Total': _vc[val] / len(rewards_df) * 100,
+            }
+            if int(val) > 0:
+                _mask = rewards_df['# of Offers'].apply(
+                    lambda x: pd.to_numeric(x, errors='coerce')) == val
+                for seg in _SEG_ORDER:
+                    _row[seg] = (_mask & (_acct_seg == seg)).sum()
+            else:
+                for seg in _SEG_ORDER:
+                    _row[seg] = np.nan
+            _dist_rows.append(_row)
+
+        _dist_df = pd.DataFrame(_dist_rows)
+
+        _fmt = {'Accounts': '{:,.0f}', '% of Total': '{:.1f}%'}
+        for seg in _SEG_ORDER:
+            if seg in _dist_df.columns:
+                _fmt[seg] = '{:,.0f}'
+
+        _styled = (
+            _dist_df.style
+            .hide(axis='index')
+            .format(_fmt, na_rep='--')
+            .bar(subset=['% of Total'], color='rgba(46, 196, 182, 0.3)',
+                 vmin=0)
+            .set_properties(**{
+                'font-size': '13px', 'font-weight': 'bold',
+                'text-align': 'center', 'border': '1px solid #E9ECEF',
+                'padding': '8px 10px',
             })
+            .set_table_styles([
+                {'selector': 'th', 'props': [
+                    ('background-color', GEN_COLORS['info']),
+                    ('color', 'white'), ('font-size', '14px'),
+                    ('font-weight', 'bold'), ('text-align', 'center'),
+                    ('padding', '10px 12px'),
+                ]},
+                {'selector': 'caption', 'props': [
+                    ('font-size', '22px'), ('font-weight', 'bold'),
+                    ('color', GEN_COLORS['dark_text']),
+                    ('text-align', 'left'), ('padding-bottom', '12px'),
+                ]},
+            ])
+            .set_caption("# of Offers Distribution (Segment from Mail columns)")
+        )
+        display(_styled)
 
-            _styled = (
-                _dist_df.style
-                .hide(axis='index')
-                .format({'Accounts': '{:,.0f}', '% of Total': '{:.1f}%'})
-                .bar(subset=['% of Total'], color='rgba(46, 196, 182, 0.3)',
-                     vmin=0)
-                .set_properties(**{
-                    'font-size': '13px', 'font-weight': 'bold',
-                    'text-align': 'center', 'border': '1px solid #E9ECEF',
-                    'padding': '8px 10px',
-                })
-                .set_table_styles([
-                    {'selector': 'th', 'props': [
-                        ('background-color', GEN_COLORS['info']),
-                        ('color', 'white'), ('font-size', '14px'),
-                        ('font-weight', 'bold'), ('text-align', 'center'),
-                        ('padding', '10px 12px'),
-                    ]},
-                    {'selector': 'caption', 'props': [
-                        ('font-size', '22px'), ('font-weight', 'bold'),
-                        ('color', GEN_COLORS['dark_text']),
-                        ('text-align', 'left'), ('padding-bottom', '12px'),
-                    ]},
-                ])
-                .set_caption("# of Offers Distribution")
-            )
-            display(_styled)
-
-            print(f"\n  {len(rewards_df):,} total accounts")
-            print(f"  {(_vals > 0).sum():,} accounts received at least 1 offer")
+        print(f"\n  {len(rewards_df):,} total accounts")
+        print(f"  {(_vals > 0).sum():,} received at least 1 offer")
+        print(f"  Segment = latest Mail assignment per account")
