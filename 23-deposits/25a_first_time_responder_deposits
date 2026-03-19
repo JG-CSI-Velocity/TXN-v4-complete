@@ -1,0 +1,212 @@
+# ===========================================================================
+# SUSTAINED LIFT: First-Time Responder Deposit Trajectory
+# ===========================================================================
+# Uses Z account snapshots (early vs latest) to show how deposits evolved
+# for first-time responders vs non-responders.
+# Table + dual-panel chart: deposit amount and deposit count.
+#
+# Depends on: rewards_df, _acct (cell 04), _first_resp_date (cell 25),
+#             SNAPSHOT_ORDER, SNAPSHOT_CONFIG, GEN_COLORS
+
+if '_first_resp_date' not in dir():
+    print("    Run cell 25 first (_first_resp_date required).")
+elif '_acct' not in dir():
+    print("    Run cell 04 first.")
+elif 'mo_dep_amt' not in _acct.columns:
+    print("    No deposit data in _acct. Ensure Z accounts loaded in cell 04.")
+else:
+    from IPython.display import display
+
+    _has_first = _first_resp_date.notna()
+    _nr_mask = _acct['was_mailed'] & ~_acct['ever_responded']
+
+    _r_acct = _acct[_has_first]
+    _nr_acct = _acct[_nr_mask]
+
+    print(f"  First-time responders with deposits: {len(_r_acct):,}")
+    print(f"  Non-responders with deposits:        {len(_nr_acct):,}")
+
+    # -----------------------------------------------------------------
+    # 1. Build comparison table: early vs latest deposit metrics
+    # -----------------------------------------------------------------
+    _has_early = 'mo_dep_amt_early' in _acct.columns
+
+    _metrics = []
+
+    # Latest snapshot
+    _metrics.append({
+        'Snapshot': 'Latest',
+        'R Med Dep $/mo': _r_acct['mo_dep_amt'].median(),
+        'NR Med Dep $/mo': _nr_acct['mo_dep_amt'].median(),
+        'R Avg Dep $/mo': _r_acct['mo_dep_amt'].mean(),
+        'NR Avg Dep $/mo': _nr_acct['mo_dep_amt'].mean(),
+    })
+    if 'mo_dep_count' in _acct.columns:
+        _metrics[-1]['R Med Dep Ct/mo'] = _r_acct['mo_dep_count'].median()
+        _metrics[-1]['NR Med Dep Ct/mo'] = _nr_acct['mo_dep_count'].median()
+
+    # Early snapshot
+    if _has_early:
+        _metrics.append({
+            'Snapshot': 'Early',
+            'R Med Dep $/mo': _r_acct['mo_dep_amt_early'].median(),
+            'NR Med Dep $/mo': _nr_acct['mo_dep_amt_early'].median(),
+            'R Avg Dep $/mo': _r_acct['mo_dep_amt_early'].mean(),
+            'NR Avg Dep $/mo': _nr_acct['mo_dep_amt_early'].mean(),
+        })
+        if 'mo_dep_count_early' in _acct.columns:
+            _metrics[-1]['R Med Dep Ct/mo'] = _r_acct['mo_dep_count_early'].median()
+            _metrics[-1]['NR Med Dep Ct/mo'] = _nr_acct['mo_dep_count_early'].median()
+
+        # Delta row
+        _metrics.append({
+            'Snapshot': 'Change',
+            'R Med Dep $/mo': _r_acct['mo_dep_amt_delta'].median() if 'mo_dep_amt_delta' in _acct.columns else np.nan,
+            'NR Med Dep $/mo': _nr_acct['mo_dep_amt_delta'].median() if 'mo_dep_amt_delta' in _acct.columns else np.nan,
+            'R Avg Dep $/mo': _r_acct['mo_dep_amt_delta'].mean() if 'mo_dep_amt_delta' in _acct.columns else np.nan,
+            'NR Avg Dep $/mo': _nr_acct['mo_dep_amt_delta'].mean() if 'mo_dep_amt_delta' in _acct.columns else np.nan,
+        })
+        if 'mo_dep_count_delta' in _acct.columns:
+            _metrics[-1]['R Med Dep Ct/mo'] = _r_acct['mo_dep_count_delta'].median()
+            _metrics[-1]['NR Med Dep Ct/mo'] = _nr_acct['mo_dep_count_delta'].median()
+
+    _df = pd.DataFrame(_metrics)
+    for _rc in _df.columns:
+        if _rc != 'Snapshot' and _df[_rc].dtype in ('float64', 'float32'):
+            _df[_rc] = _df[_rc].round(1)
+
+    _fmt = {}
+    for c in _df.columns:
+        if c == 'Snapshot':
+            continue
+        elif 'Dep $' in c:
+            _fmt[c] = '${:,.1f}'
+        else:
+            _fmt[c] = '{:,.1f}'
+
+    _styled = (
+        _df.style.hide(axis='index')
+        .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
+        .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+            'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+        .set_properties(subset=['Snapshot'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+        .set_table_styles([
+            {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
+                ('text-align', 'center'), ('padding', '8px 10px')]},
+            {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
+        ])
+        .set_caption("First-Time Responder: Deposit Comparison (Z Account Snapshots)")
+    )
+    display(_styled)
+
+    # -----------------------------------------------------------------
+    # 2. Chart: Deposit Amount and Count by snapshot
+    # -----------------------------------------------------------------
+    if _has_early:
+        # Build snapshot-level data for charting
+        _snap_labels = []
+        _r_dep_vals = []
+        _nr_dep_vals = []
+        _r_cnt_vals = []
+        _nr_cnt_vals = []
+
+        # Use SNAPSHOT_ORDER labels if available
+        if 'SNAPSHOT_ORDER' in dir() and len(SNAPSHOT_ORDER) >= 2:
+            _earliest_label = SNAPSHOT_CONFIG[SNAPSHOT_ORDER[0]]['label']
+            _latest_label = SNAPSHOT_CONFIG[SNAPSHOT_ORDER[-1]]['label']
+        else:
+            _earliest_label = 'Early'
+            _latest_label = 'Latest'
+
+        _snap_labels = [_earliest_label, _latest_label]
+        _r_dep_vals = [_r_acct['mo_dep_amt_early'].median(), _r_acct['mo_dep_amt'].median()]
+        _nr_dep_vals = [_nr_acct['mo_dep_amt_early'].median(), _nr_acct['mo_dep_amt'].median()]
+
+        _has_count = 'mo_dep_count' in _acct.columns and 'mo_dep_count_early' in _acct.columns
+        if _has_count:
+            _r_cnt_vals = [_r_acct['mo_dep_count_early'].median(), _r_acct['mo_dep_count'].median()]
+            _nr_cnt_vals = [_nr_acct['mo_dep_count_early'].median(), _nr_acct['mo_dep_count'].median()]
+
+        _n_panels = 2 if _has_count else 1
+        fig, axes = plt.subplots(1, _n_panels, figsize=(9 * _n_panels, 7))
+        if _n_panels == 1:
+            axes = [axes]
+
+        # -- Deposit Amount panel --
+        ax = axes[0]
+        x = np.arange(len(_snap_labels))
+        w = 0.3
+
+        bars_r = ax.bar(x - w/2, _r_dep_vals, w, label='Responder',
+                        color=GEN_COLORS['success'], edgecolor='white', linewidth=1)
+        bars_nr = ax.bar(x + w/2, _nr_dep_vals, w, label='Non-Responder',
+                         color=GEN_COLORS['muted'], edgecolor='white', linewidth=1)
+
+        for bar in bars_r:
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + ax.get_ylim()[1]*0.01,
+                    f"${bar.get_height():,.0f}", ha='center', va='bottom',
+                    fontsize=14, fontweight='bold', color=GEN_COLORS['success'])
+        for bar in bars_nr:
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + ax.get_ylim()[1]*0.01,
+                    f"${bar.get_height():,.0f}", ha='center', va='bottom',
+                    fontsize=14, fontweight='bold', color=GEN_COLORS['muted'])
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(_snap_labels, fontsize=14, fontweight='bold')
+        ax.set_ylabel("Median Monthly Deposits ($)", fontsize=14, fontweight='bold')
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
+        ax.set_title("Deposit Amount", fontsize=20, fontweight='bold',
+                     color=GEN_COLORS['dark_text'], pad=15)
+        ax.legend(fontsize=12)
+        gen_clean_axes(ax, keep_left=True, keep_bottom=True)
+        ax.yaxis.grid(True, color=GEN_COLORS.get('grid', '#E0E0E0'), linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+
+        # -- Deposit Count panel --
+        if _has_count:
+            ax2 = axes[1]
+            bars_r2 = ax2.bar(x - w/2, _r_cnt_vals, w, label='Responder',
+                              color=GEN_COLORS['success'], edgecolor='white', linewidth=1)
+            bars_nr2 = ax2.bar(x + w/2, _nr_cnt_vals, w, label='Non-Responder',
+                               color=GEN_COLORS['muted'], edgecolor='white', linewidth=1)
+
+            for bar in bars_r2:
+                ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + ax2.get_ylim()[1]*0.01,
+                         f"{bar.get_height():,.1f}", ha='center', va='bottom',
+                         fontsize=14, fontweight='bold', color=GEN_COLORS['success'])
+            for bar in bars_nr2:
+                ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + ax2.get_ylim()[1]*0.01,
+                         f"{bar.get_height():,.1f}", ha='center', va='bottom',
+                         fontsize=14, fontweight='bold', color=GEN_COLORS['muted'])
+
+            ax2.set_xticks(x)
+            ax2.set_xticklabels(_snap_labels, fontsize=14, fontweight='bold')
+            ax2.set_ylabel("Median Monthly Deposit Count", fontsize=14, fontweight='bold')
+            ax2.set_title("Deposit Frequency", fontsize=20, fontweight='bold',
+                          color=GEN_COLORS['dark_text'], pad=15)
+            ax2.legend(fontsize=12)
+            gen_clean_axes(ax2, keep_left=True, keep_bottom=True)
+            ax2.yaxis.grid(True, color=GEN_COLORS.get('grid', '#E0E0E0'), linewidth=0.5, alpha=0.7)
+            ax2.set_axisbelow(True)
+
+        fig.suptitle("First-Time Responder: Deposit Trajectory (Z Account Snapshots)",
+                     fontsize=26, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+        fig.text(0.5, 0.98,
+                 f"Early vs Latest snapshot comparison  |  {DATASET_LABEL}",
+                 ha='center', fontsize=14, color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()
+
+        # Print delta summary
+        _r_delta = _r_acct['mo_dep_amt_delta'].median() if 'mo_dep_amt_delta' in _acct.columns else 0
+        _nr_delta = _nr_acct['mo_dep_amt_delta'].median() if 'mo_dep_amt_delta' in _acct.columns else 0
+        _did = _r_delta - _nr_delta
+        print(f"\n  Deposit DID (median monthly): ${_did:,.0f}/account")
+        print(f"    Responder change:     ${_r_delta:,.0f}/mo")
+        print(f"    Non-Responder change: ${_nr_delta:,.0f}/mo")
+    else:
+        print("\n  Only one snapshot available -- cannot show deposit trajectory.")
+        print("  Table above shows latest snapshot comparison only.")

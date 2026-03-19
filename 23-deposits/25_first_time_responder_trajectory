@@ -146,3 +146,70 @@ else:
 
         print(f"\n  Offset relative to first response date")
         print(f"  NR reference = median mailer date for each NR account")
+
+        # =================================================================
+        # Chart: Dual panel -- Swipes and Spend trajectory
+        # =================================================================
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 7))
+
+        _x = [int(o.replace('mo', '').replace('+', '')) for o in _df['Offset']]
+
+        # -- Swipes panel --
+        _r_sw = _df['R Avg Swipes'].values
+        _nr_sw = _df['NR Avg Swipes'].values
+
+        ax1.plot(_x, _r_sw, color=GEN_COLORS['success'], linewidth=3,
+                 marker='o', markersize=8, markeredgecolor='white', markeredgewidth=1.5,
+                 label='Responder', zorder=5)
+        ax1.plot(_x, _nr_sw, color=GEN_COLORS['muted'], linewidth=3,
+                 marker='s', markersize=7, markeredgecolor='white', markeredgewidth=1.5,
+                 label='Non-Responder', zorder=4)
+        ax1.axvline(x=0, color=GEN_COLORS['accent'], linewidth=2, linestyle='--', alpha=0.6,
+                    label='First Response')
+        ax1.fill_between(_x, _r_sw, _nr_sw,
+                         where=[r > n if pd.notna(r) and pd.notna(n) else False
+                                for r, n in zip(_r_sw, _nr_sw)],
+                         color=GEN_COLORS['success'], alpha=0.1)
+        ax1.set_xlabel("Months from First Response", fontsize=14, fontweight='bold')
+        ax1.set_ylabel("Avg Monthly Swipes", fontsize=14, fontweight='bold')
+        ax1.set_title("Card Usage (Swipes)", fontsize=20, fontweight='bold',
+                       color=GEN_COLORS['dark_text'], pad=15)
+        ax1.legend(fontsize=12, loc='best')
+        gen_clean_axes(ax1, keep_left=True, keep_bottom=True)
+        ax1.yaxis.grid(True, color=GEN_COLORS.get('grid', '#E0E0E0'), linewidth=0.5, alpha=0.7)
+        ax1.set_axisbelow(True)
+
+        # -- Spend panel --
+        _r_sp = _df['R Avg Spend'].values
+        _nr_sp = _df['NR Avg Spend'].values
+
+        ax2.plot(_x, _r_sp, color=GEN_COLORS['success'], linewidth=3,
+                 marker='o', markersize=8, markeredgecolor='white', markeredgewidth=1.5,
+                 label='Responder', zorder=5)
+        ax2.plot(_x, _nr_sp, color=GEN_COLORS['muted'], linewidth=3,
+                 marker='s', markersize=7, markeredgecolor='white', markeredgewidth=1.5,
+                 label='Non-Responder', zorder=4)
+        ax2.axvline(x=0, color=GEN_COLORS['accent'], linewidth=2, linestyle='--', alpha=0.6,
+                    label='First Response')
+        ax2.fill_between(_x, _r_sp, _nr_sp,
+                         where=[r > n if pd.notna(r) and pd.notna(n) else False
+                                for r, n in zip(_r_sp, _nr_sp)],
+                         color=GEN_COLORS['success'], alpha=0.1)
+        ax2.set_xlabel("Months from First Response", fontsize=14, fontweight='bold')
+        ax2.set_ylabel("Avg Monthly Spend ($)", fontsize=14, fontweight='bold')
+        ax2.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
+        ax2.set_title("Card Spend", fontsize=20, fontweight='bold',
+                       color=GEN_COLORS['dark_text'], pad=15)
+        ax2.legend(fontsize=12, loc='best')
+        gen_clean_axes(ax2, keep_left=True, keep_bottom=True)
+        ax2.yaxis.grid(True, color=GEN_COLORS.get('grid', '#E0E0E0'), linewidth=0.5, alpha=0.7)
+        ax2.set_axisbelow(True)
+
+        fig.suptitle("First-Time Responder Trajectory: Swipes & Spend",
+                     fontsize=26, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+        fig.text(0.5, 0.98,
+                 f"3 months pre, 6 months post first response  |  {DATASET_LABEL}",
+                 ha='center', fontsize=14, color=GEN_COLORS['muted'], style='italic')
+
+        plt.tight_layout()
+        plt.show()
