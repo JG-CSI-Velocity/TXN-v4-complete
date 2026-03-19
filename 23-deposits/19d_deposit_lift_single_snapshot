@@ -129,6 +129,8 @@ else:
 
     if _wave_rows_single:
         _wdf_single = pd.DataFrame(_wave_rows_single)
+        if 'Mailer' in _wdf_single.columns and 'Offer' not in _wdf_single.columns:
+            _wdf_single = _wdf_single.rename(columns={'Mailer': 'Offer'})
         for c in _wdf_single.columns:
             if _wdf_single[c].dtype in ('float64', 'float32'):
                 _wdf_single[c] = _wdf_single[c].round(1)
@@ -138,6 +140,11 @@ else:
 
     if _seg_rows_single:
         _sdf_single = pd.DataFrame(_seg_rows_single)
+
+        # Handle both old ('Mailer') and new ('Offer') column names
+        if 'Mailer' in _sdf_single.columns and 'Offer' not in _sdf_single.columns:
+            _sdf_single = _sdf_single.rename(columns={'Mailer': 'Offer'})
+
         for c in _sdf_single.columns:
             if _sdf_single[c].dtype in ('float64', 'float32'):
                 _sdf_single[c] = _sdf_single[c].round(1)
@@ -149,8 +156,9 @@ else:
                                 & (_sdf_single['Segment'] != 'Non-Responder')]
         if len(_winners) > 0:
             _best = _winners.sort_values('Change %', ascending=False).iloc[0]
+            _offer_label = _best.get('Offer', _best.get('Mailer', ''))
             print(f"\n  BEST SEGMENT:")
-            print(f"    {_best['Segment']} at {_best['Offer']}")
+            print(f"    {_best['Segment']} at {_offer_label}")
             print(f"    12mo avg: ${_best['Pre Med Dep $']:,.0f}/mo -> Recent: ${_best['Post Med Dep $']:,.0f}")
             print(f"    Deposits trending {_best['Change %']:+.1f}% above baseline")
 
