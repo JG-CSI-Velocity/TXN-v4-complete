@@ -18,7 +18,7 @@ else:
     from IPython.display import display
 
     print("=" * 70)
-    print("  SETUP: Connecting ODDD mailer data to Z account deposit data")
+    print("  SETUP: Connecting ODDD offer data to Z account deposit data")
     print("=" * 70)
     print()
     print("  This cell doesn't produce tables or charts. It does two things:")
@@ -101,7 +101,7 @@ else:
 
     def _make_wave_row(label, n, pre_med, post_med, extra=None):
         row = {
-            'Mailer': label, 'N': n,
+            'Offer': label, 'N': n,
             'Pre Med Dep $': pre_med, 'Post Med Dep $': post_med,
             'Change $': post_med - pre_med,
             'Change %': ((post_med - pre_med) / pre_med * 100) if pre_med > 0 else 0,
@@ -114,9 +114,9 @@ else:
         fig, ax = plt.subplots(figsize=(max(12, len(wdf) * 2.5), 7))
         x = np.arange(len(wdf))
         w = 0.3
-        ax.bar(x - w/2, wdf['Pre Med Dep $'], w, label='Pre-Mailer',
+        ax.bar(x - w/2, wdf['Pre Med Dep $'], w, label='Pre-Offer',
                color=GEN_COLORS['muted'], edgecolor='white', linewidth=1)
-        ax.bar(x + w/2, wdf['Post Med Dep $'], w, label='Post-Mailer',
+        ax.bar(x + w/2, wdf['Post Med Dep $'], w, label='Post-Offer',
                color=GEN_COLORS['success'], edgecolor='white', linewidth=1)
         for i, row in wdf.iterrows():
             _top = max(row['Pre Med Dep $'], row['Post Med Dep $'])
@@ -126,7 +126,7 @@ else:
             ax.text(i, _top * 1.03, f"{_s}${_d:,.0f} ({_s}{_p:.1f}%)",
                     ha='center', va='bottom', fontsize=13, fontweight='bold', color=_c)
         ax.set_xticks(x)
-        ax.set_xticklabels(wdf['Mailer'], fontsize=14, fontweight='bold', rotation=45, ha='right')
+        ax.set_xticklabels(wdf['Offer'], fontsize=14, fontweight='bold', rotation=45, ha='right')
         ax.set_ylabel("Median Monthly Deposits ($/mo)", fontsize=16, fontweight='bold')
         ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
         ax.legend(fontsize=14)
@@ -161,7 +161,7 @@ else:
     print(f"  ODDD join key: '{_oddd_key}'")
     print(f"  Multi-snapshot mode: {'YES' if _multi_available else 'NO'}")
     print(f"  Single-snapshot mode: {'YES' if _single_available else 'NO'}")
-    print(f"  Mailer waves: {len(mail_cols)}")
+    print(f"  Offer waves: {len(mail_cols)}")
 
     # Build a deposit-friendly label (DATASET_LABEL may say "N/A no transactions")
     if 'CLIENT_NAME' in dir() and 'CLIENT_ID' in dir():

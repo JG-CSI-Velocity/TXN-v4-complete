@@ -5,11 +5,11 @@
 # WHAT THIS SHOWS:
 #   Using a SINGLE Z account file, compares the long-term deposit average
 #   to the most recent deposit reading. If deposits increased recently
-#   (after a mailer), the recent reading should be higher.
+#   (after a offer), the recent reading should be higher.
 #
 # HOW IT WORKS:
 #   depAmt365 / 12 = average monthly deposits over the prior FULL YEAR.
-#                    This blends pre-mailer and post-mailer months together.
+#                    This blends pre-offer and post-offer months together.
 #                    Think of it as the "baseline" level.
 #
 #   DepAmt33       = deposit amount as of 33 days ago from the snapshot date.
@@ -21,8 +21,8 @@
 #   If DepAmt33 < depAmt365/12, deposits are trending DOWN recently.
 #
 # WHY IT'S IMPRECISE:
-#   The 365-day average includes BOTH pre and post mailer months. So if
-#   deposits went up after the mailer, the 365-day average is already
+#   The 365-day average includes BOTH pre and post offer months. So if
+#   deposits went up after the offer, the 365-day average is already
 #   partially lifted. This means the actual lift is probably LARGER than
 #   what this table shows. Treat as a conservative, directional signal.
 #
@@ -43,7 +43,7 @@ else:
     print()
     print("    PRE  (depAmt365 / 12) = average monthly deposits over the past")
     print("         full year. This is the person's 'normal' deposit level.")
-    print("         It blends months before AND after the mailer together.")
+    print("         It blends months before AND after the offer together.")
     print()
     print("    POST (DepAmt33) = what deposits looked like 33 days ago.")
     print("         This is a point-in-time reading, NOT a 33-day total.")
@@ -53,7 +53,7 @@ else:
     print("  (depAmt365/12), deposits are trending UP.")
     print()
     print("  WHY THE CHANGES MAY LOOK SMALL:")
-    print("  The yearly average already includes some post-mailer months, so")
+    print("  The yearly average already includes some post-offer months, so")
     print("  it's partially lifted. The actual lift is probably LARGER than")
     print("  shown. This is a conservative, directional signal.")
     print()
@@ -75,7 +75,7 @@ else:
     print(f"  Snapshot: {_snap_label} (~{_snap_date.strftime('%b %Y')})")
     print(f"  PRE column:  depAmt365 / 12  (avg monthly over full year)")
     print(f"  POST column: DepAmt33        (deposit level ~1 month ago)")
-    print(f"  Mailers included: those sent 40-365 days before snapshot\n")
+    print(f"  Offers included: those sent 40-365 days before snapshot\n")
 
     _wave_rows_single = []
     _seg_rows_single = []
@@ -150,9 +150,9 @@ else:
         if len(_winners) > 0:
             _best = _winners.sort_values('Change %', ascending=False).iloc[0]
             print(f"\n  BEST SEGMENT:")
-            print(f"    {_best['Segment']} at {_best['Mailer']}")
+            print(f"    {_best['Segment']} at {_best['Offer']}")
             print(f"    12mo avg: ${_best['Pre Med Dep $']:,.0f}/mo -> Recent: ${_best['Post Med Dep $']:,.0f}")
             print(f"    Deposits trending {_best['Change %']:+.1f}% above baseline")
 
     if not _wave_rows_single:
-        print("  No mailers in the 40-365 day window before snapshot.")
+        print("  No offers in the 40-365 day window before snapshot.")

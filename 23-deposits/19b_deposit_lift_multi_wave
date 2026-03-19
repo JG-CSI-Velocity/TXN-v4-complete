@@ -1,19 +1,19 @@
 # ===========================================================================
-# DEPOSIT LIFT: Per-Mailer Wave (Multi-Snapshot)
+# DEPOSIT LIFT: Per-Offer Wave (Multi-Snapshot)
 # ===========================================================================
 #
 # WHAT THIS SHOWS:
-#   For each mailer wave, compares the median monthly deposit amount
-#   BEFORE the mailer vs AFTER the mailer, using two Z account files.
+#   For each offer wave, compares the median monthly deposit amount
+#   BEFORE the offer vs AFTER the offer, using two Z account files.
 #
 # HOW IT WORKS:
 #   You have two Z account snapshot files (e.g., Mar 2025 and Mar 2026).
 #   Each file contains depAmt365 = total deposits over the prior 365 days.
 #   We divide by 12 to get a monthly average.
 #
-#   For a mailer sent in Jul 2025:
-#     PRE  = depAmt365/12 from the Mar 2025 file (before the mailer)
-#     POST = depAmt365/12 from the Mar 2026 file (after the mailer)
+#   For a offer sent in Jul 2025:
+#     PRE  = depAmt365/12 from the Mar 2025 file (before the offer)
+#     POST = depAmt365/12 from the Mar 2026 file (after the offer)
 #
 #   We only compare accounts that appear in BOTH files (matched cohort)
 #   so we're looking at the same people before and after.
@@ -23,11 +23,11 @@
 #   From ODDD: Mail columns (who was mailed each wave)
 #   Join key: acctid (Z accounts) matched to Acct ID (ODDD)
 #
-# GREEN = deposits went UP after the mailer
-# RED   = deposits went DOWN after the mailer
+# GREEN = deposits went UP after the offer
+# RED   = deposits went DOWN after the offer
 #
 # NOTE: This is a broad comparison. depAmt365 is a rolling 365-day total,
-# so it blends many months together. A mailer sent 2 months before the
+# so it blends many months together. A offer sent 2 months before the
 # post-snapshot will have most of its 365-day window still in the pre
 # period. Treat this as directional evidence, not precise measurement.
 #
@@ -37,22 +37,22 @@ if '_multi_available' not in dir() or not _multi_available:
     print("    Multi-snapshot not available. Need 2+ Z account files.")
 else:
     print("=" * 70)
-    print("  DEPOSIT LIFT BY MAILER WAVE")
+    print("  DEPOSIT LIFT BY OFFER WAVE")
     print("=" * 70)
     print()
     print("  WHAT YOU'RE LOOKING AT:")
-    print("  You have two Z account files -- one from before the mailers,")
+    print("  You have two Z account files -- one from before the offers,")
     print("  one from after. Each file has a field called 'depAmt365' which")
     print("  is 'how much did this person deposit in the last year.'")
     print("  We divide by 12 to get a monthly number.")
     print()
-    print("  For each mailer wave, we look at the SAME group of people in")
+    print("  For each offer wave, we look at the SAME group of people in")
     print("  both files:")
-    print("    PRE  = their monthly deposits from the OLDER file (before mailer)")
-    print("    POST = their monthly deposits from the NEWER file (after mailer)")
+    print("    PRE  = their monthly deposits from the OLDER file (before offer)")
+    print("    POST = their monthly deposits from the NEWER file (after offer)")
     print()
-    print("  Green = deposits went UP after the mailer.")
-    print("  Red   = deposits went DOWN after the mailer.")
+    print("  Green = deposits went UP after the offer.")
+    print("  Red   = deposits went DOWN after the offer.")
     print()
     print("  CAVEAT: depAmt365 is a 12-month rolling average, so it blurs")
     print("  together many months. Think of it like comparing two annual")
@@ -145,8 +145,8 @@ else:
                 _wdf_multi[c] = _wdf_multi[c].round(1)
 
         _display_table(_wdf_multi,
-            f"Deposit Lift by Mailer ({SNAPSHOT_ORDER[0]} vs {SNAPSHOT_ORDER[-1]})  |  {_DEP_LABEL}")
-        _make_chart(_wdf_multi, "Deposit Lift: Pre vs Post Mailer",
+            f"Deposit Lift by Offer ({SNAPSHOT_ORDER[0]} vs {SNAPSHOT_ORDER[-1]})  |  {_DEP_LABEL}")
+        _make_chart(_wdf_multi, "Deposit Lift: Pre vs Post Offer",
             f"depAmt365/12 compared across snapshots  |  {_DEP_LABEL}")
 
         _avg = _wdf_multi['Change $'].mean()
@@ -165,23 +165,23 @@ else:
         print(f"  The {_pre_snap_label} file covers the year BEFORE {_pre_snap_label}.")
         print(f"  The {_post_snap_label} file covers the year BEFORE {_post_snap_label}.")
         print()
-        print("  The signal strength depends on WHEN the mailer was sent:")
+        print("  The signal strength depends on WHEN the offer was sent:")
         print()
-        print("  EARLY mailers (closer to the pre-snapshot):")
-        print(f"    e.g., a mailer sent shortly after {_pre_snap_label}")
-        print(f"    The {_post_snap_label} file has ~12 months of post-mailer deposits.")
-        print("    STRONG signal -- most of the post number is truly post-mailer.")
+        print("  EARLY offers (closer to the pre-snapshot):")
+        print(f"    e.g., a offer sent shortly after {_pre_snap_label}")
+        print(f"    The {_post_snap_label} file has ~12 months of post-offer deposits.")
+        print("    STRONG signal -- most of the post number is truly post-offer.")
         print()
-        print("  LATE mailers (closer to the post-snapshot):")
-        print(f"    e.g., a mailer sent a few months before {_post_snap_label}")
-        print(f"    The {_post_snap_label} file has only a few months of post-mailer")
-        print("    deposits, blended with many months of pre-mailer deposits.")
+        print("  LATE offers (closer to the post-snapshot):")
+        print(f"    e.g., a offer sent a few months before {_post_snap_label}")
+        print(f"    The {_post_snap_label} file has only a few months of post-offer")
+        print("    deposits, blended with many months of pre-offer deposits.")
         print("    WEAK signal -- the change is UNDERSTATED.")
         print("    If you see even a small positive here, the real lift is larger.")
         print()
-        print("  BOTTOM LINE: Treat early-mailer rows as reliable. Treat")
-        print("  late-mailer rows as conservative -- the real effect is bigger")
+        print("  BOTTOM LINE: Treat early-offer rows as reliable. Treat")
+        print("  late-offer rows as conservative -- the real effect is bigger")
         print("  than what these numbers show.")
     else:
-        print("  No mailer waves matched pre/post snapshots, or 0 account overlap.")
+        print("  No offer waves matched pre/post snapshots, or 0 account overlap.")
         print("  Check that acctid values are consistent between Z files.")

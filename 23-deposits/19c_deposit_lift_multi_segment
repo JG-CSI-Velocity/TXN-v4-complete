@@ -4,7 +4,7 @@
 #
 # WHAT THIS SHOWS:
 #   Same comparison as 19b, but broken out by response segment within
-#   each mailer wave. Shows which challenge tier saw the biggest deposit
+#   each offer wave. Shows which challenge tier saw the biggest deposit
 #   increase.
 #
 # SEGMENTS:
@@ -17,12 +17,12 @@
 #   Non-Responder = mailed but did not meet their challenge goal
 #
 # HOW TO READ IT:
-#   Green rows = that segment's deposits INCREASED after the mailer
-#   Red rows = that segment's deposits DECREASED after the mailer
+#   Green rows = that segment's deposits INCREASED after the offer
+#   Red rows = that segment's deposits DECREASED after the offer
 #
 #   If responder segments (TH-*, NU 5+) show green but Non-Responder
 #   shows red, that's the signal: the program drove deposit growth
-#   specifically among people who engaged with the mailer.
+#   specifically among people who engaged with the offer.
 #
 #   If EVERYTHING is red or green, that's likely a market-wide trend
 #   (interest rates, seasonal patterns) rather than a program effect.
@@ -40,14 +40,14 @@ else:
     print()
     print("  WHAT YOU'RE LOOKING AT:")
     print("  Same before-vs-after comparison as 19b, but now we split each")
-    print("  mailer into WHO RESPONDED AND HOW:")
+    print("  offer into WHO RESPONDED AND HOW:")
     print()
     print("    TH-10/15/20/25 = challenged to make that many card swipes.")
     print("                     Higher number = already more active customer.")
     print("    NU 5+          = non-user accounts that activated with 5+ swipes.")
     print("                     These are the program's biggest wins.")
     print("    NU 1-4         = tried but didn't hit the goal.")
-    print("    Non-Responder  = got the mailer but didn't meet their challenge.")
+    print("    Non-Responder  = got the offer but didn't meet their challenge.")
     print()
     print("  THE STORY FOR THE PRESENTATION:")
     print("  'Responders saw deposits go UP, while Non-Responders stayed flat")
@@ -144,18 +144,18 @@ else:
         if len(_winners) > 0:
             _best = _winners.sort_values('Change %', ascending=False).iloc[0]
             print(f"\n  BEST SEGMENT FOR CONFERENCE:")
-            print(f"    {_best['Segment']} at {_best['Mailer']} mailer")
+            print(f"    {_best['Segment']} at {_best['Offer']} offer")
             print(f"    Deposits went from ${_best['Pre Med Dep $']:,.0f} -> ${_best['Post Med Dep $']:,.0f}/mo")
             print(f"    Change: +${_best['Change $']:,.0f}/mo ({_best['Change %']:+.1f}%)")
             print(f"    N = {int(_best['N']):,} accounts")
 
-            # Compare to NR at same mailer
-            _nr_same = _nr_segs[_nr_segs['Mailer'] == _best['Mailer']]
+            # Compare to NR at same offer
+            _nr_same = _nr_segs[_nr_segs['Offer'] == _best['Offer']]
             if len(_nr_same) > 0:
                 _nr_chg = _nr_same.iloc[0]['Change $']
                 _nr_pct = _nr_same.iloc[0]['Change %']
                 _s = '+' if _nr_chg >= 0 else ''
-                print(f"    Non-Responders at same mailer: {_s}${_nr_chg:,.0f}/mo ({_s}{_nr_pct:.1f}%)")
+                print(f"    Non-Responders at same offer: {_s}${_nr_chg:,.0f}/mo ({_s}{_nr_pct:.1f}%)")
                 _did = _best['Change $'] - _nr_chg
                 print(f"    Difference (DID-like): +${_did:,.0f}/mo")
         else:

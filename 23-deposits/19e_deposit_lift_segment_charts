@@ -1,7 +1,7 @@
 # ===========================================================================
-# DEPOSIT LIFT: Per-Mailer Segment Charts (Responders Only)
+# DEPOSIT LIFT: Per-Offer Segment Charts (Responders Only)
 # ===========================================================================
-# One chart per mailer wave showing pre vs post deposits by response segment.
+# One chart per offer wave showing pre vs post deposits by response segment.
 # Non-responders are excluded -- this is the conference-ready view.
 #
 # Depends on: 19c (_seg_rows_multi), 19a (helpers, _DEP_LABEL)
@@ -10,13 +10,13 @@ if '_seg_rows_multi' not in dir() or not _seg_rows_multi:
     print("    Run cells 19a -> 19b -> 19c first.")
 else:
     print("=" * 70)
-    print("  DEPOSIT LIFT CHARTS: Per Mailer, Responders Only")
+    print("  DEPOSIT LIFT CHARTS: Per Offer, Responders Only")
     print("=" * 70)
     print()
     print("  WHAT YOU'RE LOOKING AT:")
-    print("  One chart per mailer wave. Each pair of bars is a response segment:")
-    print("    Gray bar  = median monthly deposits BEFORE the mailer")
-    print("    Green bar = median monthly deposits AFTER the mailer")
+    print("  One chart per offer wave. Each pair of bars is a response segment:")
+    print("    Gray bar  = median monthly deposits BEFORE the offer")
+    print("    Green bar = median monthly deposits AFTER the offer")
     print()
     print("  Non-responders are excluded. This shows only people who")
     print("  engaged with the program.")
@@ -40,11 +40,11 @@ else:
             if _sdf[c].dtype in ('float64', 'float32'):
                 _sdf[c] = _sdf[c].round(1)
 
-        _mailers = _sdf['Mailer'].unique()
-        print(f"  Generating charts for {len(_mailers)} mailer(s)...\n")
+        _offers = _sdf['Offer'].unique()
+        print(f"  Generating charts for {len(_offers)} offer(s)...\n")
 
-        for mailer in _mailers:
-            _mdf = _sdf[_sdf['Mailer'] == mailer].copy().reset_index(drop=True)
+        for offer in _offers:
+            _mdf = _sdf[_sdf['Offer'] == offer].copy().reset_index(drop=True)
             if len(_mdf) == 0:
                 continue
 
@@ -53,10 +53,10 @@ else:
             w = 0.3
 
             bars_pre = ax.bar(x - w/2, _mdf['Pre Med Dep $'], w,
-                              label='Pre-Mailer', color=GEN_COLORS['muted'],
+                              label='Pre-Offer', color=GEN_COLORS['muted'],
                               edgecolor='white', linewidth=1)
             bars_post = ax.bar(x + w/2, _mdf['Post Med Dep $'], w,
-                               label='Post-Mailer', color=GEN_COLORS['success'],
+                               label='Post-Offer', color=GEN_COLORS['success'],
                                edgecolor='white', linewidth=1)
 
             # Value labels on bars
@@ -92,7 +92,7 @@ else:
             ax.set_axisbelow(True)
 
             _label_text = _DEP_LABEL if '_DEP_LABEL' in dir() else ''
-            fig.suptitle(f"{mailer} Mailer: Deposit Lift by Segment",
+            fig.suptitle(f"{offer} Offer: Deposit Lift by Segment",
                          fontsize=24, fontweight='bold', color=GEN_COLORS['dark_text'], y=0.98)
             fig.text(0.5, 0.93,
                      f"Responder segments only  |  {_label_text}",
