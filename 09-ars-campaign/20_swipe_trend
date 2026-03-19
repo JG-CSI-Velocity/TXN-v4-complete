@@ -5,9 +5,8 @@
 # Vertical dashed lines at campaign wave months. (14,7).
 # Uses per-month swipe columns (MmmYY Swipes) from rewards_df -- NOT combined_df.
 
-_missing = [v for v in ('camp_acct', 'rewards_df') if v not in dir()]
-if _missing or len(camp_acct) == 0:
-    print(f"    Campaign data not available (run cell 01 first). Skipping swipe trend chart.")
+if ('camp_acct' not in dir() or len(camp_acct) == 0 or 'rewards_df' not in dir()):
+    print("    Campaign data not available (run cell 01 first). Skipping swipe trend chart.")
 else:
     try:
         # Dynamically discover monthly swipe columns

@@ -17,9 +17,9 @@
 # Depends on: WAVE_CONFIG, spend_lookup, swipe_month_map, rewards_df (cell 11)
 
 try:
-    _missing = [v for v in ('WAVE_CONFIG', 'rewards_df', 'spend_lookup') if v not in dir()]
-    if _missing or len(WAVE_CONFIG) == 0:
-        raise NameError(f"Required data not available: {', '.join(_missing) if _missing else 'WAVE_CONFIG is empty'}")
+    if ('WAVE_CONFIG' not in dir() or len(WAVE_CONFIG) == 0
+            or 'rewards_df' not in dir() or 'spend_lookup' not in dir()):
+        raise NameError("Required data not available -- run cell 10 first")
 
     _acct_col = 'Acct Number' if 'Acct Number' in rewards_df.columns else ' Acct Number'
 

@@ -7,9 +7,9 @@
 # Outputs: penetration_df, repeat_summary.
 # Guard: camp_acct must exist.
 
-_missing = [v for v in ('camp_acct', 'rewards_df', 'mail_cols', 'resp_cols') if v not in dir()]
-if _missing or len(camp_acct) == 0:
-    print(f"    Campaign data not available (run cell 01 first). Skipping penetration analysis.")
+if ('camp_acct' not in dir() or len(camp_acct) == 0
+        or 'rewards_df' not in dir() or 'mail_cols' not in dir() or 'resp_cols' not in dir()):
+    print("    Campaign data not available (run cell 01 first). Skipping penetration analysis.")
 else:
     # -----------------------------------------------------------------
     # 1. Build per-period penetration using set operations

@@ -6,9 +6,9 @@
 #
 # Depends on: camp_summary, rewards_df, mail_cols, resp_cols (cell 01)
 
-_missing = [v for v in ('camp_summary', 'rewards_df', 'mail_cols', 'resp_cols') if v not in dir()]
-if _missing or len(camp_summary) == 0:
-    print(f"    Campaign data not available (run cell 01 first). Skipping response rate trend.")
+if ('camp_summary' not in dir() or len(camp_summary) == 0
+        or 'rewards_df' not in dir() or 'mail_cols' not in dir() or 'resp_cols' not in dir()):
+    print("    Campaign data not available (run cell 01 first). Skipping response rate trend.")
 else:
     _DARK = GEN_COLORS.get('dark_text', '#1B2A4A')
     _MUTED = GEN_COLORS.get('muted', '#6C757D')
