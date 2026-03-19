@@ -1,0 +1,202 @@
+# ===========================================================================
+# DEPOSIT DISTRIBUTION: Box Plots by Segment (Pre vs Post)
+# ===========================================================================
+# One chart per offer wave showing the FULL DISTRIBUTION of monthly
+# deposit amounts for each response segment -- not just the median.
+#
+# Box = interquartile range (25th to 75th percentile)
+# Line inside box = median
+# Whiskers = 1.5x IQR (typical range)
+# Dots beyond whiskers = outliers
+#
+# Pre (gray) and Post (green) side by side so you can see whether the
+# whole distribution shifted, or just the median moved because of outliers.
+#
+# Drops NU 1-4 and Non-Responders. Caps outliers at 95th percentile
+# for readability (the raw data has huge deposit outliers that compress
+# the box into nothing).
+#
+# Depends on: 19a (helpers), deposit_long, rewards_df, mail_cols, resp_cols,
+#             SNAPSHOT_CONFIG, SNAPSHOT_ORDER
+
+if '_multi_available' not in dir() or not _multi_available:
+    print("    Multi-snapshot not available. Need 2+ Z account files.")
+elif '_oddd_key' not in dir():
+    print("    Run cell 19a first.")
+else:
+    print("=" * 70)
+    print("  DEPOSIT DISTRIBUTION: Box Plots by Segment")
+    print("=" * 70)
+    print()
+    print("  WHAT YOU'RE LOOKING AT:")
+    print("  One chart per offer. For each response segment, two boxes:")
+    print("    Gray box  = deposit distribution BEFORE the offer")
+    print("    Green box = deposit distribution AFTER the offer")
+    print()
+    print("  HOW TO READ A BOX PLOT:")
+    print("    Box edges    = 25th and 75th percentile (middle 50% of accounts)")
+    print("    Line in box  = median (the typical account)")
+    print("    Whiskers     = range of most accounts (excludes extreme outliers)")
+    print()
+    print("  WHY THIS MATTERS:")
+    print("  If a segment's median looks low in the bar charts (19e/19f),")
+    print("  the box plot tells you whether the WHOLE group has low deposits")
+    print("  or if a few outliers are pulling the median around.")
+    print()
+    print("  Deposits are capped at the 95th percentile for readability.")
+    print()
+
+    _dep_key = '_join_key' if '_join_key' in deposit_long.columns else 'acctid'
+    if _dep_key not in deposit_long.columns:
+        _dep_key = 'HASHED_ACCOUNT'
+
+    _snap_dates = {}
+    for sk in SNAPSHOT_ORDER:
+        sc = SNAPSHOT_CONFIG[sk]
+        _sort = sc['sort_key']
+        _snap_dates[sk] = pd.Timestamp(year=_sort // 100, month=_sort % 100, day=15)
+    _snap_keys = list(_snap_dates.keys())
+    _snap_ts = list(_snap_dates.values())
+
+    _charts_made = 0
+
+    for mc, rc in zip(mail_cols, resp_cols):
+        _label = mc.replace(' Mail', '')
+        _mail_date = pd.to_datetime(_label, format='%b%y')
+
+        _pre_snaps = [(sk, sd) for sk, sd in zip(_snap_keys, _snap_ts) if sd < _mail_date]
+        _post_snaps = [(sk, sd) for sk, sd in zip(_snap_keys, _snap_ts)
+                       if sd >= _mail_date + pd.DateOffset(months=1)]
+        if not _pre_snaps or not _post_snaps:
+            continue
+
+        _pre_snap = max(_pre_snaps, key=lambda x: x[1])
+        _post_snap = min(_post_snaps, key=lambda x: x[1])
+
+        _mailed = rewards_df[mc].notna()
+        _mailed_keys = set(rewards_df.loc[_mailed, _oddd_key].astype(str).str.strip())
+
+        _pre_dl = deposit_long[deposit_long['snapshot'] == _pre_snap[0]].copy()
+        _post_dl = deposit_long[deposit_long['snapshot'] == _post_snap[0]].copy()
+        _pre_dl['_dk'] = _pre_dl[_dep_key].astype(str).str.strip()
+        _post_dl['_dk'] = _post_dl[_dep_key].astype(str).str.strip()
+
+        _pre_dep = _pre_dl[_pre_dl['_dk'].isin(_mailed_keys)].set_index('_dk')['depAmt365'].fillna(0) / 12
+        _post_dep = _post_dl[_post_dl['_dk'].isin(_mailed_keys)].set_index('_dk')['depAmt365'].fillna(0) / 12
+        _common = _pre_dep.index.intersection(_post_dep.index)
+        if len(_common) < 10:
+            continue
+
+        _pre_dep = _pre_dep.loc[_common]
+        _post_dep = _post_dep.loc[_common]
+
+        if rc not in rewards_df.columns:
+            continue
+
+        _resp_vals = rewards_df.loc[_mailed, rc]
+        _segments = _resp_vals.map(_parse_segment)
+        _acct_keys = rewards_df.loc[_mailed, _oddd_key].astype(str).str.strip()
+
+        # Build segment -> account keys mapping (exclude NU 1-4 and NR)
+        _seg_order = []
+        _seg_data = {}
+        for seg in sorted(_segments.dropna().unique()):
+            if seg in ('NU 1-4',):
+                continue
+            _seg_keys = set(_acct_keys[_segments == seg])
+            _seg_common = [k for k in _common if k in _seg_keys]
+            if len(_seg_common) < 5:
+                continue
+            _seg_order.append(seg)
+            _seg_data[seg] = {
+                'pre': _pre_dep.loc[_seg_common].values,
+                'post': _post_dep.loc[_seg_common].values,
+                'n': len(_seg_common),
+            }
+
+        if len(_seg_order) < 2:
+            continue
+
+        # Cap at 95th percentile for readability
+        _all_vals = np.concatenate([d['pre'] for d in _seg_data.values()]
+                                   + [d['post'] for d in _seg_data.values()])
+        _cap = np.percentile(_all_vals[_all_vals > 0], 95) if (_all_vals > 0).sum() > 0 else _all_vals.max()
+
+        # Build box plot data
+        _box_data = []
+        _positions = []
+        _colors = []
+        _tick_positions = []
+        _tick_labels = []
+
+        for i, seg in enumerate(_seg_order):
+            _center = i * 3  # space between segments
+            _pre_capped = np.clip(_seg_data[seg]['pre'], 0, _cap)
+            _post_capped = np.clip(_seg_data[seg]['post'], 0, _cap)
+
+            _box_data.append(_pre_capped)
+            _positions.append(_center - 0.4)
+            _colors.append(GEN_COLORS.get('muted', '#6C757D'))
+
+            _box_data.append(_post_capped)
+            _positions.append(_center + 0.4)
+            _colors.append(GEN_COLORS.get('success', '#2A9D8F'))
+
+            _tick_positions.append(_center)
+            _tick_labels.append(f"{seg}\n(N={_seg_data[seg]['n']:,})")
+
+        fig, ax = plt.subplots(figsize=(max(12, len(_seg_order) * 3.5), 7))
+
+        bp = ax.boxplot(_box_data, positions=_positions, widths=0.6,
+                        patch_artist=True, showfliers=False,
+                        medianprops=dict(color='white', linewidth=2),
+                        whiskerprops=dict(linewidth=1.5),
+                        capprops=dict(linewidth=1.5))
+
+        for patch, color in zip(bp['boxes'], _colors):
+            patch.set_facecolor(color)
+            patch.set_edgecolor('white')
+            patch.set_linewidth(1.5)
+            patch.set_alpha(0.8)
+
+        # Median labels
+        for j, (pos, data) in enumerate(zip(_positions, _box_data)):
+            _med = np.median(data)
+            _c = _colors[j]
+            ax.text(pos, _med, f"${_med:,.0f}",
+                    ha='center', va='bottom', fontsize=11, fontweight='bold',
+                    color='white',
+                    bbox=dict(boxstyle='round,pad=0.2', facecolor=_c, alpha=0.9, edgecolor='none'))
+
+        ax.set_xticks(_tick_positions)
+        ax.set_xticklabels(_tick_labels, fontsize=13, fontweight='bold')
+        ax.set_ylabel("Monthly Deposits ($/mo)", fontsize=14, fontweight='bold')
+        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
+
+        gen_clean_axes(ax, keep_left=True, keep_bottom=True)
+        ax.yaxis.grid(True, color=GEN_COLORS.get('grid', '#E0E0E0'), linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+
+        # Legend
+        from matplotlib.patches import Patch
+        ax.legend(handles=[
+            Patch(facecolor=GEN_COLORS.get('muted', '#6C757D'), label=f'Pre ({_pre_snap[0]})', alpha=0.8),
+            Patch(facecolor=GEN_COLORS.get('success', '#2A9D8F'), label=f'Post ({_post_snap[0]})', alpha=0.8),
+        ], fontsize=13, loc='upper right')
+
+        _label_text = _DEP_LABEL if '_DEP_LABEL' in dir() else ''
+        fig.suptitle(f"{_label} Offer: Deposit Distribution by Segment",
+                     fontsize=24, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
+        fig.text(0.5, 0.96,
+                 f"Box = IQR (25th-75th pct), capped at 95th pct  |  {_label_text}",
+                 ha='center', fontsize=14, color=GEN_COLORS.get('muted', '#6C757D'),
+                 style='italic')
+
+        plt.tight_layout(rect=[0, 0, 1, 0.93])
+        plt.show()
+        _charts_made += 1
+
+    if _charts_made == 0:
+        print("  No offers had enough matched accounts for box plots.")
+    else:
+        print(f"\n  Generated {_charts_made} box plot(s).")
