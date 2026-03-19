@@ -125,13 +125,17 @@ else:
                      'Match Rate': _match_rate}))
 
             _nr_keys = set(_acct_keys[~_resp_vals.map(_is_success)])
+            _nr_total = len(_nr_keys)
             _nr_common = [k for k in _common if k in _nr_keys]
             if len(_nr_common) >= 5:
+                _nr_match_rate = len(_nr_common) / _nr_total * 100 if _nr_total > 0 else 0
                 _seg_rows_multi.append(_make_wave_row(
                     _label, len(_nr_common),
                     _pre_dep.loc[_nr_common].median(),
                     _post_dep.loc[_nr_common].median(),
-                    {'Segment': 'Non-Responder'}))
+                    {'Segment': 'Non-Responder',
+                     'Total in ODDD': _nr_total,
+                     'Match Rate': _nr_match_rate}))
 
     if _seg_rows_multi:
         _sdf_multi = pd.DataFrame(_seg_rows_multi)
@@ -159,9 +163,16 @@ else:
             print()
             for _, row in _sdf_multi.iterrows():
                 _mr = row.get('Match Rate', 0)
+                if pd.isna(_mr):
+                    _mr = 0
+                _total = row.get('Total in ODDD', 0)
+                if pd.isna(_total):
+                    _total = 0
+                _n = row['N'] if pd.notna(row['N']) else 0
                 _flag = " <-- LOW" if _mr < 20 else ""
-                print(f"    {row.get('Offer', ''):>8}  {row['Segment']:>16}  "
-                      f"N={int(row['N']):>6,}  of {int(row.get('Total in ODDD', 0)):>6,}  "
+                _offer = row.get('Offer', row.get('Mailer', ''))
+                print(f"    {_offer:>8}  {row['Segment']:>16}  "
+                      f"N={int(_n):>6,}  of {int(_total):>6,}  "
                       f"({_mr:.0f}%){_flag}")
             print()
 
