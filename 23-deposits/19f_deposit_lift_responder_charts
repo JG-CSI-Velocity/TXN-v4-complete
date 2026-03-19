@@ -1,16 +1,16 @@
 # ===========================================================================
-# DEPOSIT LIFT: Per-Offer Segment Charts (Responders Only)
+# DEPOSIT LIFT: Per-Offer Responder Charts (Clean Conference View)
 # ===========================================================================
-# One chart per offer wave showing pre vs post deposits by response segment.
-# Non-responders are excluded -- this is the conference-ready view.
+# One chart per offer wave. Shows only successful responder segments
+# (TH-10/15/20/25, NU 5+). Drops NU 1-4 and Non-Responders.
 #
-# Depends on: 19c (_seg_rows_multi), 19a (helpers, _DEP_LABEL)
+# Depends on: 19c (_seg_rows_multi), 19a (helpers)
 
 if '_seg_rows_multi' not in dir() or not _seg_rows_multi:
     print("    Run cells 19a -> 19b -> 19c first.")
 else:
     print("=" * 70)
-    print("  DEPOSIT LIFT CHARTS: Per Offer, Responders Only")
+    print("  DEPOSIT LIFT: Responder Segments Only (Conference View)")
     print("=" * 70)
     print()
     print("  WHAT YOU'RE LOOKING AT:")
@@ -18,24 +18,30 @@ else:
     print("    Gray bar  = median monthly deposits BEFORE the offer")
     print("    Green bar = median monthly deposits AFTER the offer")
     print()
-    print("  Non-responders are excluded. This shows only people who")
-    print("  engaged with the program.")
+    print("  SEGMENTS SHOWN:")
+    print("    TH-10/15/20/25 = accounts that hit their swipe challenge goal")
+    print("    NU 5+          = non-users who activated with 5+ swipes")
     print()
-    print("  The number above each pair is the dollar and percent change.")
-    print("  Green = deposits went up. Red = deposits went down.")
+    print("  EXCLUDED: NU 1-4 (tried but missed goal) and Non-Responders.")
     print()
-    print("  The 'N=' below each segment is how many accounts are in")
-    print("  that group. Larger N = more reliable signal.")
+    print("  WHY THIS MAY DIFFER FROM 19B:")
+    print("  19b shows ALL mailed accounts together (responders + non-responders).")
+    print("  Non-responders are ~80-90% of the mailed population. If deposits")
+    print("  went up market-wide (rate changes, seasonal patterns), the overall")
+    print("  in 19b looks positive even if responder segments are flat or down.")
+    print("  This chart isolates just the responders so you can see their")
+    print("  specific deposit behavior without the non-responder majority")
+    print("  pulling the numbers.")
     print()
 
     _sdf = pd.DataFrame(_seg_rows_multi)
 
-    # Handle both old ('Mailer') and new ('Offer') column names
+    # Handle both old and new column names
     if 'Mailer' in _sdf.columns and 'Offer' not in _sdf.columns:
         _sdf = _sdf.rename(columns={'Mailer': 'Offer'})
 
-    # Drop non-responders
-    _sdf = _sdf[_sdf['Segment'] != 'Non-Responder'].copy()
+    # Drop non-responders and NU 1-4
+    _sdf = _sdf[~_sdf['Segment'].isin(['Non-Responder', 'NU 1-4'])].copy()
 
     if len(_sdf) == 0:
         print("  No responder segment data available.")
@@ -52,7 +58,7 @@ else:
             if len(_mdf) == 0:
                 continue
 
-            fig, ax = plt.subplots(figsize=(max(10, len(_mdf) * 2.5), 7))
+            fig, ax = plt.subplots(figsize=(max(10, len(_mdf) * 3), 7))
             x = np.arange(len(_mdf))
             w = 0.3
 
@@ -68,23 +74,27 @@ else:
                 if bar.get_height() > 0:
                     ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
                             f"${bar.get_height():,.0f}", ha='center', va='bottom',
-                            fontsize=12, fontweight='bold', color=GEN_COLORS['muted'])
+                            fontsize=13, fontweight='bold', color=GEN_COLORS['muted'])
             for bar in bars_post:
                 if bar.get_height() > 0:
                     ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
                             f"${bar.get_height():,.0f}", ha='center', va='bottom',
-                            fontsize=12, fontweight='bold', color=GEN_COLORS['success'])
+                            fontsize=13, fontweight='bold', color=GEN_COLORS['success'])
 
-            # Delta annotations
+            # Delta annotations -- position above the taller bar with enough room
+            _ymax = max(_mdf['Pre Med Dep $'].max(), _mdf['Post Med Dep $'].max())
             for i, (_, row) in enumerate(_mdf.iterrows()):
                 _d = row['Change $']
                 _p = row['Change %']
                 _s = '+' if _d >= 0 else ''
                 _c = GEN_COLORS['success'] if _d >= 0 else GEN_COLORS['accent']
                 _top = max(row['Pre Med Dep $'], row['Post Med Dep $'])
-                _y = _top + ax.get_ylim()[1] * 0.06
-                ax.text(i, _y, f"{_s}${_d:,.0f}\n({_s}{_p:.1f}%)",
-                        ha='center', va='bottom', fontsize=13, fontweight='bold', color=_c)
+                _y = _top + _ymax * 0.08
+                ax.text(i, _y, f"{_s}${_d:,.0f} ({_s}{_p:.1f}%)",
+                        ha='center', va='bottom', fontsize=14, fontweight='bold', color=_c)
+
+            # Give headroom for delta labels
+            ax.set_ylim(top=_ymax * 1.25)
 
             ax.set_xticks(x)
             ax.set_xticklabels(_mdf['Segment'], fontsize=14, fontweight='bold')
@@ -96,10 +106,10 @@ else:
             ax.set_axisbelow(True)
 
             _label_text = _DEP_LABEL if '_DEP_LABEL' in dir() else ''
-            fig.suptitle(f"{offer} Offer: Deposit Lift by Segment",
+            fig.suptitle(f"{offer} Offer: Deposit Change by Responder Segment",
                          fontsize=24, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
             fig.text(0.5, 0.96,
-                     f"Responder segments only  |  {_label_text}",
+                     f"TH and NU 5+ segments only  |  {_label_text}",
                      ha='center', fontsize=14, color=GEN_COLORS.get('muted', '#6C757D'),
                      style='italic')
 
