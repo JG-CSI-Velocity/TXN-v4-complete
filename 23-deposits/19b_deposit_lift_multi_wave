@@ -36,6 +36,27 @@
 if '_multi_available' not in dir() or not _multi_available:
     print("    Multi-snapshot not available. Need 2+ Z account files.")
 else:
+    from IPython.display import Markdown
+    display(Markdown("""
+## Cell 19b: Did deposits change after each mailer?
+
+You have two Z account files -- one from before the mailers, one from after.
+Each file has a field called **depAmt365** which is "how much did this person
+deposit in the last year." We divide by 12 to get a monthly number.
+
+For each mailer wave (e.g., Jul 2025), we look at the **same group of people**
+in both files:
+
+- **Pre** = their monthly deposits from the OLDER file (before the mailer)
+- **Post** = their monthly deposits from the NEWER file (after the mailer)
+
+**Green** = deposits went UP after the mailer. **Red** = deposits went DOWN.
+
+**Important caveat:** depAmt365 is a 12-month rolling average, so it's blurry.
+It's not "deposits in July" -- it's "deposits over the whole prior year."
+Think of it like comparing two annual physicals, not two blood pressure readings.
+Treat this as directional evidence.
+"""))
     print("  === Deposit Lift by Mailer Wave (Multi-Snapshot) ===\n")
 
     _snap_dates = {}
