@@ -8,8 +8,9 @@
 # Guard: try/except for missing columns.
 
 try:
-    if 'camp_acct' not in dir() or len(camp_acct) == 0:
-        raise NameError("camp_acct not available")
+    _missing = [v for v in ('camp_acct', 'rewards_df', 'mail_cols', 'resp_cols') if v not in dir()]
+    if _missing or len(camp_acct) == 0:
+        raise NameError(f"Required data not available: {', '.join(_missing) if _missing else 'camp_acct is empty'}")
 
     # -----------------------------------------------------------------
     # 1. Discover monthly Spend and Swipes columns dynamically
