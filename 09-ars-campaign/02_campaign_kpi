@@ -6,8 +6,8 @@
 #
 # Depends on: camp_acct, camp_summary, rewards_df (cell 01)
 
-if 'camp_acct' not in dir() or len(camp_acct) == 0:
-    print("    No campaign data. Run cell 01 first.")
+if 'camp_acct' not in dir() or len(camp_acct) == 0 or 'camp_status' not in camp_acct.columns:
+    print("    No campaign data (run cell 01 first). Skipping KPI dashboard.")
 else:
     _DARK = GEN_COLORS.get('dark_text', '#1B2A4A')
     _MUTED = GEN_COLORS.get('muted', '#6C757D')
@@ -26,9 +26,10 @@ else:
     overall_rate = n_responded / n_mailed * 100 if n_mailed > 0 else 0
     mail_penetration = n_mailed / n_eligible * 100 if n_eligible > 0 else 0
 
-    # Responder share of eligible spend
+    # Responder share of eligible spend (requires transaction data)
     resp_spend_share = 0
-    if 'camp_status_agg' in dir() and len(camp_status_agg) > 0:
+    if ('camp_status_agg' in dir() and len(camp_status_agg) > 0
+            and 'camp_status' in camp_status_agg.columns):
         _total_spend = camp_status_agg['total_spend'].sum()
         _resp_spend = camp_status_agg.loc[
             camp_status_agg['camp_status'] == 'Responder', 'total_spend'
@@ -50,7 +51,7 @@ else:
         {'label': 'Total\nMailed', 'value': f"{n_mailed:,}",
          'sub': f"{mail_penetration:.0f}% of eligible", 'color': _INFO},
         {'label': 'Total\nResponded', 'value': f"{n_responded:,}",
-         'sub': f"across {len(camp_summary)} waves", 'color': _SUCCESS},
+         'sub': f"across {len(camp_summary) if 'camp_summary' in dir() else 0} waves", 'color': _SUCCESS},
         {'label': 'Unique\nResponders', 'value': f"{n_unique_resp:,}",
          'sub': 'distinct accounts', 'color': _WARNING},
         {'label': 'Overall\nResponse Rate', 'value': f"{overall_rate:.1f}%",
