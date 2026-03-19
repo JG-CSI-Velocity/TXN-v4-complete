@@ -9,8 +9,16 @@
 try:
     # Identify available mail/resp columns
     rewards_cols = [c.strip() for c in rewards_df.columns]
-    mail_cols = sorted([c for c in rewards_cols if c.endswith(' Mail')])
-    resp_cols = sorted([c for c in rewards_cols if c.endswith(' Resp')])
+    def _chrono_key(col_name):
+        """Sort key: 'Apr25 Mail' -> parse 'Apr25' as a date for chronological order."""
+        label = col_name.split(' ')[0]
+        try:
+            return pd.to_datetime(label, format='%b%y')
+        except (ValueError, TypeError):
+            return pd.Timestamp.max
+
+    mail_cols = sorted([c for c in rewards_cols if c.endswith(' Mail')], key=_chrono_key)
+    resp_cols = sorted([c for c in rewards_cols if c.endswith(' Resp')], key=_chrono_key)
 
     if len(mail_cols) == 0 and len(resp_cols) == 0:
         print("    No mail/response columns found in ODDD. Skipping campaign analysis.")
