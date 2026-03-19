@@ -110,14 +110,19 @@ else:
 
             for seg in sorted(_segments.dropna().unique()):
                 _seg_keys = set(_acct_keys[_segments == seg])
+                _seg_total = len(_seg_keys)
                 _seg_common = [k for k in _common if k in _seg_keys]
-                if len(_seg_common) < 5:
+                _seg_matched = len(_seg_common)
+                if _seg_matched < 5:
                     continue
+                _match_rate = _seg_matched / _seg_total * 100 if _seg_total > 0 else 0
                 _seg_rows_multi.append(_make_wave_row(
-                    _label, len(_seg_common),
+                    _label, _seg_matched,
                     _pre_dep.loc[_seg_common].median(),
                     _post_dep.loc[_seg_common].median(),
-                    {'Segment': seg}))
+                    {'Segment': seg,
+                     'Total in ODDD': _seg_total,
+                     'Match Rate': _match_rate}))
 
             _nr_keys = set(_acct_keys[~_resp_vals.map(_is_success)])
             _nr_common = [k for k in _common if k in _nr_keys]
@@ -135,6 +140,30 @@ else:
                 _sdf_multi[c] = _sdf_multi[c].round(1)
 
         _display_table(_sdf_multi, f"Deposit Lift by Segment  |  {_DEP_LABEL}")
+
+        # Diagnostic: match rates per segment
+        if 'Match Rate' in _sdf_multi.columns:
+            print()
+            print("  " + "-" * 66)
+            print("  DATA QUALITY CHECK: Join Match Rates")
+            print("  " + "-" * 66)
+            print()
+            print("  'N' = accounts matched to BOTH Z snapshots via acctid.")
+            print("  'Total in ODDD' = how many accounts the ODDD says are in that segment.")
+            print("  'Match Rate' = what % of ODDD accounts we found in the Z files.")
+            print()
+            print("  If match rates vary a lot between segments, the medians are")
+            print("  based on different subsets of the population. A segment with")
+            print("  a low match rate may show unexpected deposit levels because")
+            print("  only a non-representative slice of accounts joined successfully.")
+            print()
+            for _, row in _sdf_multi.iterrows():
+                _mr = row.get('Match Rate', 0)
+                _flag = " <-- LOW" if _mr < 20 else ""
+                print(f"    {row.get('Offer', ''):>8}  {row['Segment']:>16}  "
+                      f"N={int(row['N']):>6,}  of {int(row.get('Total in ODDD', 0)):>6,}  "
+                      f"({_mr:.0f}%){_flag}")
+            print()
 
         # Highlight the conference talking point
         _resp_segs = _sdf_multi[_sdf_multi['Segment'] != 'Non-Responder']
