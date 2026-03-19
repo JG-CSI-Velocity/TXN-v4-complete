@@ -30,6 +30,10 @@ else:
 
     _sdf = pd.DataFrame(_seg_rows_multi)
 
+    # Handle both old ('Mailer') and new ('Offer') column names
+    if 'Mailer' in _sdf.columns and 'Offer' not in _sdf.columns:
+        _sdf = _sdf.rename(columns={'Mailer': 'Offer'})
+
     # Drop non-responders
     _sdf = _sdf[_sdf['Segment'] != 'Non-Responder'].copy()
 
