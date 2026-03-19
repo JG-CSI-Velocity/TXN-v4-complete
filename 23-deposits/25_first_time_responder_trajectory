@@ -206,10 +206,10 @@ else:
         ax2.set_axisbelow(True)
 
         fig.suptitle("First-Time Responder Trajectory: Swipes & Spend",
-                     fontsize=26, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
-        fig.text(0.5, 0.98,
+                     fontsize=26, fontweight='bold', color=GEN_COLORS['dark_text'], y=0.98)
+        fig.text(0.5, 0.93,
                  f"3 months pre, 6 months post first response  |  {DATASET_LABEL}",
                  ha='center', fontsize=14, color=GEN_COLORS['muted'], style='italic')
 
-        plt.tight_layout()
+        plt.tight_layout(rect=[0, 0, 1, 0.91])
         plt.show()
