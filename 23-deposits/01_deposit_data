@@ -58,7 +58,7 @@ else:
 
         for sp in _search_paths:
             for f in sp.glob('*'):
-                if f.is_file() and 'zaccounts' in f.name.lower() and f.suffix.lower() in ('.csv', '.txt'):
+                if f.is_file() and 'zaccounts' in f.name.lower() and f.suffix.lower() in ('.csv', '.txt', ''):
                     found.append(f)
         return sorted(set(found))
 
@@ -176,6 +176,17 @@ else:
         # Fallback: manual config (user must set filenames)
         print(f"\n  No zaccounts files found in {_data_dir}")
         print(f"  Also searched: {_data_dir.parent}")
+        # Show what IS in the directory so user can diagnose
+        _all_dir_files = [f.name for f in _data_dir.iterdir() if f.is_file()] if _data_dir.exists() else []
+        _zacc_like = [n for n in _all_dir_files if 'zacc' in n.lower()]
+        if _zacc_like:
+            print(f"\n  Files with 'zacc' in name (not matched by filter):")
+            for n in _zacc_like:
+                print(f"    {n}")
+        elif _all_dir_files:
+            print(f"\n  Directory has {len(_all_dir_files)} files. First 10:")
+            for n in sorted(_all_dir_files)[:10]:
+                print(f"    {n}")
         print(f"\n  MANUAL CONFIG: Set filenames below to match your files.")
         SNAPSHOT_CONFIG = {
             'Nov24': {'filename': 'zaccounts_nov24.csv', 'filepath': None, 'label': 'Nov 2024', 'sort_key': 202411},
