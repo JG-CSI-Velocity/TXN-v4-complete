@@ -114,3 +114,135 @@ if TRANSACTION_DIR and TRANSACTION_DIR.exists():
         print(f"    WARNING: {len(unparsed_files)} unparsed filenames")
 else:
     print(f"\n  Transaction files: SKIPPED (no path or path not found)")
+
+# ============================================================
+# Z Accounts file discovery
+# ============================================================
+# Filenames like: 1673_zaccounts_20260315 (.csv, .txt, or no extension)
+
+def find_zaccounts_files(search_dir, search_siblings=False):
+    """Find all files with 'zaccounts' in the name."""
+    found = []
+    search_path = Path(search_dir)
+    search_paths = [search_path]
+    if search_siblings and search_path.parent.exists():
+        search_paths.append(search_path.parent)
+        for sibling in search_path.parent.iterdir():
+            if sibling.is_dir() and sibling != search_path:
+                search_paths.append(sibling)
+
+    for sp in search_paths:
+        if not sp.exists():
+            continue
+        for f in sp.glob('*'):
+            if f.is_file() and 'zaccounts' in f.name.lower() and f.suffix.lower() in ('.csv', '.txt', ''):
+                found.append(f)
+    return sorted(set(found))
+
+def parse_zaccounts_date(filename):
+    """Extract date from zaccounts filename.
+    Handles: ####_zaccounts_YYYYMMDD, zaccounts_nov24.csv,
+             1780-zaccounts-dec2025.csv, zaccounts-12312025.csv, etc.
+    Returns (label, sort_key) or None.
+    """
+    stem = Path(filename).stem.lower()
+    _mon_names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+    # Pattern: MonYY or MonYYYY (e.g., nov24, dec2025)
+    m = re.search(r'(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s*(\d{2,4})', stem)
+    if m:
+        _mon_map = {'jan':1,'feb':2,'mar':3,'apr':4,'may':5,'jun':6,
+                    'jul':7,'aug':8,'sep':9,'oct':10,'nov':11,'dec':12}
+        mon = _mon_map[m.group(1)]
+        yr = int(m.group(2))
+        if yr < 100:
+            yr += 2000
+        label = f"{m.group(1).capitalize()}{yr % 100:02d}"
+        return label, yr * 100 + mon
+
+    # Pattern: YYYYMMDD or MMDDYYYY (8 consecutive digits)
+    m = re.search(r'(\d{8})', stem)
+    if m:
+        digits = m.group(1)
+        # Try YYYYMMDD first (####_zaccounts_YYYYMMDD)
+        try:
+            d = datetime.strptime(digits, '%Y%m%d')
+            label = f"{_mon_names[d.month-1]}{d.year % 100:02d}"
+            return label, d.year * 100 + d.month
+        except ValueError:
+            pass
+        # Try MMDDYYYY
+        try:
+            d = datetime.strptime(digits, '%m%d%Y')
+            label = f"{_mon_names[d.month-1]}{d.year % 100:02d}"
+            return label, d.year * 100 + d.month
+        except ValueError:
+            pass
+
+    # Pattern: YYYY-MM or YYYY_MM
+    m = re.search(r'(\d{4})[-_](\d{1,2})', stem)
+    if m:
+        yr, mon = int(m.group(1)), int(m.group(2))
+        if 1 <= mon <= 12:
+            label = f"{_mon_names[mon-1]}{yr % 100:02d}"
+            return label, yr * 100 + mon
+
+    return None
+
+# Discover Z accounts files
+_zacc_search_dir = ZACCOUNTS_DIR if ZACCOUNTS_DIR else ODD_FILE.parent
+_zacc_siblings = ZACCOUNTS_DIR is None  # only search siblings in auto mode
+zaccounts_files = find_zaccounts_files(_zacc_search_dir, search_siblings=_zacc_siblings)
+
+SNAPSHOT_CONFIG = {}
+SNAPSHOT_ORDER = []
+
+if zaccounts_files:
+    print(f"\n  Z accounts files: {len(zaccounts_files)} found")
+    _auto_config = {}
+    _undated = []
+    for fpath in zaccounts_files:
+        parsed = parse_zaccounts_date(fpath.name)
+        if parsed:
+            label, sort_key = parsed
+            _auto_config[label] = {
+                'filename': fpath.name,
+                'filepath': fpath,
+                'label': f"{label[:3]} 20{label[3:]}",
+                'sort_key': sort_key,
+            }
+        else:
+            _undated.append(fpath)
+
+    _sorted_keys = sorted(_auto_config.keys(), key=lambda k: _auto_config[k]['sort_key'])
+
+    if _sorted_keys:
+        SNAPSHOT_CONFIG = {k: _auto_config[k] for k in _sorted_keys}
+        SNAPSHOT_ORDER = _sorted_keys
+        for k in SNAPSHOT_ORDER:
+            print(f"    {k}: {SNAPSHOT_CONFIG[k]['filename']} -> {SNAPSHOT_CONFIG[k]['label']}")
+    elif _undated:
+        print(f"    {len(_undated)} file(s) found (no date in filename):")
+        for i, fpath in enumerate(_undated):
+            key = f"Snap{i+1}"
+            SNAPSHOT_CONFIG[key] = {
+                'filename': fpath.name,
+                'filepath': fpath,
+                'label': f"Snapshot {i+1}",
+                'sort_key': i,
+            }
+            print(f"    {key}: {fpath.name}")
+        SNAPSHOT_ORDER = list(SNAPSHOT_CONFIG.keys())
+else:
+    # Show what's in the directory for debugging
+    _all_files = [f.name for f in _zacc_search_dir.iterdir() if f.is_file()] if _zacc_search_dir.exists() else []
+    _zacc_like = [n for n in _all_files if 'zacc' in n.lower()]
+    print(f"\n  Z accounts files: NONE FOUND in {_zacc_search_dir}")
+    if _zacc_like:
+        print(f"    Files with 'zacc' in name (not matched):")
+        for n in _zacc_like:
+            print(f"      {n}")
+    elif _all_files:
+        print(f"    Directory has {len(_all_files)} files. First 10:")
+        for n in sorted(_all_files)[:10]:
+            print(f"      {n}")
