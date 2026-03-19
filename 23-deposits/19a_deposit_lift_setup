@@ -144,3 +144,11 @@ else:
     print(f"  Multi-snapshot mode: {'YES' if _multi_available else 'NO'}")
     print(f"  Single-snapshot mode: {'YES' if _single_available else 'NO'}")
     print(f"  Mailer waves: {len(mail_cols)}")
+
+    # Build a deposit-friendly label (DATASET_LABEL may say "N/A no transactions")
+    if 'CLIENT_NAME' in dir() and 'CLIENT_ID' in dir():
+        _DEP_LABEL = f"{CLIENT_ID} - {CLIENT_NAME}"
+    elif 'SNAPSHOT_ORDER' in dir() and len(SNAPSHOT_ORDER) > 0:
+        _DEP_LABEL = f"Snapshots: {', '.join(SNAPSHOT_ORDER)}"
+    else:
+        _DEP_LABEL = ''

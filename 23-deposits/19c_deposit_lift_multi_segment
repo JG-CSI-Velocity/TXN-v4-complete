@@ -111,7 +111,7 @@ else:
             if _sdf_multi[c].dtype in ('float64', 'float32'):
                 _sdf_multi[c] = _sdf_multi[c].round(1)
 
-        _display_table(_sdf_multi, f"Deposit Lift by Segment  |  {DATASET_LABEL}")
+        _display_table(_sdf_multi, f"Deposit Lift by Segment  |  {_DEP_LABEL}")
 
         # Highlight the conference talking point
         _resp_segs = _sdf_multi[_sdf_multi['Segment'] != 'Non-Responder']

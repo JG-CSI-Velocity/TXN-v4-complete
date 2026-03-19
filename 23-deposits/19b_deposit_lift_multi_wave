@@ -124,9 +124,9 @@ else:
                 _wdf_multi[c] = _wdf_multi[c].round(1)
 
         _display_table(_wdf_multi,
-            f"Deposit Lift by Mailer ({SNAPSHOT_ORDER[0]} vs {SNAPSHOT_ORDER[-1]})  |  {DATASET_LABEL}")
+            f"Deposit Lift by Mailer ({SNAPSHOT_ORDER[0]} vs {SNAPSHOT_ORDER[-1]})  |  {_DEP_LABEL}")
         _make_chart(_wdf_multi, "Deposit Lift: Pre vs Post Mailer",
-            f"depAmt365/12 compared across snapshots  |  {DATASET_LABEL}")
+            f"depAmt365/12 compared across snapshots  |  {_DEP_LABEL}")
 
         _avg = _wdf_multi['Change $'].mean()
         _s = '+' if _avg >= 0 else ''

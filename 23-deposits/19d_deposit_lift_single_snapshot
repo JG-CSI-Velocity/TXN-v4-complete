@@ -107,7 +107,7 @@ else:
                 _wdf_single[c] = _wdf_single[c].round(1)
 
         _display_table(_wdf_single,
-            f"Deposit Trend: 12mo Avg vs Recent (from {_snap_label})  |  {DATASET_LABEL}")
+            f"Deposit Trend: 12mo Avg vs Recent (from {_snap_label})  |  {_DEP_LABEL}")
 
     if _seg_rows_single:
         _sdf_single = pd.DataFrame(_seg_rows_single)
@@ -116,7 +116,7 @@ else:
                 _sdf_single[c] = _sdf_single[c].round(1)
 
         _display_table(_sdf_single,
-            f"Deposit Trend by Segment: 12mo Avg vs Recent  |  {DATASET_LABEL}")
+            f"Deposit Trend by Segment: 12mo Avg vs Recent  |  {_DEP_LABEL}")
 
         _winners = _sdf_single[(_sdf_single['Change $'] > 0)
                                 & (_sdf_single['Segment'] != 'Non-Responder')]
