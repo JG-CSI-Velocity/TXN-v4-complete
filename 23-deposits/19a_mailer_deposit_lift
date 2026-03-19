@@ -1,246 +1,493 @@
 # ===========================================================================
 # MAILER DEPOSIT LIFT: Pre vs Post Deposits Around Each Mailer Wave
 # ===========================================================================
-# For each mailer wave, finds the Z account snapshot closest BEFORE and
-# AFTER the mail date. Compares deposit levels for mailed accounts to
-# show whether deposits increased after the mailer.
+# Two modes:
+#   Multi-snapshot: compares Z account snapshots before vs after each mailer.
+#   Single-snapshot: uses DepAmt99/66/33 as 3 time points within one file.
+#     DepAmt99 = deposit amount as of 99 days ago (oldest reading)
+#     DepAmt66 = deposit amount as of 66 days ago
+#     DepAmt33 = deposit amount as of 33 days ago (most recent)
+#     If mailer was ~2mo before snapshot, 99d is pre-mailer, 33d is post.
 #
-# Uses deposit_long (one row per account-snapshot) and mail_cols from ODDD.
-# Does NOT compare to non-responders -- just shows the mailed population lift.
+# Breaks out by mailer wave AND by response segment (TH-10, TH-15, etc.)
 #
-# Depends on: deposit_long, rewards_df, mail_cols, SNAPSHOT_CONFIG,
-#             SNAPSHOT_ORDER, GEN_COLORS, DATASET_LABEL
+# Depends on: _acct (cell 04), rewards_df, mail_cols, resp_cols,
+#             SNAPSHOT_CONFIG, SNAPSHOT_ORDER, deposit_long (if multi-snap),
+#             GEN_COLORS, DATASET_LABEL
 
-if 'deposit_long' not in dir() or len(deposit_long) == 0:
-    print("    No deposit_long data. Run cell 01 first.")
-elif 'mail_cols' not in dir():
-    print("    No mail_cols. Run 09-ars-campaign cell 01 or 00-setup first.")
-elif 'SNAPSHOT_CONFIG' not in dir() or len(SNAPSHOT_CONFIG) == 0:
-    print("    No SNAPSHOT_CONFIG. Run cell 01 first.")
+if '_acct' not in dir():
+    print("    Run cell 04 first.")
+elif 'mail_cols' not in dir() or 'resp_cols' not in dir():
+    print("    No mail/resp columns. Run 09-ars-campaign cell 01 first.")
 else:
     from IPython.display import display
 
     # -----------------------------------------------------------------
-    # 1. Build snapshot date lookup
+    # Determine mode: multi-snapshot or single-snapshot
     # -----------------------------------------------------------------
-    _snap_dates = {}
-    for sk in SNAPSHOT_ORDER:
-        sc = SNAPSHOT_CONFIG[sk]
-        _sort = sc['sort_key']
-        _yr = _sort // 100
-        _mo = _sort % 100
-        _snap_dates[sk] = pd.Timestamp(year=_yr, month=_mo, day=15)
+    _multi = ('deposit_long' in dir() and len(deposit_long) > 0
+              and 'SNAPSHOT_ORDER' in dir() and len(SNAPSHOT_ORDER) >= 2)
+    _single = ('DepAmt33' in _acct.columns and 'DepAmt66' in _acct.columns
+               and 'DepAmt99' in _acct.columns)
 
-    print(f"  Snapshots: {', '.join(f'{k} ({v.strftime('%b %Y')})' for k, v in _snap_dates.items())}")
+    if not _multi and not _single:
+        print("    Need either 2+ Z snapshots or DepAmt33/66/99 columns in _acct.")
+    else:
+        # -----------------------------------------------------------------
+        # Helper: classify response segment from Resp column value
+        # -----------------------------------------------------------------
+        def _parse_segment(val):
+            if pd.isna(val):
+                return None
+            v = str(val).strip().upper()
+            if v.startswith('TH-'):
+                return v
+            if v.startswith('TH') and len(v) > 2 and v[2:].strip('-').isdigit():
+                return f"TH-{v[2:].strip('-')}"
+            if v in ('NU 5+', 'NU5+', 'NU 5', 'NU 6', 'NU 7', 'NU 8', 'NU 9', 'NU 10'):
+                return 'NU 5+'
+            if v in ('NU 1-4', 'NU1-4'):
+                return 'NU 1-4'
+            if v in ('10', '15', '20', '25'):
+                return f"TH-{v}"
+            return None
 
-    # -----------------------------------------------------------------
-    # 2. Build mailer date lookup
-    # -----------------------------------------------------------------
-    _mailer_dates = {}
-    for mc in mail_cols:
-        label = mc.replace(' Mail', '')
-        _mailer_dates[label] = pd.to_datetime(label, format='%b%y')
+        def _is_success(val):
+            if pd.isna(val):
+                return False
+            v = str(val).strip().upper()
+            if v.startswith('TH'):
+                return True
+            if v in ('NU 5+', 'NU5+', 'NU 5', 'NU 6', 'NU 7', 'NU 8', 'NU 9', 'NU 10'):
+                return True
+            return False
 
-    print(f"  Mailers:   {', '.join(f'{k} ({v.strftime('%b %Y')})' for k, v in _mailer_dates.items())}")
+        # =================================================================
+        # SINGLE-SNAPSHOT MODE: use DepAmt99/66/33 within one Z file
+        # =================================================================
+        if _single:
+            print("  Mode: Single-snapshot (DepAmt99 / DepAmt66 / DepAmt33)")
 
-    # -----------------------------------------------------------------
-    # 3. For each mailer, find closest pre and post snapshot
-    # -----------------------------------------------------------------
-    _snap_keys = list(_snap_dates.keys())
-    _snap_ts = list(_snap_dates.values())
+            # Snapshot date (use latest SNAPSHOT_CONFIG if available)
+            if 'SNAPSHOT_ORDER' in dir() and len(SNAPSHOT_ORDER) > 0:
+                _sc = SNAPSHOT_CONFIG[SNAPSHOT_ORDER[-1]]
+                _snap_yr = _sc['sort_key'] // 100
+                _snap_mo = _sc['sort_key'] % 100
+                _snap_date = pd.Timestamp(year=_snap_yr, month=_snap_mo, day=15)
+                _snap_label = _sc['label']
+            else:
+                _snap_date = pd.Timestamp.now()
+                _snap_label = 'Latest'
 
-    _wave_results = []
+            print(f"  Snapshot date: {_snap_label} (~{_snap_date.strftime('%b %Y')})")
+            print(f"  99d ago: ~{(_snap_date - pd.DateOffset(days=99)).strftime('%b %d')}")
+            print(f"  33d ago: ~{(_snap_date - pd.DateOffset(days=33)).strftime('%b %d')}")
 
-    for mailer_label, mail_date in _mailer_dates.items():
-        # Find closest snapshot BEFORE mail date
-        _pre_snaps = [(sk, sd) for sk, sd in zip(_snap_keys, _snap_ts) if sd < mail_date]
-        # Find closest snapshot AFTER mail date (at least 1 month after)
-        _post_snaps = [(sk, sd) for sk, sd in zip(_snap_keys, _snap_ts)
-                       if sd >= mail_date + pd.DateOffset(months=1)]
+            # For each mailer, determine which 33/66/99 readings are pre vs post
+            _mailer_dates = {}
+            for mc in mail_cols:
+                label = mc.replace(' Mail', '')
+                _mailer_dates[label] = pd.to_datetime(label, format='%b%y')
 
-        if not _pre_snaps or not _post_snaps:
-            continue
+            # -----------------------------------------------------------------
+            # Per-mailer analysis
+            # -----------------------------------------------------------------
+            _wave_rows = []
+            _seg_rows = []
 
-        _pre_snap = max(_pre_snaps, key=lambda x: x[1])
-        _post_snap = min(_post_snaps, key=lambda x: x[1])
+            for mc, rc in zip(mail_cols, resp_cols):
+                _label = mc.replace(' Mail', '')
+                _mail_date = _mailer_dates[_label]
 
-        # Get mailed accounts for this wave
-        mc = f"{mailer_label} Mail"
-        if mc not in rewards_df.columns:
-            continue
-        _mailed_accts = set(
-            rewards_df.loc[rewards_df[mc].notna(), 'HASHED_ACCOUNT'].astype(str).str.strip()
-        ) if 'HASHED_ACCOUNT' in rewards_df.columns else set()
+                # Days between mail date and snapshot
+                _days_since_mail = (_snap_date - _mail_date).days
+                if _days_since_mail < 33:
+                    continue  # Mailer too recent, no post data
 
-        # Try alternate join key if HASHED_ACCOUNT not in rewards_df
-        if not _mailed_accts:
-            _acct_col = 'Acct Number' if 'Acct Number' in rewards_df.columns else ' Acct Number'
-            if _acct_col in rewards_df.columns and '_join_key' in deposit_long.columns:
-                _mailed_keys = set(
-                    rewards_df.loc[rewards_df[mc].notna(), _acct_col].astype(str).str.strip()
+                # Which readings are pre vs post this mailer?
+                # 99d reading = snapshot_date - 99 days
+                # If mail was sent between the 99d and 33d readings, we have pre/post
+                _t99 = _snap_date - pd.DateOffset(days=99)
+                _t66 = _snap_date - pd.DateOffset(days=66)
+                _t33 = _snap_date - pd.DateOffset(days=33)
+
+                # Determine pre readings (before mail) and post readings (after mail)
+                _pre_cols = []
+                _post_cols = []
+                for col, t in [('DepAmt99', _t99), ('DepAmt66', _t66), ('DepAmt33', _t33)]:
+                    if t < _mail_date:
+                        _pre_cols.append(col)
+                    else:
+                        _post_cols.append(col)
+
+                _pre_ct_cols = [c.replace('DepAmt', 'DepCount') for c in _pre_cols
+                                if c.replace('DepAmt', 'DepCount') in _acct.columns]
+                _post_ct_cols = [c.replace('DepAmt', 'DepCount') for c in _post_cols
+                                 if c.replace('DepAmt', 'DepCount') in _acct.columns]
+
+                if not _pre_cols or not _post_cols:
+                    continue
+
+                # Filter to mailed accounts
+                _mailed = rewards_df[mc].notna()
+                _mailed_idx = rewards_df.index[_mailed]
+                _acct_mailed = _acct.reindex(_mailed_idx).dropna(subset=['DepAmt33'])
+
+                if len(_acct_mailed) == 0:
+                    continue
+
+                # Compute pre and post averages per account
+                _pre_avg = _acct_mailed[_pre_cols].fillna(0).mean(axis=1)
+                _post_avg = _acct_mailed[_post_cols].fillna(0).mean(axis=1)
+
+                _wave_rows.append({
+                    'Mailer': _label,
+                    'N': len(_acct_mailed),
+                    'Pre Points': len(_pre_cols),
+                    'Post Points': len(_post_cols),
+                    'Pre Med Dep $': _pre_avg.median(),
+                    'Post Med Dep $': _post_avg.median(),
+                    'Change $': _post_avg.median() - _pre_avg.median(),
+                    'Change %': ((_post_avg.median() - _pre_avg.median())
+                                 / _pre_avg.median() * 100) if _pre_avg.median() > 0 else 0,
+                })
+
+                # Per-segment breakdown
+                if rc in rewards_df.columns:
+                    _resp_vals = rewards_df.loc[_mailed, rc]
+                    _segments = _resp_vals.map(_parse_segment)
+
+                    for seg in sorted(_segments.dropna().unique()):
+                        _seg_mask = _segments == seg
+                        _seg_idx = _resp_vals.index[_seg_mask]
+                        _seg_acct = _acct_mailed.reindex(_seg_idx).dropna(subset=['DepAmt33'])
+                        if len(_seg_acct) < 5:
+                            continue
+
+                        _seg_pre = _seg_acct[_pre_cols].fillna(0).mean(axis=1)
+                        _seg_post = _seg_acct[_post_cols].fillna(0).mean(axis=1)
+
+                        _seg_rows.append({
+                            'Mailer': _label,
+                            'Segment': seg,
+                            'N': len(_seg_acct),
+                            'Pre Med Dep $': _seg_pre.median(),
+                            'Post Med Dep $': _seg_post.median(),
+                            'Change $': _seg_post.median() - _seg_pre.median(),
+                            'Change %': ((_seg_post.median() - _seg_pre.median())
+                                         / _seg_pre.median() * 100) if _seg_pre.median() > 0 else 0,
+                        })
+
+                    # Also add non-responders row
+                    _nr_mask = _mailed & ~_resp_vals.map(_is_success)
+                    _nr_idx = rewards_df.index[_nr_mask]
+                    _nr_acct = _acct_mailed.reindex(_nr_idx).dropna(subset=['DepAmt33'])
+                    if len(_nr_acct) >= 5:
+                        _nr_pre = _nr_acct[_pre_cols].fillna(0).mean(axis=1)
+                        _nr_post = _nr_acct[_post_cols].fillna(0).mean(axis=1)
+                        _seg_rows.append({
+                            'Mailer': _label,
+                            'Segment': 'Non-Responder',
+                            'N': len(_nr_acct),
+                            'Pre Med Dep $': _nr_pre.median(),
+                            'Post Med Dep $': _nr_post.median(),
+                            'Change $': _nr_post.median() - _nr_pre.median(),
+                            'Change %': ((_nr_post.median() - _nr_pre.median())
+                                         / _nr_pre.median() * 100) if _nr_pre.median() > 0 else 0,
+                        })
+
+            # -----------------------------------------------------------------
+            # Display per-mailer table
+            # -----------------------------------------------------------------
+            if _wave_rows:
+                _wdf = pd.DataFrame(_wave_rows)
+                for c in _wdf.columns:
+                    if _wdf[c].dtype in ('float64', 'float32'):
+                        _wdf[c] = _wdf[c].round(1)
+
+                def _color_change(col):
+                    return [f'color: {GEN_COLORS["success"]}; font-weight: bold'
+                            if pd.notna(v) and v > 0
+                            else f'color: {GEN_COLORS["accent"]}; font-weight: bold'
+                            if pd.notna(v) and v < 0
+                            else '' for v in col]
+
+                _wfmt = {'N': '{:,.0f}', 'Pre Points': '{:,.0f}', 'Post Points': '{:,.0f}',
+                         'Pre Med Dep $': '${:,.0f}', 'Post Med Dep $': '${:,.0f}',
+                         'Change $': '${:+,.0f}', 'Change %': '{:+.1f}%'}
+
+                _styled = (
+                    _wdf.style.hide(axis='index')
+                    .format({k: v for k, v in _wfmt.items() if k in _wdf.columns}, na_rep='--')
+                    .apply(_color_change, subset=[c for c in ['Change $', 'Change %'] if c in _wdf.columns])
+                    .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+                        'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+                    .set_properties(subset=['Mailer'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+                    .set_table_styles([
+                        {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                            ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
+                            ('text-align', 'center'), ('padding', '8px 10px')]},
+                        {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                            ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
+                    ])
+                    .set_caption(f"Deposit Lift by Mailer (33/66/99-day readings)  |  {DATASET_LABEL}")
                 )
-                # Use _join_key for matching
+                display(_styled)
+
+                # Chart: Pre vs Post per mailer
+                fig, ax = plt.subplots(figsize=(max(10, len(_wdf) * 3), 7))
+                x = np.arange(len(_wdf))
+                w = 0.3
+
+                ax.bar(x - w/2, _wdf['Pre Med Dep $'], w, label='Pre-Mailer',
+                       color=GEN_COLORS['muted'], edgecolor='white', linewidth=1)
+                ax.bar(x + w/2, _wdf['Post Med Dep $'], w, label='Post-Mailer',
+                       color=GEN_COLORS['success'], edgecolor='white', linewidth=1)
+
+                for i, row in _wdf.iterrows():
+                    _top = max(row['Pre Med Dep $'], row['Post Med Dep $'])
+                    _d = row['Change $']
+                    _p = row['Change %']
+                    _s = '+' if _d >= 0 else ''
+                    _c = GEN_COLORS['success'] if _d >= 0 else GEN_COLORS['accent']
+                    ax.text(i, _top * 1.03, f"{_s}${_d:,.0f} ({_s}{_p:.1f}%)",
+                            ha='center', va='bottom', fontsize=14, fontweight='bold', color=_c)
+
+                ax.set_xticks(x)
+                ax.set_xticklabels(_wdf['Mailer'], fontsize=14, fontweight='bold')
+                ax.set_ylabel("Median Deposit Amount ($)", fontsize=16, fontweight='bold')
+                ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
+                ax.legend(fontsize=14)
+                gen_clean_axes(ax, keep_left=True, keep_bottom=True)
+                ax.yaxis.grid(True, color=GEN_COLORS.get('grid', '#E0E0E0'), linewidth=0.5, alpha=0.7)
+                ax.set_axisbelow(True)
+
+                fig.suptitle("Deposit Lift: Pre vs Post Mailer",
+                             fontsize=26, fontweight='bold', color=GEN_COLORS['dark_text'], y=0.98)
+                fig.text(0.5, 0.93,
+                         f"Using 33/66/99-day deposit readings from Z accounts  |  {DATASET_LABEL}",
+                         ha='center', fontsize=14, color=GEN_COLORS['muted'], style='italic')
+                plt.tight_layout(rect=[0, 0, 1, 0.91])
+                plt.show()
+
+            else:
+                print("\n  No mailer waves fall within the 33-99 day window of the snapshot.")
+
+            # -----------------------------------------------------------------
+            # Display per-segment table
+            # -----------------------------------------------------------------
+            if _seg_rows:
+                _sdf = pd.DataFrame(_seg_rows)
+                for c in _sdf.columns:
+                    if _sdf[c].dtype in ('float64', 'float32'):
+                        _sdf[c] = _sdf[c].round(1)
+
+                _sfmt = {'N': '{:,.0f}', 'Pre Med Dep $': '${:,.0f}', 'Post Med Dep $': '${:,.0f}',
+                         'Change $': '${:+,.0f}', 'Change %': '{:+.1f}%'}
+
+                _styled_seg = (
+                    _sdf.style.hide(axis='index')
+                    .format({k: v for k, v in _sfmt.items() if k in _sdf.columns}, na_rep='--')
+                    .apply(_color_change, subset=[c for c in ['Change $', 'Change %'] if c in _sdf.columns])
+                    .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+                        'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+                    .set_properties(subset=['Mailer'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+                    .set_properties(subset=['Segment'], **{'text-align': 'left'})
+                    .set_table_styles([
+                        {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                            ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
+                            ('text-align', 'center'), ('padding', '8px 10px')]},
+                        {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                            ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
+                    ])
+                    .set_caption(f"Deposit Lift by Segment  |  {DATASET_LABEL}")
+                )
+                display(_styled_seg)
+
+                # Highlight best segments
+                _winners = _sdf[(_sdf['Change $'] > 0) & (_sdf['Segment'] != 'Non-Responder')]
+                if len(_winners) > 0:
+                    _best = _winners.sort_values('Change %', ascending=False).iloc[0]
+                    print(f"\n  Best segment: {_best['Segment']} at {_best['Mailer']}")
+                    print(f"    +${_best['Change $']:,.0f}/deposit ({_best['Change %']:+.1f}%)")
+                    print(f"    N = {int(_best['N']):,} accounts")
+
+                # Any segment with positive lift?
+                _any_lift = _sdf[_sdf['Change $'] > 0]
+                print(f"\n  Segments with positive deposit change: {len(_any_lift)} of {len(_sdf)}")
+
+        # =================================================================
+        # MULTI-SNAPSHOT MODE: compare across Z files
+        # =================================================================
+        elif _multi:
+            print("  Mode: Multi-snapshot")
+
+            _snap_dates = {}
+            for sk in SNAPSHOT_ORDER:
+                sc = SNAPSHOT_CONFIG[sk]
+                _sort = sc['sort_key']
+                _snap_dates[sk] = pd.Timestamp(year=_sort // 100, month=_sort % 100, day=15)
+
+            print(f"  Snapshots: {', '.join(f'{k} ({v.strftime('%b %Y')})' for k, v in _snap_dates.items())}")
+
+            _mailer_dates = {}
+            for mc in mail_cols:
+                label = mc.replace(' Mail', '')
+                _mailer_dates[label] = pd.to_datetime(label, format='%b%y')
+
+            _snap_keys = list(_snap_dates.keys())
+            _snap_ts = list(_snap_dates.values())
+
+            _wave_rows = []
+            _seg_rows = []
+
+            for mc, rc in zip(mail_cols, resp_cols):
+                _label = mc.replace(' Mail', '')
+                _mail_date = _mailer_dates[_label]
+
+                _pre_snaps = [(sk, sd) for sk, sd in zip(_snap_keys, _snap_ts) if sd < _mail_date]
+                _post_snaps = [(sk, sd) for sk, sd in zip(_snap_keys, _snap_ts)
+                               if sd >= _mail_date + pd.DateOffset(months=1)]
+                if not _pre_snaps or not _post_snaps:
+                    continue
+
+                _pre_snap = max(_pre_snaps, key=lambda x: x[1])
+                _post_snap = min(_post_snaps, key=lambda x: x[1])
+
+                # Find mailed accounts
+                _mailed = rewards_df[mc].notna()
+                _join_col = '_join_key' if '_join_key' in deposit_long.columns else 'HASHED_ACCOUNT'
+                _acct_col = 'Acct Number' if 'Acct Number' in rewards_df.columns else ' Acct Number'
+
+                if _join_col == '_join_key' and '_join_key' not in rewards_df.columns:
+                    _mailed_keys = set(rewards_df.loc[_mailed, _acct_col].astype(str).str.strip())
+                else:
+                    _src = '_join_key' if '_join_key' in rewards_df.columns else 'HASHED_ACCOUNT'
+                    if _src not in rewards_df.columns:
+                        _src = _acct_col
+                    _mailed_keys = set(rewards_df.loc[_mailed, _src].astype(str).str.strip())
+
                 _pre_data = deposit_long[
                     (deposit_long['snapshot'] == _pre_snap[0])
-                    & deposit_long['_join_key'].isin(_mailed_keys)
+                    & deposit_long[_join_col].isin(_mailed_keys)
                 ]
                 _post_data = deposit_long[
                     (deposit_long['snapshot'] == _post_snap[0])
-                    & deposit_long['_join_key'].isin(_mailed_keys)
+                    & deposit_long[_join_col].isin(_mailed_keys)
                 ]
+
+                if len(_pre_data) == 0 or len(_post_data) == 0:
+                    continue
+
+                _pre_dep = _pre_data['depAmt365'].fillna(0) / 12
+                _post_dep = _post_data['depAmt365'].fillna(0) / 12
+
+                _wave_rows.append({
+                    'Mailer': _label,
+                    'Pre Snap': _pre_snap[0],
+                    'Post Snap': _post_snap[0],
+                    'N': min(len(_pre_data), len(_post_data)),
+                    'Pre Med Dep $': _pre_dep.median(),
+                    'Post Med Dep $': _post_dep.median(),
+                    'Change $': _post_dep.median() - _pre_dep.median(),
+                    'Change %': ((_post_dep.median() - _pre_dep.median())
+                                 / _pre_dep.median() * 100) if _pre_dep.median() > 0 else 0,
+                })
+
+                # Per-segment breakdown
+                if rc in rewards_df.columns:
+                    _resp_vals = rewards_df.loc[_mailed, rc]
+                    _segments = _resp_vals.map(_parse_segment)
+
+                    for seg in sorted(_segments.dropna().unique()):
+                        _seg_keys = set(
+                            rewards_df.loc[_resp_vals.index[_segments == seg], _acct_col].astype(str).str.strip()
+                        )
+                        _s_pre = deposit_long[
+                            (deposit_long['snapshot'] == _pre_snap[0])
+                            & deposit_long[_join_col].isin(_seg_keys)
+                        ]
+                        _s_post = deposit_long[
+                            (deposit_long['snapshot'] == _post_snap[0])
+                            & deposit_long[_join_col].isin(_seg_keys)
+                        ]
+                        if len(_s_pre) < 5 or len(_s_post) < 5:
+                            continue
+
+                        _sp = _s_pre['depAmt365'].fillna(0) / 12
+                        _spo = _s_post['depAmt365'].fillna(0) / 12
+                        _seg_rows.append({
+                            'Mailer': _label,
+                            'Segment': seg,
+                            'N': min(len(_s_pre), len(_s_post)),
+                            'Pre Med Dep $': _sp.median(),
+                            'Post Med Dep $': _spo.median(),
+                            'Change $': _spo.median() - _sp.median(),
+                            'Change %': ((_spo.median() - _sp.median())
+                                         / _sp.median() * 100) if _sp.median() > 0 else 0,
+                        })
+
+            # Display tables (same styling as single-snapshot mode)
+            if _wave_rows:
+                _wdf = pd.DataFrame(_wave_rows)
+                for c in _wdf.columns:
+                    if _wdf[c].dtype in ('float64', 'float32'):
+                        _wdf[c] = _wdf[c].round(1)
+
+                def _color_change(col):
+                    return [f'color: {GEN_COLORS["success"]}; font-weight: bold'
+                            if pd.notna(v) and v > 0
+                            else f'color: {GEN_COLORS["accent"]}; font-weight: bold'
+                            if pd.notna(v) and v < 0
+                            else '' for v in col]
+
+                _wfmt = {'N': '{:,.0f}', 'Pre Med Dep $': '${:,.0f}', 'Post Med Dep $': '${:,.0f}',
+                         'Change $': '${:+,.0f}', 'Change %': '{:+.1f}%'}
+
+                _styled = (
+                    _wdf.style.hide(axis='index')
+                    .format({k: v for k, v in _wfmt.items() if k in _wdf.columns}, na_rep='--')
+                    .apply(_color_change, subset=[c for c in ['Change $', 'Change %'] if c in _wdf.columns])
+                    .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+                        'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+                    .set_properties(subset=['Mailer'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+                    .set_table_styles([
+                        {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                            ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
+                            ('text-align', 'center'), ('padding', '8px 10px')]},
+                        {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                            ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
+                    ])
+                    .set_caption(f"Deposit Lift by Mailer Wave (Multi-Snapshot)  |  {DATASET_LABEL}")
+                )
+                display(_styled)
             else:
-                continue
-        else:
-            _pre_data = deposit_long[
-                (deposit_long['snapshot'] == _pre_snap[0])
-                & deposit_long['HASHED_ACCOUNT'].isin(_mailed_accts)
-            ]
-            _post_data = deposit_long[
-                (deposit_long['snapshot'] == _post_snap[0])
-                & deposit_long['HASHED_ACCOUNT'].isin(_mailed_accts)
-            ]
+                print("\n  No mailer waves matched to pre/post snapshots.")
 
-        if len(_pre_data) == 0 or len(_post_data) == 0:
-            continue
+            if _seg_rows:
+                _sdf = pd.DataFrame(_seg_rows)
+                for c in _sdf.columns:
+                    if _sdf[c].dtype in ('float64', 'float32'):
+                        _sdf[c] = _sdf[c].round(1)
 
-        # Compute monthly deposit averages
-        _pre_dep_amt = _pre_data['depAmt365'].fillna(0) / 12 if 'depAmt365' in _pre_data.columns else pd.Series(0)
-        _post_dep_amt = _post_data['depAmt365'].fillna(0) / 12 if 'depAmt365' in _post_data.columns else pd.Series(0)
-        _pre_dep_ct = _pre_data['depCount365'].fillna(0) / 12 if 'depCount365' in _pre_data.columns else pd.Series(0)
-        _post_dep_ct = _post_data['depCount365'].fillna(0) / 12 if 'depCount365' in _post_data.columns else pd.Series(0)
+                _sfmt = {'N': '{:,.0f}', 'Pre Med Dep $': '${:,.0f}', 'Post Med Dep $': '${:,.0f}',
+                         'Change $': '${:+,.0f}', 'Change %': '{:+.1f}%'}
 
-        _months_between = ((_post_snap[1].year - _pre_snap[1].year) * 12
-                           + _post_snap[1].month - _pre_snap[1].month)
-
-        _wave_results.append({
-            'Mailer': mailer_label,
-            'Mail Date': mail_date.strftime('%b %Y'),
-            'Pre Snapshot': _pre_snap[0],
-            'Post Snapshot': _post_snap[0],
-            'Months Between': _months_between,
-            'N Matched': min(len(_pre_data), len(_post_data)),
-            'Pre Med Dep $/mo': _pre_dep_amt.median(),
-            'Post Med Dep $/mo': _post_dep_amt.median(),
-            'Dep $ Change': _post_dep_amt.median() - _pre_dep_amt.median(),
-            'Dep $ Change %': ((_post_dep_amt.median() - _pre_dep_amt.median())
-                               / _pre_dep_amt.median() * 100) if _pre_dep_amt.median() > 0 else 0,
-            'Pre Med Dep Ct/mo': _pre_dep_ct.median(),
-            'Post Med Dep Ct/mo': _post_dep_ct.median(),
-            'Dep Ct Change': _post_dep_ct.median() - _pre_dep_ct.median(),
-        })
-
-    if not _wave_results:
-        print("\n  Could not match any mailer waves to pre/post snapshots.")
-        print("  Need at least one snapshot before AND after a mailer date.")
-    else:
-        _df = pd.DataFrame(_wave_results)
-        for _rc in _df.columns:
-            if _df[_rc].dtype in ('float64', 'float32'):
-                _df[_rc] = _df[_rc].round(1)
-
-        # -----------------------------------------------------------------
-        # 4. Display table
-        # -----------------------------------------------------------------
-        _show_cols = ['Mailer', 'Pre Snapshot', 'Post Snapshot', 'N Matched',
-                      'Pre Med Dep $/mo', 'Post Med Dep $/mo', 'Dep $ Change', 'Dep $ Change %',
-                      'Pre Med Dep Ct/mo', 'Post Med Dep Ct/mo', 'Dep Ct Change']
-
-        _show = _df[[c for c in _show_cols if c in _df.columns]]
-
-        _fmt = {}
-        for c in _show.columns:
-            if 'Dep $' in c or 'Change' == c.split(' ')[-1]:
-                _fmt[c] = '${:,.1f}'
-            elif '%' in c:
-                _fmt[c] = '{:+.1f}%'
-            elif c == 'N Matched':
-                _fmt[c] = '{:,.0f}'
-            elif 'Ct' in c:
-                _fmt[c] = '{:,.1f}'
-
-        def _color_change(col):
-            return [f'color: {GEN_COLORS["success"]}; font-weight: bold'
-                    if pd.notna(v) and v > 0
-                    else f'color: {GEN_COLORS["accent"]}; font-weight: bold'
-                    if pd.notna(v) and v < 0
-                    else '' for v in col]
-
-        _styled = (
-            _show.style.hide(axis='index')
-            .format({k: v for k, v in _fmt.items() if k in _show.columns}, na_rep='--')
-            .apply(_color_change, subset=[c for c in ['Dep $ Change', 'Dep $ Change %', 'Dep Ct Change']
-                                          if c in _show.columns])
-            .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
-                'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
-            .set_properties(subset=['Mailer'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
-            .set_table_styles([
-                {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
-                    ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
-                    ('text-align', 'center'), ('padding', '8px 10px')]},
-                {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
-                    ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
-            ])
-            .set_caption(f"Deposit Lift by Mailer Wave (Pre vs Post Z Account Snapshots)  |  {DATASET_LABEL}")
-        )
-        display(_styled)
-
-        # -----------------------------------------------------------------
-        # 5. Chart: Pre vs Post deposit amount per wave
-        # -----------------------------------------------------------------
-        fig, ax = plt.subplots(figsize=(14, 7))
-
-        x = np.arange(len(_df))
-        w = 0.3
-
-        bars_pre = ax.bar(x - w/2, _df['Pre Med Dep $/mo'], w,
-                          label='Pre-Mailer', color=GEN_COLORS['muted'],
-                          edgecolor='white', linewidth=1)
-        bars_post = ax.bar(x + w/2, _df['Post Med Dep $/mo'], w,
-                           label='Post-Mailer', color=GEN_COLORS['success'],
-                           edgecolor='white', linewidth=1)
-
-        # Annotate bars
-        for bar in bars_pre:
-            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
-                    f"${bar.get_height():,.0f}", ha='center', va='bottom',
-                    fontsize=13, fontweight='bold', color=GEN_COLORS['muted'])
-        for bar in bars_post:
-            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height(),
-                    f"${bar.get_height():,.0f}", ha='center', va='bottom',
-                    fontsize=13, fontweight='bold', color=GEN_COLORS['success'])
-
-        # Delta annotation between each pair
-        for i, row in _df.iterrows():
-            _delta = row['Dep $ Change']
-            _pct = row['Dep $ Change %']
-            _sign = '+' if _delta >= 0 else ''
-            _color = GEN_COLORS['success'] if _delta >= 0 else GEN_COLORS['accent']
-            _top = max(row['Pre Med Dep $/mo'], row['Post Med Dep $/mo'])
-            ax.text(i, _top + ax.get_ylim()[1] * 0.04,
-                    f"{_sign}${_delta:,.0f}\n({_sign}{_pct:.1f}%)",
-                    ha='center', va='bottom', fontsize=14, fontweight='bold', color=_color)
-
-        ax.set_xticks(x)
-        ax.set_xticklabels(_df['Mailer'], fontsize=14, fontweight='bold')
-        ax.set_ylabel("Median Monthly Deposits ($/mo)", fontsize=16, fontweight='bold', labelpad=10)
-        ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
-        ax.legend(fontsize=14, loc='upper left')
-
-        gen_clean_axes(ax, keep_left=True, keep_bottom=True)
-        ax.yaxis.grid(True, color=GEN_COLORS.get('grid', '#E0E0E0'), linewidth=0.5, alpha=0.7)
-        ax.set_axisbelow(True)
-
-        fig.suptitle("Deposit Lift: Pre vs Post Mailer",
-                     fontsize=26, fontweight='bold', color=GEN_COLORS['dark_text'], y=0.98)
-        fig.text(0.5, 0.93,
-                 f"Median monthly deposits for mailed accounts  |  {DATASET_LABEL}",
-                 ha='center', fontsize=14, color=GEN_COLORS['muted'], style='italic')
-
-        plt.tight_layout(rect=[0, 0, 1, 0.91])
-        plt.show()
-
-        # Summary
-        _avg_change = _df['Dep $ Change'].mean()
-        _avg_pct = _df['Dep $ Change %'].mean()
-        _sign = '+' if _avg_change >= 0 else ''
-        print(f"\n  Average deposit change across waves: {_sign}${_avg_change:,.0f}/mo ({_sign}{_avg_pct:.1f}%)")
+                _styled_seg = (
+                    _sdf.style.hide(axis='index')
+                    .format({k: v for k, v in _sfmt.items() if k in _sdf.columns}, na_rep='--')
+                    .apply(_color_change, subset=[c for c in ['Change $', 'Change %'] if c in _sdf.columns])
+                    .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
+                        'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
+                    .set_properties(subset=['Mailer'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+                    .set_properties(subset=['Segment'], **{'text-align': 'left'})
+                    .set_table_styles([
+                        {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
+                            ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
+                            ('text-align', 'center'), ('padding', '8px 10px')]},
+                        {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
+                            ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
+                    ])
+                    .set_caption(f"Deposit Lift by Segment (Multi-Snapshot)  |  {DATASET_LABEL}")
+                )
+                display(_styled_seg)
