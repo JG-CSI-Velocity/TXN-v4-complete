@@ -74,7 +74,7 @@ else:
                 'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
             .set_table_styles([
                 {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
-                    ('color', 'white'), ('font-size': '13px'), ('font-weight', 'bold'),
+                    ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
                     ('text-align', 'center'), ('padding', '8px 10px')]},
                 {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
                     ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
