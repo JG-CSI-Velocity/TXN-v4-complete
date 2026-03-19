@@ -416,7 +416,12 @@ else:
             if _oddd_hash and 'HASHED_ACCOUNT' in deposit_df.columns:
                 _strategies.append(('HASHED_ACCOUNT', _oddd_hash, 'HASHED_ACCOUNT match'))
 
-            # Strategy 2: acctid (zaccounts) = Acct Number (ODDD)
+            # Strategy 2: HASHED_ACCOUNT (zaccounts) = Acct Number (ODDD)
+            # The ODDD's "Acct Number" IS the hashed account -- just named differently
+            if 'HASHED_ACCOUNT' in deposit_df.columns and 'Acct Number' in rewards_df.columns:
+                _strategies.append(('HASHED_ACCOUNT', 'Acct Number', 'HASHED_ACCOUNT = Acct Number'))
+
+            # Strategy 3: acctid (zaccounts) = Acct Number (ODDD)
             if 'acctid' in deposit_df.columns and 'Acct Number' in rewards_df.columns:
                 _strategies.append(('acctid', 'Acct Number', 'acctid = Acct Number'))
 
@@ -536,25 +541,54 @@ else:
         # snapshots so we're comparing apples to apples.
         _snap_keys_loaded = list(_snapshots.keys())
         if len(_snap_keys_loaded) >= 2:
+            # Try matching on HASHED_ACCOUNT first, fall back to _join_key
+            _match_col = 'HASHED_ACCOUNT'
             _hash_sets = [
-                set(deposit_long[deposit_long['snapshot'] == s]['HASHED_ACCOUNT'])
+                set(deposit_long[deposit_long['snapshot'] == s][_match_col].astype(str).str.strip())
                 for s in _snap_keys_loaded
             ]
             matched_cohort_hashes = _hash_sets[0]
             for hs in _hash_sets[1:]:
                 matched_cohort_hashes = matched_cohort_hashes & hs
 
-            deposit_long['in_matched_cohort'] = deposit_long['HASHED_ACCOUNT'].isin(
-                matched_cohort_hashes
-            )
-            deposit_df['in_matched_cohort'] = deposit_df['HASHED_ACCOUNT'].isin(
-                matched_cohort_hashes
-            )
+            # If HASHED_ACCOUNT gives 0 overlap, try _join_key (acctid)
+            if len(matched_cohort_hashes) == 0 and '_join_key' in deposit_long.columns:
+                print(f"\n  HASHED_ACCOUNT gives 0 overlap across snapshots -- trying _join_key...")
+                _match_col = '_join_key'
+                _hash_sets = [
+                    set(deposit_long[deposit_long['snapshot'] == s][_match_col].astype(str).str.strip())
+                    for s in _snap_keys_loaded
+                ]
+                matched_cohort_hashes = _hash_sets[0]
+                for hs in _hash_sets[1:]:
+                    matched_cohort_hashes = matched_cohort_hashes & hs
 
-            _total_unique = deposit_long['HASHED_ACCOUNT'].nunique()
+            # If still 0, try acctid directly
+            if len(matched_cohort_hashes) == 0 and 'acctid' in deposit_long.columns and _match_col != 'acctid':
+                print(f"  _join_key gives 0 overlap -- trying acctid...")
+                _match_col = 'acctid'
+                _hash_sets = [
+                    set(deposit_long[deposit_long['snapshot'] == s][_match_col].astype(str).str.strip())
+                    for s in _snap_keys_loaded
+                ]
+                matched_cohort_hashes = _hash_sets[0]
+                for hs in _hash_sets[1:]:
+                    matched_cohort_hashes = matched_cohort_hashes & hs
+
+            deposit_long['in_matched_cohort'] = deposit_long[_match_col].astype(str).str.strip().isin(
+                matched_cohort_hashes
+            )
+            deposit_df['in_matched_cohort'] = deposit_df[_match_col].astype(str).str.strip().isin(
+                matched_cohort_hashes
+            ) if _match_col in deposit_df.columns else False
+
+            MATCHED_COHORT_KEY = _match_col
+
+            _total_unique = deposit_long[_match_col].nunique()
             _matched_n = len(matched_cohort_hashes)
             _matched_pct = _matched_n / _total_unique * 100 if _total_unique > 0 else 0
             print(f"\n  Matched cohort (present in all {len(_snap_keys_loaded)} snapshots):")
+            print(f"    Key: {_match_col}")
             print(f"    {_matched_n:,} of {_total_unique:,} accounts ({_matched_pct:.1f}%)")
         else:
             matched_cohort_hashes = set(deposit_df['HASHED_ACCOUNT'])
