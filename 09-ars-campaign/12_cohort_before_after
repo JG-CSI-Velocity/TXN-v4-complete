@@ -5,7 +5,7 @@
 # for Responders and Non-Responders side by side. (16,8).
 
 if 'cohort_summary' not in dir() or len(cohort_summary) == 0:
-    print("    No cohort data available. Skipping before/after chart.")
+    print("    No cohort data available (run cell 10 first). Skipping before/after chart.")
 else:
     n_waves = len(cohort_summary)
     fig, ax = plt.subplots(figsize=(16, 8))

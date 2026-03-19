@@ -5,8 +5,10 @@
 # the additional spend from responders above the non-responder baseline.
 # Bands stack to show cumulative growth of program impact. (16,8).
 
-if 'cohort_summary' not in dir() or len(cohort_summary) == 0:
-    print("    No cohort data available. Skipping cumulative spend chart.")
+_missing_deps = [v for v in ('cohort_summary', 'WAVE_CONFIG', 'all_months', 'all_month_dates', 'spend_lookup')
+                  if v not in dir()]
+if _missing_deps or len(cohort_summary) == 0:
+    print(f"    Cohort data not available (run cell 10 first). Skipping cumulative spend chart.")
 else:
     # Build monthly time series of "protected spend" per cohort
     # For each wave's responders: protected_spend_in_month_M =

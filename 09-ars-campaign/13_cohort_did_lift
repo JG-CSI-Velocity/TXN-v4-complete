@@ -6,7 +6,7 @@
 # Bars above zero = program is working. (14,7).
 
 if 'cohort_did' not in dir() or len(cohort_did) == 0:
-    print("    No cohort DID data available. Skipping lift chart.")
+    print("    No cohort DID data available (run cell 10 first). Skipping lift chart.")
 else:
     fig, ax = plt.subplots(figsize=(14, 7))
 

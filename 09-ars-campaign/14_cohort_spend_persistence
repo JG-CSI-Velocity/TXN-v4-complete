@@ -5,7 +5,7 @@
 # Shows whether the lift lasts or is a one-time bump. (14,7).
 
 if 'cohort_persist' not in dir() or len(cohort_persist) == 0:
-    print("    No persistence data available. Skipping persistence chart.")
+    print("    No persistence data available (run cell 10 first). Skipping persistence chart.")
 else:
     # Compute DID per wave per window
     persist_did_rows = []
