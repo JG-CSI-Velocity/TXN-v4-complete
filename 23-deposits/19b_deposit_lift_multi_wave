@@ -152,6 +152,36 @@ else:
         _avg = _wdf_multi['Change $'].mean()
         _s = '+' if _avg >= 0 else ''
         print(f"\n  Average deposit change: {_s}${_avg:,.0f}/mo across {len(_wdf_multi)} waves")
+
+        # Interpretation note
+        _pre_snap_label = SNAPSHOT_ORDER[0]
+        _post_snap_label = SNAPSHOT_ORDER[-1]
+        print()
+        print("  " + "-" * 66)
+        print("  HOW TO INTERPRET THESE NUMBERS:")
+        print("  " + "-" * 66)
+        print()
+        print(f"  Both snapshots use depAmt365 -- a ROLLING 365-day deposit total.")
+        print(f"  The {_pre_snap_label} file covers the year BEFORE {_pre_snap_label}.")
+        print(f"  The {_post_snap_label} file covers the year BEFORE {_post_snap_label}.")
+        print()
+        print("  The signal strength depends on WHEN the mailer was sent:")
+        print()
+        print("  EARLY mailers (closer to the pre-snapshot):")
+        print(f"    e.g., a mailer sent shortly after {_pre_snap_label}")
+        print(f"    The {_post_snap_label} file has ~12 months of post-mailer deposits.")
+        print("    STRONG signal -- most of the post number is truly post-mailer.")
+        print()
+        print("  LATE mailers (closer to the post-snapshot):")
+        print(f"    e.g., a mailer sent a few months before {_post_snap_label}")
+        print(f"    The {_post_snap_label} file has only a few months of post-mailer")
+        print("    deposits, blended with many months of pre-mailer deposits.")
+        print("    WEAK signal -- the change is UNDERSTATED.")
+        print("    If you see even a small positive here, the real lift is larger.")
+        print()
+        print("  BOTTOM LINE: Treat early-mailer rows as reliable. Treat")
+        print("  late-mailer rows as conservative -- the real effect is bigger")
+        print("  than what these numbers show.")
     else:
         print("  No mailer waves matched pre/post snapshots, or 0 account overlap.")
         print("  Check that acctid values are consistent between Z files.")
