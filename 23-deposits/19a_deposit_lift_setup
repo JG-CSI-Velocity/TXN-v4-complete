@@ -15,22 +15,25 @@ if '_acct' not in dir():
 elif 'mail_cols' not in dir() or 'resp_cols' not in dir():
     print("    No mail/resp columns. Run 09-ars-campaign cell 01 first.")
 else:
-    from IPython.display import display, Markdown
-    display(Markdown("""
-## Cell 19a: Setup (no output -- just connecting the data)
+    from IPython.display import display
 
-This cell doesn't produce any tables or charts. It does two things behind the scenes:
-
-1. **Connects your two data sources.** The ODDD file knows who got mailed each wave.
-   The Z accounts file knows how much each person deposits. This cell finds the
-   common account ID between them so the next cells can ask: "this person got mailed
-   in July -- what were their deposits before and after?"
-
-2. **Defines shared helper functions** used by cells 19b, 19c, and 19d (chart styling,
-   table formatting, segment classification).
-
-**Run this cell first before 19b/c/d.**
-"""))
+    print("=" * 70)
+    print("  SETUP: Connecting ODDD mailer data to Z account deposit data")
+    print("=" * 70)
+    print()
+    print("  This cell doesn't produce tables or charts. It does two things:")
+    print()
+    print("  1. Connects your two data sources:")
+    print("     - ODDD file (rewards_df) = knows who got mailed each wave")
+    print("     - Z accounts file (deposit_long) = knows deposit amounts")
+    print("     It finds the common account ID between them so the next cells")
+    print("     can ask: 'this person got mailed -- what were their deposits?'")
+    print()
+    print("  2. Defines shared helper functions for cells 19b, 19c, 19d, 19e")
+    print("     (chart styling, table formatting, segment classification).")
+    print()
+    print("  Run this cell first before 19b/c/d/e.")
+    print()
 
     # -----------------------------------------------------------------
     # Helper: classify ODDD Resp column values into segments

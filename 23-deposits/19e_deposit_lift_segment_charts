@@ -9,16 +9,24 @@
 if '_seg_rows_multi' not in dir() or not _seg_rows_multi:
     print("    Run cells 19a -> 19b -> 19c first.")
 else:
-    from IPython.display import Markdown
-    display(Markdown("""
-## Cell 19e: Deposit lift charts per mailer (responders only)
-
-One chart per mailer wave. Each bar pair shows a response segment's median
-monthly deposits **before** (gray) and **after** (green) the mailer.
-Non-responders are excluded so the focus is on the program's effect.
-
-The delta annotation above each pair shows the dollar and percent change.
-"""))
+    print("=" * 70)
+    print("  DEPOSIT LIFT CHARTS: Per Mailer, Responders Only")
+    print("=" * 70)
+    print()
+    print("  WHAT YOU'RE LOOKING AT:")
+    print("  One chart per mailer wave. Each pair of bars is a response segment:")
+    print("    Gray bar  = median monthly deposits BEFORE the mailer")
+    print("    Green bar = median monthly deposits AFTER the mailer")
+    print()
+    print("  Non-responders are excluded. This shows only people who")
+    print("  engaged with the program.")
+    print()
+    print("  The number above each pair is the dollar and percent change.")
+    print("  Green = deposits went up. Red = deposits went down.")
+    print()
+    print("  The 'N=' below each segment is how many accounts are in")
+    print("  that group. Larger N = more reliable signal.")
+    print()
 
     _sdf = pd.DataFrame(_seg_rows_multi)
 
@@ -83,16 +91,11 @@ The delta annotation above each pair shows the dollar and percent change.
             ax.yaxis.grid(True, color=GEN_COLORS.get('grid', '#E0E0E0'), linewidth=0.5, alpha=0.7)
             ax.set_axisbelow(True)
 
-            # Add N counts below segment labels
-            for i, (_, row) in enumerate(_mdf.iterrows()):
-                ax.text(i, ax.get_ylim()[0] - ax.get_ylim()[1] * 0.02,
-                        f"N={int(row['N']):,}", ha='center', va='top',
-                        fontsize=11, color=GEN_COLORS.get('muted', '#6C757D'))
-
+            _label_text = _DEP_LABEL if '_DEP_LABEL' in dir() else ''
             fig.suptitle(f"{mailer} Mailer: Deposit Lift by Segment",
                          fontsize=24, fontweight='bold', color=GEN_COLORS['dark_text'], y=0.98)
             fig.text(0.5, 0.93,
-                     f"Responder segments only (Non-Responders excluded)  |  {_DEP_LABEL}",
+                     f"Responder segments only  |  {_label_text}",
                      ha='center', fontsize=14, color=GEN_COLORS.get('muted', '#6C757D'),
                      style='italic')
 

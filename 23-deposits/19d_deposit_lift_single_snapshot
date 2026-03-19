@@ -34,33 +34,34 @@
 if '_single_available' not in dir() or not _single_available:
     print("    No DepAmt33 or depAmt365 in _acct. Need Z account data.")
 else:
-    from IPython.display import Markdown
-    display(Markdown("""
-## Cell 19d: Are deposits trending up recently? (Single-snapshot backup)
-
-This cell uses just ONE Z account file and compares two fields inside it:
-
-- **Pre (depAmt365 / 12)** = "What's the average monthly deposit over the past
-  full year?" This is the person's "normal" deposit level. It blends together
-  months before AND after the mailer, so it's not a clean "before" number.
-
-- **Post (DepAmt33)** = "What did deposits look like 33 days ago?" This is a
-  point-in-time reading -- a snapshot of the most recent ~1 month.
-
-If someone got a mailer 6 months ago and their **recent deposits (DepAmt33) are
-higher than their yearly average (depAmt365/12)**, that suggests deposits are
-trending up -- possibly because the program activated them.
-
-**Why the numbers may look small:** The yearly average already includes some
-post-mailer months, so it's partially lifted. The actual lift is probably
-LARGER than what this table shows. This is a conservative, directional signal.
-
-**Green** = recent deposits HIGHER than 12-month average (trending up).
-**Red** = recent deposits LOWER than 12-month average (trending down).
-
-This is a backup view. Cells 19b and 19c (multi-snapshot) are more precise.
-"""))
-    print("  === Single-Snapshot: 12-Month Avg vs Recent Deposits ===\n")
+    print("=" * 70)
+    print("  DEPOSIT TREND: 12-Month Average vs Recent (Single-Snapshot)")
+    print("=" * 70)
+    print()
+    print("  WHAT YOU'RE LOOKING AT:")
+    print("  This uses ONE Z account file and compares two fields inside it:")
+    print()
+    print("    PRE  (depAmt365 / 12) = average monthly deposits over the past")
+    print("         full year. This is the person's 'normal' deposit level.")
+    print("         It blends months before AND after the mailer together.")
+    print()
+    print("    POST (DepAmt33) = what deposits looked like 33 days ago.")
+    print("         This is a point-in-time reading, NOT a 33-day total.")
+    print("         Think of it as 'what's happening right now.'")
+    print()
+    print("  If recent deposits (DepAmt33) are higher than the yearly average")
+    print("  (depAmt365/12), deposits are trending UP.")
+    print()
+    print("  WHY THE CHANGES MAY LOOK SMALL:")
+    print("  The yearly average already includes some post-mailer months, so")
+    print("  it's partially lifted. The actual lift is probably LARGER than")
+    print("  shown. This is a conservative, directional signal.")
+    print()
+    print("  Green = recent deposits HIGHER than 12-month average.")
+    print("  Red   = recent deposits LOWER than 12-month average.")
+    print()
+    print("  This is a backup view. Cells 19b/19c (multi-snapshot) are better.")
+    print()
 
     if 'SNAPSHOT_ORDER' in dir() and len(SNAPSHOT_ORDER) > 0:
         _sc = SNAPSHOT_CONFIG[SNAPSHOT_ORDER[-1]]

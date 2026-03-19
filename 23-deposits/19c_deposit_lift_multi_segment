@@ -34,30 +34,30 @@ if '_wave_rows_multi' not in dir() or not _wave_rows_multi:
 elif '_multi_available' not in dir() or not _multi_available:
     print("    Multi-snapshot not available.")
 else:
-    from IPython.display import Markdown
-    display(Markdown("""
-## Cell 19c: Which segments saw deposit growth? (The conference slide)
-
-This is the same before-vs-after comparison as 19b, but now we split each
-mailer into **who responded and how**:
-
-- **TH-10 / TH-15 / TH-20 / TH-25** = people challenged to make that many card
-  swipes to earn a reward. Higher number = they were already more active.
-- **NU 5+** = "Non-User" accounts that weren't using their card at all, then
-  activated with 5+ swipes. These are the program's biggest wins.
-- **NU 1-4** = tried but didn't hit the goal.
-- **Non-Responder** = got the mailer but never met their challenge.
-
-**This is the cell that matters for the presentation.** The story you want:
-
-> "Responders saw deposits go UP, while Non-Responders stayed flat or went DOWN.
-> The program didn't just increase card usage -- it increased deposits too."
-
-**How to read the colors:**
-- If responder segments are **green** and Non-Responder is **red** = program effect
-- If everything is the same color = market-wide trend, not the program
-"""))
-    print("  === Deposit Lift by Response Segment (Multi-Snapshot) ===\n")
+    print("=" * 70)
+    print("  DEPOSIT LIFT BY RESPONSE SEGMENT (The conference slide)")
+    print("=" * 70)
+    print()
+    print("  WHAT YOU'RE LOOKING AT:")
+    print("  Same before-vs-after comparison as 19b, but now we split each")
+    print("  mailer into WHO RESPONDED AND HOW:")
+    print()
+    print("    TH-10/15/20/25 = challenged to make that many card swipes.")
+    print("                     Higher number = already more active customer.")
+    print("    NU 5+          = non-user accounts that activated with 5+ swipes.")
+    print("                     These are the program's biggest wins.")
+    print("    NU 1-4         = tried but didn't hit the goal.")
+    print("    Non-Responder  = got the mailer but didn't meet their challenge.")
+    print()
+    print("  THE STORY FOR THE PRESENTATION:")
+    print("  'Responders saw deposits go UP, while Non-Responders stayed flat")
+    print("   or went DOWN. The program didn't just increase card usage --")
+    print("   it increased deposits too.'")
+    print()
+    print("  HOW TO READ THE COLORS:")
+    print("    Responder segments green + Non-Responder red = PROGRAM EFFECT")
+    print("    Everything same color = market-wide trend, not the program")
+    print()
 
     _dep_key = '_join_key' if '_join_key' in deposit_long.columns else 'acctid'
     if _dep_key not in deposit_long.columns:
