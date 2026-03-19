@@ -62,8 +62,10 @@ else:
             _row = {'Segment': seg, 'R': _r.sum(), 'NR': _nr.sum()}
 
             for col, label, agg in [
-                ('mo_dep_count', 'R Dep Ct', 'mean'),
-                ('mo_dep_count', 'NR Dep Ct', 'mean'),
+                ('mo_dep_count', 'R Med Dep Ct', 'median'),
+                ('mo_dep_count', 'NR Med Dep Ct', 'median'),
+                ('mo_dep_count', 'R Avg Dep Ct', 'mean'),
+                ('mo_dep_count', 'NR Avg Dep Ct', 'mean'),
                 ('mo_dep_amt', 'R Med Dep $', 'median'),
                 ('mo_dep_amt', 'NR Med Dep $', 'median'),
                 ('mo_dep_amt', 'R Avg Dep $', 'mean'),

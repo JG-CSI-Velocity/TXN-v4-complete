@@ -168,13 +168,13 @@ else:
 
                     # Derived deltas: monthly deposit $ and count
                     if 'depAmt365' in _acct.columns and 'depAmt365_early' in _acct.columns:
-                        _acct['mo_dep_amt_early'] = _acct['depAmt365_early'] / 12
+                        _acct['mo_dep_amt_early'] = _acct['depAmt365_early'].fillna(0) / 12
                         _acct['mo_dep_amt_delta'] = (
                             _acct['depAmt365'].fillna(0) / 12
                             - _acct['depAmt365_early'].fillna(0) / 12
                         )
                     if 'depCount365' in _acct.columns and 'depCount365_early' in _acct.columns:
-                        _acct['mo_dep_count_early'] = _acct['depCount365_early'] / 12
+                        _acct['mo_dep_count_early'] = _acct['depCount365_early'].fillna(0) / 12
                         _acct['mo_dep_count_delta'] = (
                             _acct['depCount365'].fillna(0) / 12
                             - _acct['depCount365_early'].fillna(0) / 12
