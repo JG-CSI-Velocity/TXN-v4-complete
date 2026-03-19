@@ -1,0 +1,136 @@
+# ===========================================================================
+# DEPOSIT LIFT: Per-Mailer Wave (Multi-Snapshot)
+# ===========================================================================
+#
+# WHAT THIS SHOWS:
+#   For each mailer wave, compares the median monthly deposit amount
+#   BEFORE the mailer vs AFTER the mailer, using two Z account files.
+#
+# HOW IT WORKS:
+#   You have two Z account snapshot files (e.g., Mar 2025 and Mar 2026).
+#   Each file contains depAmt365 = total deposits over the prior 365 days.
+#   We divide by 12 to get a monthly average.
+#
+#   For a mailer sent in Jul 2025:
+#     PRE  = depAmt365/12 from the Mar 2025 file (before the mailer)
+#     POST = depAmt365/12 from the Mar 2026 file (after the mailer)
+#
+#   We only compare accounts that appear in BOTH files (matched cohort)
+#   so we're looking at the same people before and after.
+#
+# FIELDS USED:
+#   From Z accounts: depAmt365 (total deposits over prior 365 days)
+#   From ODDD: Mail columns (who was mailed each wave)
+#   Join key: acctid (Z accounts) matched to Acct ID (ODDD)
+#
+# GREEN = deposits went UP after the mailer
+# RED   = deposits went DOWN after the mailer
+#
+# NOTE: This is a broad comparison. depAmt365 is a rolling 365-day total,
+# so it blends many months together. A mailer sent 2 months before the
+# post-snapshot will have most of its 365-day window still in the pre
+# period. Treat this as directional evidence, not precise measurement.
+#
+# Depends on: 19a_deposit_lift_setup (helpers, _oddd_key, _multi_available)
+
+if '_multi_available' not in dir() or not _multi_available:
+    print("    Multi-snapshot not available. Need 2+ Z account files.")
+else:
+    print("  === Deposit Lift by Mailer Wave (Multi-Snapshot) ===\n")
+
+    _snap_dates = {}
+    for sk in SNAPSHOT_ORDER:
+        sc = SNAPSHOT_CONFIG[sk]
+        _sort = sc['sort_key']
+        _snap_dates[sk] = pd.Timestamp(year=_sort // 100, month=_sort % 100, day=15)
+
+    _snap_keys = list(_snap_dates.keys())
+    _snap_ts = list(_snap_dates.values())
+
+    print(f"  PRE  snapshot: {_snap_keys[0]} ({_snap_ts[0].strftime('%b %Y')})")
+    print(f"  POST snapshot: {_snap_keys[-1]} ({_snap_ts[-1].strftime('%b %Y')})")
+
+    # Match accounts across snapshots using acctid/_join_key
+    _dep_key = '_join_key' if '_join_key' in deposit_long.columns else 'acctid'
+    if _dep_key not in deposit_long.columns:
+        _dep_key = 'HASHED_ACCOUNT'
+
+    _snap_sets = {}
+    for sk in _snap_keys:
+        _snap_sets[sk] = set(deposit_long.loc[deposit_long['snapshot'] == sk, _dep_key].astype(str).str.strip())
+    _overlap = _snap_sets[_snap_keys[0]]
+    for sk in _snap_keys[1:]:
+        _overlap = _overlap & _snap_sets[sk]
+
+    if len(_overlap) == 0 and 'acctid' in deposit_long.columns and _dep_key != 'acctid':
+        _dep_key = 'acctid'
+        _snap_sets = {}
+        for sk in _snap_keys:
+            _snap_sets[sk] = set(deposit_long.loc[deposit_long['snapshot'] == sk, _dep_key].astype(str).str.strip())
+        _overlap = _snap_sets[_snap_keys[0]]
+        for sk in _snap_keys[1:]:
+            _overlap = _overlap & _snap_sets[sk]
+
+    print(f"  Matched accounts across snapshots: {len(_overlap):,}")
+    print(f"  Field: depAmt365 / 12 = avg monthly deposits over prior year\n")
+
+    _wave_rows_multi = []
+
+    if len(_overlap) > 0:
+        for mc, rc in zip(mail_cols, resp_cols):
+            _label = mc.replace(' Mail', '')
+            _mail_date = pd.to_datetime(_label, format='%b%y')
+
+            _pre_snaps = [(sk, sd) for sk, sd in zip(_snap_keys, _snap_ts) if sd < _mail_date]
+            _post_snaps = [(sk, sd) for sk, sd in zip(_snap_keys, _snap_ts)
+                           if sd >= _mail_date + pd.DateOffset(months=1)]
+            if not _pre_snaps or not _post_snaps:
+                continue
+
+            _pre_snap = max(_pre_snaps, key=lambda x: x[1])
+            _post_snap = min(_post_snaps, key=lambda x: x[1])
+
+            _mailed = rewards_df[mc].notna()
+            _mailed_keys = set(rewards_df.loc[_mailed, _oddd_key].astype(str).str.strip())
+
+            _pre_dl = deposit_long[deposit_long['snapshot'] == _pre_snap[0]].copy()
+            _post_dl = deposit_long[deposit_long['snapshot'] == _post_snap[0]].copy()
+            _pre_dl['_dk'] = _pre_dl[_dep_key].astype(str).str.strip()
+            _post_dl['_dk'] = _post_dl[_dep_key].astype(str).str.strip()
+
+            _pre_mailed = _pre_dl[_pre_dl['_dk'].isin(_mailed_keys)]
+            _post_mailed = _post_dl[_post_dl['_dk'].isin(_mailed_keys)]
+
+            if len(_pre_mailed) == 0 or len(_post_mailed) == 0:
+                continue
+
+            _pre_dep = _pre_mailed.set_index('_dk')['depAmt365'].fillna(0) / 12
+            _post_dep = _post_mailed.set_index('_dk')['depAmt365'].fillna(0) / 12
+
+            _common = _pre_dep.index.intersection(_post_dep.index)
+            if len(_common) < 5:
+                continue
+
+            _wave_rows_multi.append(_make_wave_row(
+                _label, len(_common),
+                _pre_dep.loc[_common].median(),
+                _post_dep.loc[_common].median(),
+                {'Pre Snap': _pre_snap[0], 'Post Snap': _post_snap[0]}))
+
+    if _wave_rows_multi:
+        _wdf_multi = pd.DataFrame(_wave_rows_multi)
+        for c in _wdf_multi.columns:
+            if _wdf_multi[c].dtype in ('float64', 'float32'):
+                _wdf_multi[c] = _wdf_multi[c].round(1)
+
+        _display_table(_wdf_multi,
+            f"Deposit Lift by Mailer ({SNAPSHOT_ORDER[0]} vs {SNAPSHOT_ORDER[-1]})  |  {DATASET_LABEL}")
+        _make_chart(_wdf_multi, "Deposit Lift: Pre vs Post Mailer",
+            f"depAmt365/12 compared across snapshots  |  {DATASET_LABEL}")
+
+        _avg = _wdf_multi['Change $'].mean()
+        _s = '+' if _avg >= 0 else ''
+        print(f"\n  Average deposit change: {_s}${_avg:,.0f}/mo across {len(_wdf_multi)} waves")
+    else:
+        print("  No mailer waves matched pre/post snapshots, or 0 account overlap.")
+        print("  Check that acctid values are consistent between Z files.")
