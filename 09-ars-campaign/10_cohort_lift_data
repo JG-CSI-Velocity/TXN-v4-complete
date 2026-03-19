@@ -8,9 +8,8 @@
 # Guard: try/except for missing columns.
 
 try:
-    if ('camp_acct' not in dir() or len(camp_acct) == 0
-            or 'rewards_df' not in dir() or 'mail_cols' not in dir() or 'resp_cols' not in dir()):
-        raise NameError("Required data not available -- run cell 01 first")
+    if 'camp_acct' not in dir() or len(camp_acct) == 0:
+        raise NameError("camp_acct not available")
 
     # -----------------------------------------------------------------
     # 1. Discover monthly Spend and Swipes columns dynamically

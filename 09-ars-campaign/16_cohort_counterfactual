@@ -4,11 +4,8 @@
 # Dual line chart: actual portfolio spend vs what it would be if responders
 # had followed the non-responder decline trend. The gap = program value. (16,8).
 
-if ('cohort_summary' not in dir() or len(cohort_summary) == 0
-        or 'WAVE_CONFIG' not in dir() or 'all_months' not in dir()
-        or 'all_month_dates' not in dir() or 'spend_lookup' not in dir()
-        or 'rewards_df' not in dir()):
-    print("    Cohort data not available (run cell 10 first). Skipping counterfactual chart.")
+if 'cohort_summary' not in dir() or len(cohort_summary) == 0:
+    print("    No cohort data available. Skipping counterfactual chart.")
 else:
     import time as _time
     _t0 = _time.time()
