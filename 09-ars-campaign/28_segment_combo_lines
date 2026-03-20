@@ -1,7 +1,7 @@
 # ===========================================================================
-# SEGMENT COMBO LINES: Spend + Swipe Trajectories Combined (Per-Mailer)
+# SEGMENT COMBO LINES: Spend + Swipe Trajectories Combined (Per-Offer)
 # ===========================================================================
-# One figure per mailer wave: 2 rows × N segment columns.
+# One figure per offer wave: 2 rows × N segment columns.
 # Row 1: Avg Monthly Spend trajectory.  Row 2: Avg Monthly Swipe trajectory.
 # Two lines per panel: Responder vs Non-Responder.
 #
@@ -88,9 +88,9 @@ else:
                 _suptitle = f"Spend + Swipe Trajectory: {_wave_label}"
                 if wave in _camp_lookup:
                     _ci = _camp_lookup[wave]
-                    _suptitle += (f"   |   {int(_ci['mailed']):,} Mailed"
+                    _suptitle += (f"   |   {int(_ci['mailed']):,} Offered"
                                   f"   |   {int(_ci['responded']):,} Responded"
-                                  f"   |   {_ci['response_rate']:.1f}% Rate")
+                                  f"   |   {_ci['response_rate']:.1f}% Response Rate")
 
                 for r_idx, (cols, offset_fn, ylabel, y_fmt) in enumerate(_row_configs):
                     # Filter to columns with data for this wave
@@ -138,7 +138,7 @@ else:
 
                         # X-axis label only on bottom row
                         if r_idx == n_rows - 1:
-                            ax.set_xlabel('Months from Mail', fontsize=16,
+                            ax.set_xlabel('Months from Offer', fontsize=16,
                                           fontweight='bold', labelpad=4)
 
                         if s_idx == 0:
@@ -159,7 +159,7 @@ else:
                             axes[r_idx][s_idx].set_ylim(_row_ymin, _row_ymax)
 
                 fig.suptitle(_suptitle,
-                             fontsize=18, fontweight='bold', color=_DARK, y=1.02)
+                             fontsize=16, fontweight='bold', color=_DARK, y=1.02)
                 plt.tight_layout()
-                plt.subplots_adjust(hspace=0.3)
+                plt.subplots_adjust(hspace=0.35, bottom=0.08)
                 plt.show()
