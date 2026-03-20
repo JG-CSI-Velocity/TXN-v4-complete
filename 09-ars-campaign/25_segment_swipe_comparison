@@ -75,10 +75,10 @@ else:
                 _wave_date = _wdata['wave_date'].iloc[0]
                 _wave_label = _wave_date.strftime('%b %Y')
 
-                _suptitle = f"Mailer: {_wave_label}"
+                _suptitle = f"Offer: {_wave_label}"
                 if wave in _camp_lookup:
                     _ci = _camp_lookup[wave]
-                    _suptitle += (f"   |   {int(_ci['mailed']):,} Mailed"
+                    _suptitle += (f"   |   {int(_ci['mailed']):,} Offered"
                                   f"   |   {int(_ci['responded']):,} Responded"
                                   f"   |   {_ci['response_rate']:.1f}% Response Rate")
 
@@ -158,18 +158,18 @@ else:
 
                 # Legend below figure with proper spacing
                 _legend_elements = [
-                    Patch(facecolor=_MUTED, alpha=0.35, label='Pre (3mo avg before mail)'),
-                    Patch(facecolor=_MUTED, alpha=1.0, label='Post (3mo avg after mail)'),
+                    Patch(facecolor=_MUTED, alpha=0.35, label='Pre (3mo avg before offer)'),
+                    Patch(facecolor=_MUTED, alpha=1.0, label='Post (3mo avg after offer)'),
                 ]
                 fig.legend(handles=_legend_elements, loc='lower center',
                            ncol=2, fontsize=14, frameon=False,
-                           bbox_to_anchor=(0.5, -0.06))
+                           bbox_to_anchor=(0.5, -0.02))
 
                 fig.suptitle(_suptitle,
                              fontsize=18, fontweight='bold', color=_DARK, y=1.03)
 
                 plt.tight_layout()
-                plt.subplots_adjust(bottom=0.12)
+                plt.subplots_adjust(bottom=0.18)
                 plt.show()
 
             # ------------------------------------------------------------------
