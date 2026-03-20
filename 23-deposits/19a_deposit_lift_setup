@@ -155,7 +155,12 @@ else:
     # Detect multi-snapshot availability
     _multi_available = ('deposit_long' in dir() and len(deposit_long) > 0
                         and 'SNAPSHOT_ORDER' in dir() and len(SNAPSHOT_ORDER) >= 2)
-    _single_available = ('DepAmt33' in _acct.columns and 'depAmt365' in _acct.columns)
+    # Case-insensitive column check
+    _acct_cols_lower = {c.lower(): c for c in _acct.columns}
+    _single_available = ('depamt33' in _acct_cols_lower and 'depamt365' in _acct_cols_lower)
+    # Resolve actual column names for use downstream
+    _col_depamt33 = _acct_cols_lower.get('depamt33', 'DepAmt33')
+    _col_depamt365 = _acct_cols_lower.get('depamt365', 'depAmt365')
 
     print(f"  ODDD join key: '{_oddd_key}'")
     print(f"  Multi-snapshot mode: {'YES' if _multi_available else 'NO'}")

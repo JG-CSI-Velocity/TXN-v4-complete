@@ -5,31 +5,17 @@
 # WHAT THIS SHOWS:
 #   Using a SINGLE Z account file, compares the long-term deposit average
 #   to the most recent deposit reading. If deposits increased recently
-#   (after a offer), the recent reading should be higher.
+#   (after an offer), the recent reading should be higher.
 #
 # HOW IT WORKS:
 #   depAmt365 / 12 = average monthly deposits over the prior FULL YEAR.
-#                    This blends pre-offer and post-offer months together.
-#                    Think of it as the "baseline" level.
-#
-#   DepAmt33       = deposit amount as of 33 days ago from the snapshot date.
-#                    This is NOT a 33-day total -- it's a point-in-time reading
-#                    showing what deposits looked like ~1 month ago.
-#                    This is the "recent" level.
-#
-#   If DepAmt33 > depAmt365/12, deposits are trending UP recently.
-#   If DepAmt33 < depAmt365/12, deposits are trending DOWN recently.
-#
-# WHY IT'S IMPRECISE:
-#   The 365-day average includes BOTH pre and post offer months. So if
-#   deposits went up after the offer, the 365-day average is already
-#   partially lifted. This means the actual lift is probably LARGER than
-#   what this table shows. Treat as a conservative, directional signal.
+#   DepAmt33       = deposit amount as of 33 days ago.
 #
 # GREEN = recent deposits HIGHER than 12-month average (trending up)
 # RED   = recent deposits LOWER than 12-month average (trending down)
 #
-# Depends on: 19a (helpers), _acct (cell 04), rewards_df, mail_cols
+# Depends on: 19a (helpers, _col_depamt33, _col_depamt365), _acct (cell 04),
+#             rewards_df, mail_cols
 
 if '_single_available' not in dir() or not _single_available:
     print("    No DepAmt33 or depAmt365 in _acct. Need Z account data.")
@@ -43,24 +29,12 @@ else:
     print()
     print("    PRE  (depAmt365 / 12) = average monthly deposits over the past")
     print("         full year. This is the person's 'normal' deposit level.")
-    print("         It blends months before AND after the offer together.")
     print()
     print("    POST (DepAmt33) = what deposits looked like 33 days ago.")
     print("         This is a point-in-time reading, NOT a 33-day total.")
-    print("         Think of it as 'what's happening right now.'")
-    print()
-    print("  If recent deposits (DepAmt33) are higher than the yearly average")
-    print("  (depAmt365/12), deposits are trending UP.")
-    print()
-    print("  WHY THE CHANGES MAY LOOK SMALL:")
-    print("  The yearly average already includes some post-offer months, so")
-    print("  it's partially lifted. The actual lift is probably LARGER than")
-    print("  shown. This is a conservative, directional signal.")
     print()
     print("  Green = recent deposits HIGHER than 12-month average.")
     print("  Red   = recent deposits LOWER than 12-month average.")
-    print()
-    print("  This is a backup view. Cells 19b/19c (multi-snapshot) are better.")
     print()
 
     if 'SNAPSHOT_ORDER' in dir() and len(SNAPSHOT_ORDER) > 0:
@@ -72,10 +46,10 @@ else:
         _snap_date = pd.Timestamp.now()
         _snap_label = 'Latest'
 
-    print(f"  Snapshot: {_snap_label} (~{_snap_date.strftime('%b %Y')})")
-    print(f"  PRE column:  depAmt365 / 12  (avg monthly over full year)")
-    print(f"  POST column: DepAmt33        (deposit level ~1 month ago)")
-    print(f"  Offers included: those sent 40-365 days before snapshot\n")
+    print(f"  Snapshot: {_snap_label}")
+    print(f"  PRE:  {_col_depamt365} / 12")
+    print(f"  POST: {_col_depamt33}")
+    print()
 
     _wave_rows_single = []
     _seg_rows_single = []
@@ -90,13 +64,13 @@ else:
 
         _mailed = rewards_df[mc].notna()
         _mailed_idx = rewards_df.index[_mailed]
-        _am = _acct.reindex(_mailed_idx).dropna(subset=['DepAmt33', 'depAmt365'])
+        _am = _acct.reindex(_mailed_idx).dropna(subset=[_col_depamt33, _col_depamt365])
 
         if len(_am) < 10:
             continue
 
-        _baseline = _am['depAmt365'].fillna(0) / 12
-        _recent = _am['DepAmt33'].fillna(0)
+        _baseline = _am[_col_depamt365].fillna(0) / 12
+        _recent = _am[_col_depamt33].fillna(0)
 
         _wave_rows_single.append(_make_wave_row(
             _label, len(_am), _baseline.median(), _recent.median()))
@@ -108,23 +82,23 @@ else:
 
             for seg in sorted(_segments.dropna().unique()):
                 _seg_idx = _resp_vals.index[_segments == seg]
-                _sa = _am.reindex(_seg_idx).dropna(subset=['DepAmt33'])
+                _sa = _am.reindex(_seg_idx).dropna(subset=[_col_depamt33])
                 if len(_sa) < 5:
                     continue
                 _seg_rows_single.append(_make_wave_row(
                     _label, len(_sa),
-                    (_sa['depAmt365'].fillna(0) / 12).median(),
-                    _sa['DepAmt33'].fillna(0).median(),
+                    (_sa[_col_depamt365].fillna(0) / 12).median(),
+                    _sa[_col_depamt33].fillna(0).median(),
                     {'Segment': seg}))
 
             _nr_mask = _mailed & ~_resp_vals.map(_is_success)
             _nr_idx = rewards_df.index[_nr_mask]
-            _nra = _am.reindex(_nr_idx).dropna(subset=['DepAmt33'])
+            _nra = _am.reindex(_nr_idx).dropna(subset=[_col_depamt33])
             if len(_nra) >= 5:
                 _seg_rows_single.append(_make_wave_row(
                     _label, len(_nra),
-                    (_nra['depAmt365'].fillna(0) / 12).median(),
-                    _nra['DepAmt33'].fillna(0).median(),
+                    (_nra[_col_depamt365].fillna(0) / 12).median(),
+                    _nra[_col_depamt33].fillna(0).median(),
                     {'Segment': 'Non-Responder'}))
 
     if _wave_rows_single:
@@ -136,12 +110,10 @@ else:
                 _wdf_single[c] = _wdf_single[c].round(1)
 
         _display_table(_wdf_single,
-            f"Deposit Trend: 12mo Avg vs Recent (from {_snap_label})  |  {_DEP_LABEL}")
+            f"Deposit Trend: 12mo Avg vs Recent (from {_snap_label})")
 
     if _seg_rows_single:
         _sdf_single = pd.DataFrame(_seg_rows_single)
-
-        # Handle both old ('Mailer') and new ('Offer') column names
         if 'Mailer' in _sdf_single.columns and 'Offer' not in _sdf_single.columns:
             _sdf_single = _sdf_single.rename(columns={'Mailer': 'Offer'})
 
@@ -150,7 +122,7 @@ else:
                 _sdf_single[c] = _sdf_single[c].round(1)
 
         _display_table(_sdf_single,
-            f"Deposit Trend by Segment: 12mo Avg vs Recent  |  {_DEP_LABEL}")
+            f"Deposit Trend by Segment: 12mo Avg vs Recent")
 
         _winners = _sdf_single[(_sdf_single['Change $'] > 0)
                                 & (_sdf_single['Segment'] != 'Non-Responder')]
