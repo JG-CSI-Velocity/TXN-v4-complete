@@ -161,7 +161,7 @@ else:
     _overview_text = (
         f"Accounts Mailed: {_n_mailed:,}  |  "
         f"Responders: {_n_resp:,} ({_resp_rate:.1f}%)  |  "
-        f"Mailers: {len(_mail_cols_local)}  |  "
+        f"Offers: {len(_mail_cols_local)}  |  "
         f"Segments: {', '.join(PROGRAM_SEG_ORDER)}"
     )
     _add_section_slide("Program Overview", _overview_text)
@@ -287,9 +287,9 @@ else:
     # =================================================================
     if 'camp_summary' in dir() and len(camp_summary) > 0:
         _cs = camp_summary[['period', 'mailed', 'responded', 'near_use', 'response_rate']].copy()
-        _cs.columns = ['Mailer', 'Mailed', 'Responded', 'NU 1-4', 'Rate %']
+        _cs.columns = ['Offer', 'Mailed', 'Responded', 'NU 1-4', 'Rate %']
         _cs['Rate %'] = _cs['Rate %'].round(1).astype(str) + '%'
-        _add_table_slide("Campaign Response by Mailer", _cs)
+        _add_table_slide("Campaign Response by Offer", _cs)
 
     # =================================================================
     # SLIDE 8: NU Conversion — Deposits (cell 32 chart)

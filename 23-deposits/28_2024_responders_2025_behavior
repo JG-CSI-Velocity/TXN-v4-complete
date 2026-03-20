@@ -1,7 +1,7 @@
 # ===========================================================================
 # 2024 RESPONDERS: 2025 Behavior by Response Segment
 # ===========================================================================
-# Everyone who responded in 2024 (any mailer), grouped by their
+# Everyone who responded in 2024 (any offer), grouped by their
 # response segment (NU 5+, TH-10, TH-15, TH-20, TH-25) vs
 # Non-Responders. Shows their 2025 activity + Z5 deposits.
 #
@@ -25,14 +25,14 @@ else:
         [c.strip() for c in rewards_df.columns if c.strip().endswith(' Resp')],
         key=lambda c: pd.to_datetime(c.replace(' Resp', ''), format='%b%y'))
 
-    # 2024 mailers only
+    # 2024 offers only
     _mail_2024 = [c for c in _mail_cols
                    if pd.to_datetime(c.replace(' Mail', ''), format='%b%y').year == 2024]
     _resp_2024 = [c for c in _resp_cols
                    if pd.to_datetime(c.replace(' Resp', ''), format='%b%y').year == 2024
                    and rewards_df[c].notna().sum() > 0]
 
-    print(f"  2024 mailers: {[c.replace(' Mail', '') for c in _mail_2024]}")
+    print(f"  2024 offers: {[c.replace(' Mail', '') for c in _mail_2024]}")
     print(f"  2024 resp columns: {[c.replace(' Resp', '') for c in _resp_2024]}")
 
     def _parse_seg(val):
@@ -73,7 +73,7 @@ else:
         _resp = _eligible[_rc].apply(_is_success)
         _seg = _eligible[mc].apply(_parse_seg)
 
-        # Track segment assignment (latest mailer wins)
+        # Track segment assignment (latest offer wins)
         _has_seg = _mailed & _seg.notna()
         _acct_seg_2024[_has_seg] = _seg[_has_seg]
         _acct_resp_2024 |= (_mailed & _resp)
@@ -260,7 +260,7 @@ else:
                           fontsize=22, fontweight='bold',
                           color=GEN_COLORS['dark_text'], pad=35, loc='left')
             ax.text(0.0, 1.02,
-                    "Same segment, same mailer assignment  |  "
+                    "Same segment, same offer assignment  |  "
                     "Teal = responded, Gray = did not",
                     transform=ax.transAxes, fontsize=12,
                     color=GEN_COLORS['muted'], style='italic')

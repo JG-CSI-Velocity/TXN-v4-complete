@@ -105,12 +105,8 @@ else:
             ax.yaxis.grid(True, color=GEN_COLORS.get('grid', '#E0E0E0'), linewidth=0.5, alpha=0.7)
             ax.set_axisbelow(True)
 
-            fig.suptitle(f"{offer} Offer: Deposit Change by Responder Segment",
-                         fontsize=24, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.04)
-            fig.text(0.5, 0.99,
-                     "TH and NU 5+ segments only",
-                     ha='center', fontsize=13, color=GEN_COLORS.get('muted', '#6C757D'),
-                     style='italic')
+            ax.set_title(f"{offer} Offer: Deposit Change by Responder Segment\n", fontsize=20, fontweight='bold', color=GEN_COLORS['dark_text'], pad=20, loc='left')
+            ax.text(0.0, 1.02, "TH and NU 5+ segments only", transform=ax.transAxes, fontsize=11, color=GEN_COLORS.get('muted', '#6C757D'), style='italic')
 
-            plt.tight_layout(rect=[0, 0, 1, 0.95])
+            plt.tight_layout()
             plt.show()

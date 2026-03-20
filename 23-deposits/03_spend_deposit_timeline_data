@@ -2,7 +2,7 @@
 # SPEND-DEPOSIT TIMELINE DATA: Unified Monthly Pipeline (Conference Edition)
 # ===========================================================================
 # Builds monthly_by_group: avg monthly spend/swipes per response group,
-# aligned with deposit snapshot markers and mailer wave dates.
+# aligned with deposit snapshot markers and offer wave dates.
 # Also builds per-wave pre/post spend analysis.
 #
 # Outputs: monthly_by_group, wave_spend_impact, spend_deposit_aligned

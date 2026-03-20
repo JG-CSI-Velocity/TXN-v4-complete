@@ -1,7 +1,7 @@
 # ===========================================================================
 # WITHIN-SEGMENT DID: Swipe & Spend -- Same Challenge, Two Outcomes
 # ===========================================================================
-# Per segment: DID for swipes and spend across all mailers.
+# Per segment: DID for swipes and spend across all offers.
 #
 # Depends on: _segment_cohort_df (cell 22), PROGRAM_SEG_ORDER, GEN_COLORS
 
@@ -10,7 +10,7 @@ if '_segment_cohort_df' not in dir() or len(_segment_cohort_df) == 0:
 else:
     from IPython.display import display
 
-    # Aggregate DID by segment (average across mailers)
+    # Aggregate DID by segment (average across offers)
     _rows = []
     for seg in PROGRAM_SEG_ORDER:
         _sd = _segment_cohort_df[_segment_cohort_df['Segment'] == seg]
@@ -18,7 +18,7 @@ else:
             continue
         _row = {
             'Segment': seg,
-            'Mailers': len(_sd),
+            'Offers': len(_sd),
             'Avg R N': _sd['R N'].mean(),
             'Avg NR N': _sd['NR N'].mean(),
         }
@@ -28,12 +28,12 @@ else:
                 _vals = _sd[_col].dropna()
                 _row[f'{metric} DID'] = _vals.mean() if len(_vals) > 0 else np.nan
                 _row[f'{metric} +DID'] = (_vals > 0).sum()
-                _row[f'{metric} Mailers'] = len(_vals)
+                _row[f'{metric} Offers'] = len(_vals)
         _rows.append(_row)
 
     _df = pd.DataFrame(_rows)
     for _rc in _df.columns:
-        if _rc not in ('Segment', 'Mailers') and _df[_rc].dtype in ('float64', 'float32'):
+        if _rc not in ('Segment', 'Offers') and _df[_rc].dtype in ('float64', 'float32'):
             _df[_rc] = _df[_rc].round(1)
 
     def _color_did(col):
@@ -42,11 +42,11 @@ else:
                 else f'color: {GEN_COLORS["accent"]}' if pd.notna(v) and v < 0
                 else '' for v in col]
 
-    _fmt = {'Mailers': '{:,.0f}', 'Avg R N': '{:,.0f}', 'Avg NR N': '{:,.0f}'}
+    _fmt = {'Offers': '{:,.0f}', 'Avg R N': '{:,.0f}', 'Avg NR N': '{:,.0f}'}
     for c in _df.columns:
         if 'DID' in c and '+' not in c:
             _fmt[c] = '${:,.1f}' if 'Spend' in c else '{:,.1f}'
-        elif '+DID' in c or 'Mailers' in c:
+        elif '+DID' in c or 'Offers' in c:
             _fmt[c] = '{:,.0f}'
 
     _styled = (
@@ -63,9 +63,55 @@ else:
             {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
                 ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
         ])
-        .set_caption("Within-Segment DID: Same Challenge, Two Outcomes (Avg Across Mailers)")
+        .set_caption("Within-Segment DID: Same Challenge, Two Outcomes (Avg Across Offers)")
     )
     display(_styled)
 
-    print(f"\n  +DID = number of mailers with positive DID for that segment")
+    print(f"\n  +DID = number of offers with positive DID for that segment")
     print(f"  NU 5+ = Responder. Same challenge comparison only.")
+
+    # ── Chart: Segment DID for Swipes & Spend ────────────────────
+    import matplotlib.pyplot as plt
+
+    _seg_labels = _df['Segment'].tolist()
+    _n_seg = len(_seg_labels)
+
+    _has_swipe = 'Swipes DID' in _df.columns
+    _has_spend = 'Spend DID' in _df.columns
+
+    if _has_swipe or _has_spend:
+        _metrics = []
+        if _has_swipe:
+            _metrics.append(('Swipes DID', 'Swipe DID', GEN_COLORS['info']))
+        if _has_spend:
+            _metrics.append(('Spend DID', 'Spend DID ($)', GEN_COLORS['success']))
+
+        _n_metrics = len(_metrics)
+        _bar_w = 0.8 / _n_metrics
+        _x = np.arange(_n_seg)
+
+        fig, ax = plt.subplots(figsize=(12, 7))
+
+        for i, (col, label, color) in enumerate(_metrics):
+            _vals = _df[col].fillna(0).values
+            _offset = (i - (_n_metrics - 1) / 2) * _bar_w
+            ax.barh(_x + _offset, _vals, _bar_w, color=color,
+                    label=label, edgecolor='white', zorder=3)
+
+        ax.axvline(x=0, color=GEN_COLORS['dark_text'], linewidth=0.8, zorder=2)
+        ax.set_yticks(_x)
+        ax.set_yticklabels(_seg_labels, fontsize=13, fontweight='bold')
+        ax.set_xlabel('DID (avg across offers)', fontsize=14, fontweight='bold')
+        ax.set_title('Within-Segment DID: Swipes & Spend',
+                     fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'],
+                     pad=20, loc='left')
+        ax.text(0.0, 1.02, 'Same challenge, two outcomes -- averaged across all offers',
+                transform=ax.transAxes, fontsize=12,
+                color=GEN_COLORS['muted'], style='italic')
+        ax.legend(fontsize=12, loc='best')
+        gen_clean_axes(ax, keep_left=True, keep_bottom=True)
+        ax.xaxis.grid(True, color=GEN_COLORS.get('grid', '#E0E0E0'),
+                       linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+        plt.tight_layout()
+        plt.show()

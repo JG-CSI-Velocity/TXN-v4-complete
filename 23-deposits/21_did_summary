@@ -1,7 +1,7 @@
 # ===========================================================================
 # DID SUMMARY: One-Page Proof Table
 # ===========================================================================
-# One row per mailer + ALL aggregate. DID for Swipes, Spend, Items.
+# One row per offer + ALL aggregate. DID for Swipes, Spend, Items.
 # The summary slide for the presentation.
 #
 # Depends on: rewards_df, _acct (cell 04), GEN_COLORS
@@ -65,7 +65,7 @@ else:
         if _r.sum() == 0 or _nr.sum() == 0:
             continue
 
-        _row = {'Mailer': _month, 'Mailed': _mailed.sum(),
+        _row = {'Offer': _month, 'Mailed': _mailed.sum(),
                 'Responded': _r.sum(),
                 'Rate': _r.sum() / _mailed.sum() * 100}
 
@@ -88,9 +88,9 @@ else:
 
         _rows.append(_row)
 
-    # ALL MAILERS aggregate
+    # ALL OFFERS aggregate
     if _rows:
-        _agg = {'Mailer': 'ALL MAILERS',
+        _agg = {'Offer': 'ALL OFFERS',
                 'Mailed': sum(r['Mailed'] for r in _rows),
                 'Responded': sum(r['Responded'] for r in _rows)}
         _agg['Rate'] = _agg['Responded'] / _agg['Mailed'] * 100 if _agg['Mailed'] > 0 else 0
@@ -103,7 +103,7 @@ else:
     _last = len(_df) - 1
 
     for _rc in _df.columns:
-        if _rc not in ('Mailer', 'Mailed', 'Responded') and _df[_rc].dtype in ('float64', 'float32'):
+        if _rc not in ('Offer', 'Mailed', 'Responded') and _df[_rc].dtype in ('float64', 'float32'):
             _df[_rc] = _df[_rc].round(1)
 
     def _style(row):
@@ -130,7 +130,7 @@ else:
         .apply(_style, axis=1).apply(_color_did)
         .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
             'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
-        .set_properties(subset=['Mailer'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+        .set_properties(subset=['Offer'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
         .set_table_styles([
             {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
                 ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
@@ -138,7 +138,7 @@ else:
             {'selector': 'caption', 'props': [('font-size', '24px'), ('font-weight', 'bold'),
                 ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '14px')]},
         ])
-        .set_caption("DID Summary: Program Proof by Mailer")
+        .set_caption("DID Summary: Program Proof by Offer")
     )
     display(_styled)
 
@@ -147,4 +147,42 @@ else:
         for metric in ['Swipes', 'Spend', 'Items']:
             _vals = [r.get(f'{metric} DID') for r in _rows[:-1] if pd.notna(r.get(f'{metric} DID'))]
             _pos = sum(1 for v in _vals if v > 0)
-            print(f"  {metric} DID: {_pos}/{len(_vals)} mailers positive")
+            print(f"  {metric} DID: {_pos}/{len(_vals)} offers positive")
+
+        # ── Chart: DID Spend Lift per Offer Wave ────────────────────
+        import matplotlib.pyplot as plt
+
+        if 'Spend DID' in _df.columns:
+            _chart_df = _df[_df['Offer'] != 'ALL OFFERS'].copy()
+            _offers = _chart_df['Offer'].tolist()
+            _vals = _chart_df['Spend DID'].fillna(0).values
+            _colors = [GEN_COLORS['success'] if v >= 0 else GEN_COLORS['accent'] for v in _vals]
+
+            fig, ax = plt.subplots(figsize=(14, 6))
+            _bars = ax.bar(range(len(_offers)), _vals, color=_colors,
+                           edgecolor='white', linewidth=0.8, width=0.6, zorder=3)
+
+            for bar, val in zip(_bars, _vals):
+                ax.text(bar.get_x() + bar.get_width() / 2,
+                        bar.get_height() + (0.5 if val >= 0 else -1.5),
+                        f'${val:.1f}', ha='center',
+                        va='bottom' if val >= 0 else 'top',
+                        fontsize=11, fontweight='bold',
+                        color=GEN_COLORS['dark_text'])
+
+            ax.axhline(y=0, color=GEN_COLORS['dark_text'], linewidth=1, zorder=2)
+            ax.set_xticks(range(len(_offers)))
+            ax.set_xticklabels(_offers, fontsize=12, fontweight='bold')
+            ax.set_ylabel('Spend DID ($)', fontsize=14, fontweight='bold')
+            ax.set_title('DID Spend Lift by Offer Wave',
+                         fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'],
+                         pad=20, loc='left')
+            ax.text(0.0, 1.02, 'Green = positive lift, Red = negative',
+                    transform=ax.transAxes, fontsize=12,
+                    color=GEN_COLORS['muted'], style='italic')
+            gen_clean_axes(ax, keep_left=True, keep_bottom=True)
+            ax.yaxis.grid(True, color=GEN_COLORS.get('grid', '#E0E0E0'),
+                          linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+            plt.tight_layout()
+            plt.show()

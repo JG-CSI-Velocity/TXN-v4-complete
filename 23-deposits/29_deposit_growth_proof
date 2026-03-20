@@ -1,7 +1,7 @@
 # ===========================================================================
 # POST-RESPONSE COHORT TRAJECTORY: T-Indexed Behavioral Proof
 # ===========================================================================
-# For each account, T+0 = first response month (R) or first mailer (NR).
+# For each account, T+0 = first response month (R) or first offer (NR).
 # Track ODDD metrics (swipes, spend, items) at T-6 through T+18.
 # Overlay Z5 deposit windows mapped to approximate calendar months.
 #
@@ -55,8 +55,8 @@ else:
     # =================================================================
     # 1. Find T+0 for each account
     # =================================================================
-    # R: first mailer month where they responded
-    # NR: first mailer month they received
+    # R: first offer month where they responded
+    # NR: first offer month they received
     _acct_t0 = pd.Series(pd.NaT, index=_acct.index)
 
     # Pass 1: Responders -- first response month
@@ -71,7 +71,7 @@ else:
         _first_resp = _mailed & _resp & _acct_t0.isna() & (_acct['group'] == 'Responder')
         _acct_t0[_first_resp] = _month_dt
 
-    # Pass 2: Non-Responders -- first mailer month
+    # Pass 2: Non-Responders -- first offer month
     for mc in _mail_cols:
         _month_str = mc.replace(' Mail', '')
         _month_dt = pd.to_datetime(_month_str, format='%b%y')
@@ -368,15 +368,15 @@ else:
                       facecolor='white', edgecolor=GEN_COLORS['grid'])
 
         fig.suptitle("Post-Response Trajectory: Balanced Panel",
-                      fontsize=24, fontweight='bold',
-                      color=GEN_COLORS['dark_text'], y=1.04)
-        fig.text(0.5, 0.99,
+                      fontsize=20, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], y=1.06)
+        fig.text(0.5, 1.01,
                  "Same accounts at every T bucket (no cohort-mix bias)  |  "
                  "Faded = all accounts, Solid = balanced panel",
-                 ha='center', fontsize=13,
-                 color=GEN_COLORS['muted'], style='italic')
+                 ha='center', fontsize=11,
+                 color=GEN_COLORS.get('muted', '#6C757D'), style='italic')
 
-        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
         plt.show()
 
     # =================================================================
@@ -423,15 +423,15 @@ else:
                       facecolor='white', edgecolor=GEN_COLORS['grid'])
 
         fig.suptitle("Relative Change: Indexed to Pre-Response Baseline (=100)",
-                      fontsize=24, fontweight='bold',
-                      color=GEN_COLORS['dark_text'], y=1.04)
-        fig.text(0.5, 0.99,
+                      fontsize=20, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], y=1.06)
+        fig.text(0.5, 1.01,
                  "Balanced panel  |  Baseline = avg of T-3 to T-1  |  "
                  "> 100 = improvement over pre-response level",
-                 ha='center', fontsize=13,
-                 color=GEN_COLORS['muted'], style='italic')
+                 ha='center', fontsize=11,
+                 color=GEN_COLORS.get('muted', '#6C757D'), style='italic')
 
-        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
         plt.show()
 
     # =================================================================

@@ -1,7 +1,7 @@
 # ===========================================================================
-# SEGMENT COHORT BUILDER: Per-Mailer x Segment Pre/Post Data
+# SEGMENT COHORT BUILDER: Per-Offer x Segment Pre/Post Data
 # ===========================================================================
-# For each mailer x segment, compute pre/post swipes/spend/items.
+# For each offer x segment, compute pre/post swipes/spend/items.
 # Responder vs Non-Responder within same segment.
 # Output: _segment_cohort used by cells 23-24.
 #
@@ -79,7 +79,7 @@ else:
             if _r.sum() == 0 and _nr.sum() == 0:
                 continue
 
-            _row = {'Mailer': _month, 'Segment': seg,
+            _row = {'Offer': _month, 'Segment': seg,
                     'R N': _r.sum(), 'NR N': _nr.sum()}
 
             for metric, cols, dates in [
@@ -113,8 +113,8 @@ else:
     _elapsed = _t.time() - _t0
 
     print(f"  Segment cohort built: {len(_segment_cohort_df)} rows ({_elapsed:.1f}s)")
-    print(f"  Mailers x Segments with data")
+    print(f"  Offers x Segments with data")
     if len(_segment_cohort_df) > 0:
-        _xtab = _segment_cohort_df.groupby(['Mailer', 'Segment']).size()
-        print(f"  {_segment_cohort_df['Mailer'].nunique()} mailers, "
+        _xtab = _segment_cohort_df.groupby(['Offer', 'Segment']).size()
+        print(f"  {_segment_cohort_df['Offer'].nunique()} offers, "
               f"{_segment_cohort_df['Segment'].nunique()} segments")

@@ -192,12 +192,12 @@ else:
             ax2.set_axisbelow(True)
 
         fig.suptitle("First-Time Responder: Deposit Trajectory (Z Account Snapshots)",
-                     fontsize=24, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.04)
-        fig.text(0.5, 0.99,
+                     fontsize=20, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.06)
+        fig.text(0.5, 1.01,
                  "Early vs Latest snapshot comparison",
-                 ha='center', fontsize=13, color=GEN_COLORS['muted'], style='italic')
+                 ha='center', fontsize=11, color=GEN_COLORS.get('muted', '#6C757D'), style='italic')
 
-        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
         plt.show()
 
         # Print delta summary

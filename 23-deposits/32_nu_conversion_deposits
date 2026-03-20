@@ -2,7 +2,7 @@
 # NU CONVERSION LADDER: Card Activation → Deposit Relationship
 # ===========================================================================
 # Within the NU (non-user) segment, all accounts started as non-card-users.
-# The ONLY difference is how they responded to the mailer:
+# The ONLY difference is how they responded to the offer:
 #   NU 5+  = Converted (hit 5+ swipes threshold — Responder)
 #   NU 1-4 = Partial activation (tried, missed threshold)
 #   NU 0   = Never activated (mailed, no card usage)
@@ -236,7 +236,7 @@ else:
                       color=GEN_COLORS['dark_text'], pad=35, loc='left')
         ax.text(0.0, 1.02,
                 "All accounts started as non-card-users  |  "
-                "Only difference is how they responded to the mailer",
+                "Only difference is how they responded to the offer",
                 transform=ax.transAxes, fontsize=12,
                 color=GEN_COLORS['muted'], style='italic')
 
@@ -244,7 +244,7 @@ else:
         plt.show()
 
     # =================================================================
-    # 4. Conversion wave analysis: NU progression across mailers
+    # 4. Conversion wave analysis: NU progression across offers
     # =================================================================
     # Track how NU accounts progressed through waves
     _wave_data = []
@@ -299,7 +299,7 @@ else:
                     ('font-weight', 'bold'), ('color', GEN_COLORS['dark_text']),
                     ('text-align', 'left'), ('padding-bottom', '12px')]},
             ])
-            .set_caption("NU Conversion by Mailer Wave")
+            .set_caption("NU Conversion by Offer Wave")
         )
         display(_styled)
 

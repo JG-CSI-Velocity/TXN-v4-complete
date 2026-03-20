@@ -184,14 +184,10 @@ else:
             Patch(facecolor=GEN_COLORS.get('success', '#2A9D8F'), label=f'Post ({_post_snap[0]})', alpha=0.8),
         ], fontsize=13, loc='upper right')
 
-        fig.suptitle(f"{_label} Offer: Deposit Distribution by Segment",
-                     fontsize=24, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.04)
-        fig.text(0.5, 0.99,
-                 "Box = IQR (25th-75th pct), capped at 95th pct",
-                 ha='center', fontsize=13, color=GEN_COLORS.get('muted', '#6C757D'),
-                 style='italic')
+        ax.set_title(f"{_label} Offer: Deposit Distribution by Segment\n", fontsize=20, fontweight='bold', color=GEN_COLORS['dark_text'], pad=20, loc='left')
+        ax.text(0.0, 1.02, "Box = IQR (25th-75th pct), capped at 95th pct", transform=ax.transAxes, fontsize=11, color=GEN_COLORS.get('muted', '#6C757D'), style='italic')
 
-        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        plt.tight_layout()
         plt.show()
         _charts_made += 1
 

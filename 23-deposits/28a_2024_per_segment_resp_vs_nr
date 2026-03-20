@@ -20,7 +20,7 @@ else:
         [c.strip() for c in rewards_df.columns if c.strip().endswith(' Mail')],
         key=lambda c: pd.to_datetime(c.replace(' Mail', ''), format='%b%y'))
 
-    # 2024 mailers only
+    # 2024 offers only
     _mail_2024 = [c for c in _mail_cols
                    if pd.to_datetime(c.replace(' Mail', ''), format='%b%y').year == 2024]
 

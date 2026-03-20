@@ -1,7 +1,7 @@
 # ===========================================================================
-# COHORT DID: Per-Mailer by Segment (3mo pre, 3mo post)
+# COHORT DID: Per-Offer by Segment (3mo pre, 3mo post)
 # ===========================================================================
-# One table per mailer. Rows = segments within that mailer.
+# One table per offer. Rows = segments within that offer.
 # Shows the within-segment lift: NU-R vs NU-NR, TH-10-R vs TH-10-NR.
 #
 # Depends on: _segment_cohort_df (cell 22), PROGRAM_SEG_ORDER, GEN_COLORS
@@ -11,11 +11,11 @@ if '_segment_cohort_df' not in dir() or len(_segment_cohort_df) == 0:
 else:
     from IPython.display import display
 
-    _mailers = sorted(_segment_cohort_df['Mailer'].unique(),
+    _offers = sorted(_segment_cohort_df['Offer'].unique(),
                        key=lambda m: pd.to_datetime(m, format='%b%y'))
 
-    for mailer in _mailers:
-        _mdf = _segment_cohort_df[_segment_cohort_df['Mailer'] == mailer]
+    for offer in _offers:
+        _mdf = _segment_cohort_df[_segment_cohort_df['Offer'] == offer]
         if len(_mdf) == 0:
             continue
 
@@ -87,11 +87,11 @@ else:
                 {'selector': 'caption', 'props': [('font-size', '18px'), ('font-weight', 'bold'),
                     ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '8px')]},
             ])
-            .set_caption(f"{mailer} Mailer -- Swipes by Segment ({_total_mailed:,} mailed, {_total_resp:,} responded)")
+            .set_caption(f"{offer} Offer -- Swipes by Segment ({_total_mailed:,} mailed, {_total_resp:,} responded)")
         )
         display(_styled)
 
-        # Spend table for same mailer
+        # Spend table for same offer
         _spend_cols_display = ['Segment', 'R N', 'NR N',
                                 'R Spend Pre', 'R Spend Post', 'R Spend Delta',
                                 'NR Spend Pre', 'NR Spend Post', 'NR Spend Delta',
@@ -121,6 +121,6 @@ else:
                 {'selector': 'caption', 'props': [('font-size', '18px'), ('font-weight', 'bold'),
                     ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '8px')]},
             ])
-            .set_caption(f"{mailer} Mailer -- Spend by Segment")
+            .set_caption(f"{offer} Offer -- Spend by Segment")
         )
         display(_styled_s)

@@ -1,8 +1,8 @@
 # ===========================================================================
-# SUSTAINED LIFT: All Responders per Mailer Trajectory
+# SUSTAINED LIFT: All Responders per Offer Trajectory
 # ===========================================================================
-# Track ALL responders at each mailer (includes repeats).
-# Monthly swipes/spend trajectory vs NR at same mailer.
+# Track ALL responders at each offer (includes repeats).
+# Monthly swipes/spend trajectory vs NR at same offer.
 #
 # Depends on: rewards_df, _acct (cell 04), GEN_COLORS
 
@@ -41,7 +41,7 @@ else:
 
     _eligible = rewards_df.reindex(_acct.index)
 
-    # Per-mailer trajectory tables
+    # Per-offer trajectory tables
     _offsets = list(range(-3, 7))
 
     for mc in _mail_cols:
@@ -104,6 +104,82 @@ else:
                 {'selector': 'caption', 'props': [('font-size', '18px'), ('font-weight', 'bold'),
                     ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '8px')]},
             ])
-            .set_caption(f"{_month} Mailer: R ({_r.sum():,}) vs NR ({_nr.sum():,}) Monthly Trajectory")
+            .set_caption(f"{_month} Offer: R ({_r.sum():,}) vs NR ({_nr.sum():,}) Monthly Trajectory")
         )
         display(_styled)
+
+        # ── Chart: Trajectory Lines (R vs NR) ────────────────────────
+        import matplotlib.pyplot as plt
+
+        _x_vals = [int(o.replace('mo', '').replace('+', '')) for o in _df['Offset']]
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 7))
+
+        # -- Swipes panel --
+        if 'R Swipes' in _df.columns and 'NR Swipes' in _df.columns:
+            ax1.plot(_x_vals, _df['R Swipes'].values, color=GEN_COLORS['success'],
+                     linewidth=3, marker='o', markersize=8,
+                     markeredgecolor='white', markeredgewidth=1.5,
+                     label='Responder', zorder=5)
+            ax1.plot(_x_vals, _df['NR Swipes'].values, color=GEN_COLORS['muted'],
+                     linewidth=3, marker='s', markersize=7,
+                     markeredgecolor='white', markeredgewidth=1.5,
+                     label='Non-Responder', zorder=4)
+            ax1.axvline(x=0, color=GEN_COLORS['accent'], linewidth=2,
+                        linestyle='--', alpha=0.6, label='Offer Date')
+            _r_sw = _df['R Swipes'].values
+            _nr_sw = _df['NR Swipes'].values
+            ax1.fill_between(_x_vals, _r_sw, _nr_sw,
+                             where=[r > n if pd.notna(r) and pd.notna(n) else False
+                                    for r, n in zip(_r_sw, _nr_sw)],
+                             color=GEN_COLORS['success'], alpha=0.1)
+
+        ax1.set_xlabel('Months from Offer', fontsize=14, fontweight='bold')
+        ax1.set_ylabel('Avg Monthly Swipes', fontsize=14, fontweight='bold')
+        ax1.set_title('Card Usage (Swipes)',
+                      fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'],
+                      pad=20, loc='left')
+        ax1.text(0.0, 1.02, f'{_month} offer: R ({_r.sum():,}) vs NR ({_nr.sum():,})',
+                 transform=ax1.transAxes, fontsize=12,
+                 color=GEN_COLORS['muted'], style='italic')
+        ax1.legend(fontsize=11, loc='best')
+        gen_clean_axes(ax1, keep_left=True, keep_bottom=True)
+        ax1.yaxis.grid(True, color=GEN_COLORS.get('grid', '#E0E0E0'),
+                       linewidth=0.5, alpha=0.7)
+        ax1.set_axisbelow(True)
+
+        # -- Spend panel --
+        if 'R Spend' in _df.columns and 'NR Spend' in _df.columns:
+            ax2.plot(_x_vals, _df['R Spend'].values, color=GEN_COLORS['success'],
+                     linewidth=3, marker='o', markersize=8,
+                     markeredgecolor='white', markeredgewidth=1.5,
+                     label='Responder', zorder=5)
+            ax2.plot(_x_vals, _df['NR Spend'].values, color=GEN_COLORS['muted'],
+                     linewidth=3, marker='s', markersize=7,
+                     markeredgecolor='white', markeredgewidth=1.5,
+                     label='Non-Responder', zorder=4)
+            ax2.axvline(x=0, color=GEN_COLORS['accent'], linewidth=2,
+                        linestyle='--', alpha=0.6, label='Offer Date')
+            _r_sp = _df['R Spend'].values
+            _nr_sp = _df['NR Spend'].values
+            ax2.fill_between(_x_vals, _r_sp, _nr_sp,
+                             where=[r > n if pd.notna(r) and pd.notna(n) else False
+                                    for r, n in zip(_r_sp, _nr_sp)],
+                             color=GEN_COLORS['success'], alpha=0.1)
+
+        ax2.set_xlabel('Months from Offer', fontsize=14, fontweight='bold')
+        ax2.set_ylabel('Avg Monthly Spend ($)', fontsize=14, fontweight='bold')
+        ax2.set_title('Card Spend',
+                      fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'],
+                      pad=20, loc='left')
+        ax2.text(0.0, 1.02, f'{_month} offer: R ({_r.sum():,}) vs NR ({_nr.sum():,})',
+                 transform=ax2.transAxes, fontsize=12,
+                 color=GEN_COLORS['muted'], style='italic')
+        ax2.legend(fontsize=11, loc='best')
+        gen_clean_axes(ax2, keep_left=True, keep_bottom=True)
+        ax2.yaxis.grid(True, color=GEN_COLORS.get('grid', '#E0E0E0'),
+                       linewidth=0.5, alpha=0.7)
+        ax2.set_axisbelow(True)
+
+        plt.tight_layout()
+        plt.show()

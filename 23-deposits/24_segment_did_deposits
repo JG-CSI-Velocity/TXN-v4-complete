@@ -105,3 +105,42 @@ else:
         print(f"\n  Deposit metrics from Z5 snapshot")
         print(f"  Accel = DepAmt33/DepAmt66 (>1.0x = accelerating)")
         print(f"  Same segment comparison: NU-R vs NU-NR, TH-10-R vs TH-10-NR")
+
+        # ── Chart: Segment Deposit Metrics R vs NR ───────────────────
+        import matplotlib.pyplot as plt
+
+        _dep_col_r = 'R Avg Dep $' if 'R Avg Dep $' in _df.columns else 'R Med Dep $'
+        _dep_col_nr = 'NR Avg Dep $' if 'NR Avg Dep $' in _df.columns else 'NR Med Dep $'
+
+        if _dep_col_r in _df.columns and _dep_col_nr in _df.columns:
+            _seg_labels = _df['Segment'].tolist()
+            _n_seg = len(_seg_labels)
+            _bar_w = 0.35
+            _x = np.arange(_n_seg)
+
+            fig, ax = plt.subplots(figsize=(12, 7))
+
+            _r_vals = _df[_dep_col_r].fillna(0).values
+            _nr_vals = _df[_dep_col_nr].fillna(0).values
+
+            ax.barh(_x - _bar_w / 2, _nr_vals, _bar_w, color=GEN_COLORS['muted'],
+                    label='Non-Responder', edgecolor='white', zorder=3)
+            ax.barh(_x + _bar_w / 2, _r_vals, _bar_w, color=GEN_COLORS['success'],
+                    label='Responder', edgecolor='white', zorder=3)
+
+            ax.set_yticks(_x)
+            ax.set_yticklabels(_seg_labels, fontsize=13, fontweight='bold')
+            ax.set_xlabel('Avg Monthly Deposit ($)', fontsize=14, fontweight='bold')
+            ax.set_title('Within-Segment Deposits: Responder vs NR',
+                         fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'],
+                         pad=20, loc='left')
+            ax.text(0.0, 1.02, 'Z5 snapshot -- same segment, different outcomes',
+                    transform=ax.transAxes, fontsize=12,
+                    color=GEN_COLORS['muted'], style='italic')
+            ax.legend(fontsize=12, loc='best')
+            gen_clean_axes(ax, keep_left=True, keep_bottom=True)
+            ax.xaxis.grid(True, color=GEN_COLORS.get('grid', '#E0E0E0'),
+                           linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+            plt.tight_layout()
+            plt.show()

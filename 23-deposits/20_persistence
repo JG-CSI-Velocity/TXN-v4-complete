@@ -1,7 +1,7 @@
 # ===========================================================================
 # PERSISTENCE: Does the DID Lift Last? (+1mo, +3mo, +6mo)
 # ===========================================================================
-# For each mailer: DID at 1-month, 3-month, 6-month post windows.
+# For each offer: DID at 1-month, 3-month, 6-month post windows.
 # Shows whether the swipe/spend lift fades or holds.
 #
 # Depends on: rewards_df, _acct (cell 04), GEN_COLORS
@@ -67,7 +67,7 @@ else:
         if _r_mask.sum() == 0 or _nr_mask.sum() == 0:
             continue
 
-        _row = {'Mailer': _month}
+        _row = {'Offer': _month}
 
         for metric, cols, dates in [
             ('Swipes', _swipe_cols, _swipe_dates),
@@ -94,7 +94,7 @@ else:
     if _persist_rows:
         _df = pd.DataFrame(_persist_rows)
         for _rc in _df.columns:
-            if _rc != 'Mailer' and _df[_rc].dtype in ('float64', 'float32'):
+            if _rc != 'Offer' and _df[_rc].dtype in ('float64', 'float32'):
                 _df[_rc] = _df[_rc].round(1)
 
         def _color_did(col):
@@ -105,7 +105,7 @@ else:
 
         _fmt = {}
         for c in _df.columns:
-            if c == 'Mailer': continue
+            if c == 'Offer': continue
             elif 'Spend' in c: _fmt[c] = '${:,.1f}'
             else: _fmt[c] = '{:,.1f}'
 
@@ -115,7 +115,7 @@ else:
             .apply(_color_did)
             .set_properties(**{'font-size': '12px', 'font-weight': 'bold',
                 'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '7px 10px'})
-            .set_properties(subset=['Mailer'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+            .set_properties(subset=['Offer'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
             .set_table_styles([
                 {'selector': 'th', 'props': [('background-color', GEN_COLORS['warning']),
                     ('color', 'white'), ('font-size', '11px'), ('font-weight', 'bold'),
@@ -123,11 +123,66 @@ else:
                 {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
                     ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
             ])
-            .set_caption("Persistence: DID Lift at +1mo, +3mo, +6mo by Mailer")
+            .set_caption("Persistence: DID Lift at +1mo, +3mo, +6mo by Offer")
         )
         display(_styled)
 
         print(f"\n  DID = (Resp change) - (NR change) at each window")
         print(f"  If DID holds or grows from +1mo to +6mo: lift is persistent")
+
+        # ── Chart: DID Lift Persistence by Time Window ───────────────
+        import matplotlib.pyplot as plt
+
+        _windows = ['+1mo', '+3mo', '+6mo']
+        _spend_did_cols = [f'Spend DID {w}' for w in _windows]
+        _available_windows = [w for w, c in zip(_windows, _spend_did_cols) if c in _df.columns]
+        _available_cols = [c for c in _spend_did_cols if c in _df.columns]
+
+        if _available_windows:
+            _offers = _df['Offer'].tolist()
+            _n_offers = len(_offers)
+            _n_windows = len(_available_windows)
+            _bar_w = 0.8 / _n_windows
+            _x = np.arange(_n_offers)
+
+            _window_colors = {
+                '+1mo': GEN_COLORS['info'],
+                '+3mo': GEN_COLORS['success'],
+                '+6mo': GEN_COLORS['primary'],
+            }
+
+            fig, ax = plt.subplots(figsize=(14, 7))
+
+            for i, (w, col) in enumerate(zip(_available_windows, _available_cols)):
+                _vals = _df[col].fillna(0).values
+                _offset = (i - (_n_windows - 1) / 2) * _bar_w
+                _bars = ax.bar(_x + _offset, _vals, _bar_w,
+                               color=_window_colors.get(w, GEN_COLORS['muted']),
+                               label=w, edgecolor='white', zorder=3)
+                for bar, val in zip(_bars, _vals):
+                    if val != 0:
+                        ax.text(bar.get_x() + bar.get_width() / 2,
+                                bar.get_height() + (0.3 if val > 0 else -0.8),
+                                f'${val:.0f}', ha='center', va='bottom' if val > 0 else 'top',
+                                fontsize=9, fontweight='bold',
+                                color=GEN_COLORS['dark_text'])
+
+            ax.axhline(y=0, color=GEN_COLORS['dark_text'], linewidth=0.8, zorder=2)
+            ax.set_xticks(_x)
+            ax.set_xticklabels(_offers, fontsize=12, fontweight='bold')
+            ax.set_ylabel('Spend DID ($)', fontsize=14, fontweight='bold')
+            ax.set_title('DID Persistence: Does the Lift Last?',
+                         fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'],
+                         pad=20, loc='left')
+            ax.text(0.0, 1.02, 'Spend DID at +1mo, +3mo, +6mo post-offer',
+                    transform=ax.transAxes, fontsize=12,
+                    color=GEN_COLORS['muted'], style='italic')
+            ax.legend(fontsize=12, loc='best')
+            gen_clean_axes(ax, keep_left=True, keep_bottom=True)
+            ax.yaxis.grid(True, color=GEN_COLORS.get('grid', '#E0E0E0'),
+                          linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+            plt.tight_layout()
+            plt.show()
     else:
         print("    No persistence data available.")

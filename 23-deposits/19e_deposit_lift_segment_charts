@@ -95,13 +95,12 @@ else:
             ax.yaxis.grid(True, color=GEN_COLORS.get('grid', '#E0E0E0'), linewidth=0.5, alpha=0.7)
             ax.set_axisbelow(True)
 
-            _label_text = _DEP_LABEL if '_DEP_LABEL' in dir() else ''
-            fig.suptitle(f"{offer} Offer: Deposit Lift by Segment",
-                         fontsize=24, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.04)
-            fig.text(0.5, 0.99,
-                     "Responder segments only (NU 1-4 and Non-Responders excluded)",
-                     ha='center', fontsize=13, color=GEN_COLORS.get('muted', '#6C757D'),
-                     style='italic')
+            ax.set_title(f"{offer} Offer: Deposit Lift by Segment\n",
+                        fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'],
+                        pad=20, loc='left')
+            ax.text(0.0, 1.02, "Responder segments only (NU 1-4 and Non-Responders excluded)",
+                    transform=ax.transAxes, fontsize=12,
+                    color=GEN_COLORS.get('muted', '#6C757D'), style='italic')
 
-            plt.tight_layout(rect=[0, 0, 1, 0.95])
+            plt.tight_layout()
             plt.show()

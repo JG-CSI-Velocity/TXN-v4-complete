@@ -94,7 +94,7 @@ else:
         <h1 style="margin: 0 0 8px 0; font-size: 28px; font-weight: 800; letter-spacing: -0.5px;">
             ARS Rewards Program Results</h1>
         <p style="margin: 0 0 24px 0; font-size: 14px; opacity: 0.7;">
-            {_n_total:,} eligible accounts  |  {len(_mail_cols)} mailer waves  |
+            {_n_total:,} eligible accounts  |  {len(_mail_cols)} offer waves  |
             {_swipe_cols[0].replace(' Swipes','')} - {_swipe_cols[-1].replace(' Swipes','')}</p>
         <div style="display: flex; gap: 20px;">
             <div style="flex: 1; background: rgba(255,255,255,0.1); border-radius: 8px; padding: 20px; text-align: center;">

@@ -1,7 +1,7 @@
 # ===========================================================================
-# CAMPAIGN OVERVIEW: Response Rate Trend by Mailer
+# CAMPAIGN OVERVIEW: Response Rate Trend by Offer
 # ===========================================================================
-# Per-mailer response rate over time, overall and by segment.
+# Per-offer response rate over time, overall and by segment.
 # Is it improving, declining, or stable?
 #
 # Depends on: rewards_df (00-setup/08), GEN_COLORS
@@ -49,7 +49,7 @@ else:
         if _n == 0:
             continue
 
-        _row = {'Mailer': _month,
+        _row = {'Offer': _month,
                 'Overall': (_mailed & _responded).sum() / _n * 100}
 
         for seg in _SEG_ORDER:
@@ -62,14 +62,14 @@ else:
     if _rows:
         _df = pd.DataFrame(_rows)
 
-        _fmt = {c: '{:.1f}%' for c in _df.columns if c != 'Mailer'}
+        _fmt = {c: '{:.1f}%' for c in _df.columns if c != 'Offer'}
 
         _styled = (
             _df.style.hide(axis='index')
             .format({k: v for k, v in _fmt.items() if k in _df.columns}, na_rep='--')
             .set_properties(**{'font-size': '13px', 'font-weight': 'bold',
                 'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '8px 10px'})
-            .set_properties(subset=['Mailer'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+            .set_properties(subset=['Offer'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
             .set_table_styles([
                 {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
                     ('color', 'white'), ('font-size', '13px'), ('font-weight', 'bold'),
@@ -77,7 +77,7 @@ else:
                 {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
                     ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
             ])
-            .set_caption("Response Rate Trend by Mailer and Segment")
+            .set_caption("Response Rate Trend by Offer and Segment")
         )
         display(_styled)
 
@@ -89,3 +89,47 @@ else:
                        else 'stable')
             print(f"\n  Overall trend: {_trend} "
                   f"({_overall_rates[0]:.1f}% -> {_overall_rates[-1]:.1f}%)")
+
+        # ── Chart: Multi-line Response Rate Trend ────────────────────
+        import matplotlib.pyplot as plt
+
+        _seg_colors = {
+            'TH-10': GEN_COLORS['success'],
+            'TH-15': GEN_COLORS['info'],
+            'TH-20': GEN_COLORS['warning'],
+            'TH-25': GEN_COLORS['accent'],
+            'NU':    GEN_COLORS['primary'],
+        }
+        _seg_markers = {
+            'TH-10': 'o', 'TH-15': 's', 'TH-20': '^',
+            'TH-25': 'D', 'NU': 'P',
+        }
+
+        fig, ax = plt.subplots(figsize=(14, 7))
+        _x_labels = _df['Offer'].tolist()
+        _x = range(len(_x_labels))
+
+        for seg in _SEG_ORDER:
+            if seg in _df.columns:
+                _vals = _df[seg].values
+                ax.plot(_x, _vals, color=_seg_colors.get(seg, GEN_COLORS['muted']),
+                        linewidth=2.5, marker=_seg_markers.get(seg, 'o'),
+                        markersize=8, markeredgecolor='white', markeredgewidth=1.5,
+                        label=seg, zorder=5)
+
+        ax.set_xticks(list(_x))
+        ax.set_xticklabels(_x_labels, fontsize=12, fontweight='bold')
+        ax.set_ylabel('Response Rate (%)', fontsize=14, fontweight='bold')
+        ax.set_title('Response Rate Trend by Segment',
+                     fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'],
+                     pad=20, loc='left')
+        ax.text(0.0, 1.02, 'Per-segment rate across offer waves',
+                transform=ax.transAxes, fontsize=12,
+                color=GEN_COLORS['muted'], style='italic')
+        ax.legend(fontsize=11, loc='best', framealpha=0.9)
+        gen_clean_axes(ax, keep_left=True, keep_bottom=True)
+        ax.yaxis.grid(True, color=GEN_COLORS.get('grid', '#E0E0E0'),
+                      linewidth=0.5, alpha=0.7)
+        ax.set_axisbelow(True)
+        plt.tight_layout()
+        plt.show()

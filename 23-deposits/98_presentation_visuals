@@ -137,7 +137,7 @@ else:
     plt.show()
 
     # =================================================================
-    # VISUAL 3: Response Rate Heatmap by Segment x Mailer
+    # VISUAL 3: Response Rate Heatmap by Segment x Offer
     # =================================================================
     _VALID_MON = {'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'}
 
@@ -166,7 +166,7 @@ else:
         return True
 
     _heat_data = {}
-    _mailer_labels = []
+    _offer_labels = []
     for mc, rc in zip(_mail_cols, _resp_cols):
         _period = mc.replace(' Mail', '')
         if rc not in _eligible.columns:
@@ -186,13 +186,13 @@ else:
                 _heat_data[seg][_period] = _rate
                 _any_data = True
         if _any_data:
-            _mailer_labels.append(_period)
+            _offer_labels.append(_period)
 
-    if _heat_data and _mailer_labels:
-        _heat_df = pd.DataFrame(_heat_data, index=_mailer_labels).T
+    if _heat_data and _offer_labels:
+        _heat_df = pd.DataFrame(_heat_data, index=_offer_labels).T
         _heat_df = _heat_df.reindex(PROGRAM_SEG_ORDER).dropna(how='all')
 
-        fig, ax = plt.subplots(figsize=(max(10, len(_mailer_labels) * 0.9), 4))
+        fig, ax = plt.subplots(figsize=(max(10, len(_offer_labels) * 0.9), 4))
 
         _cmap = sns.color_palette("YlGn", as_cmap=True)
         sns.heatmap(_heat_df, annot=True, fmt='.0f', cmap=_cmap,
@@ -207,7 +207,7 @@ else:
                             fontweight='bold', rotation=45, ha='right')
         ax.set_yticklabels(ax.get_yticklabels(), fontsize=13,
                             fontweight='bold', rotation=0)
-        ax.set_title("Response Rate: Segment x Mailer",
+        ax.set_title("Response Rate: Segment x Offer",
                       fontsize=20, fontweight='bold',
                       color=GEN_COLORS['dark_text'], pad=15)
 

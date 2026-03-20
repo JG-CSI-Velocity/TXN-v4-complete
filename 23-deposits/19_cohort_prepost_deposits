@@ -1,12 +1,12 @@
 # ===========================================================================
-# COHORT DID: Pre/Post Deposit Connection by Mailer
+# COHORT DID: Pre/Post Deposit Connection by Offer
 # ===========================================================================
-# THE DEPOSIT LAYER. For each mailer, shows deposit metrics for
+# THE DEPOSIT LAYER. For each offer, shows deposit metrics for
 # Responder vs Non-Responder from the Z5 snapshot.
 #
 # Since Z5 is a single point-in-time, we can't do true pre/post on
 # deposits. Instead we show: at the snapshot, do accounts that
-# responded to each mailer have better deposit metrics?
+# responded to each offer have better deposit metrics?
 #
 # Depends on: rewards_df, _acct (cell 04), GEN_COLORS
 
@@ -45,7 +45,7 @@ else:
         if _r_mask.sum() == 0 or _nr_mask.sum() == 0:
             continue
 
-        _row = {'Mailer': _month, 'R N': _r_mask.sum(), 'NR N': _nr_mask.sum()}
+        _row = {'Offer': _month, 'R N': _r_mask.sum(), 'NR N': _nr_mask.sum()}
 
         for col, label, agg in [
             ('mo_dep_count', 'Med Dep Ct', 'median'),
@@ -69,7 +69,7 @@ else:
     if _rows:
         _df = pd.DataFrame(_rows)
         for _rc in _df.columns:
-            if _rc not in ('Mailer', 'R N', 'NR N') and _df[_rc].dtype in ('float64', 'float32'):
+            if _rc not in ('Offer', 'R N', 'NR N') and _df[_rc].dtype in ('float64', 'float32'):
                 _df[_rc] = _df[_rc].round(1)
 
         def _color_accel(col):
@@ -80,7 +80,7 @@ else:
 
         _fmt = {'R N': '{:,.0f}', 'NR N': '{:,.0f}'}
         for c in _df.columns:
-            if c in ('Mailer', 'R N', 'NR N'): continue
+            if c in ('Offer', 'R N', 'NR N'): continue
             elif 'Accel' in c: _fmt[c] = '{:.2f}x'
             elif '$' in c: _fmt[c] = '${:,.1f}'
             else: _fmt[c] = '{:,.1f}'
@@ -91,7 +91,7 @@ else:
             .apply(_color_accel)
             .set_properties(**{'font-size': '12px', 'font-weight': 'bold',
                 'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '7px 10px'})
-            .set_properties(subset=['Mailer'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+            .set_properties(subset=['Offer'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
             .set_table_styles([
                 {'selector': 'th', 'props': [('background-color', GEN_COLORS['success']),
                     ('color', 'white'), ('font-size', '12px'), ('font-weight', 'bold'),
@@ -99,11 +99,51 @@ else:
                 {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
                     ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
             ])
-            .set_caption("Deposit Layer: Responder vs NR Deposit Metrics by Mailer")
+            .set_caption("Deposit Layer: Responder vs NR Deposit Metrics by Offer")
         )
         display(_styled)
 
         print(f"\n  Deposit metrics from Z5 snapshot (365d/12 monthly)")
         print(f"  Accel = DepAmt33 / DepAmt66 (>1.0x = deposits accelerating)")
+
+        # ── Chart: Responder vs NR Deposit Metrics by Offer ─────────
+        import matplotlib.pyplot as plt
+
+        _offers = _df['Offer'].tolist()
+        _n_offers = len(_offers)
+        _bar_w = 0.35
+        _x = np.arange(_n_offers)
+
+        # Use Avg Dep $ if available, fall back to Med Dep $
+        _r_col = 'R Avg Dep $' if 'R Avg Dep $' in _df.columns else 'R Med Dep $'
+        _nr_col = 'NR Avg Dep $' if 'NR Avg Dep $' in _df.columns else 'NR Med Dep $'
+
+        if _r_col in _df.columns and _nr_col in _df.columns:
+            fig, ax = plt.subplots(figsize=(14, 7))
+
+            _r_vals = _df[_r_col].fillna(0).values
+            _nr_vals = _df[_nr_col].fillna(0).values
+
+            ax.bar(_x - _bar_w / 2, _nr_vals, _bar_w, color=GEN_COLORS['muted'],
+                   label='Non-Responder', edgecolor='white', zorder=3)
+            ax.bar(_x + _bar_w / 2, _r_vals, _bar_w, color=GEN_COLORS['success'],
+                   label='Responder', edgecolor='white', zorder=3)
+
+            ax.set_xticks(_x)
+            ax.set_xticklabels(_offers, fontsize=12, fontweight='bold')
+            ax.set_ylabel('Avg Monthly Deposit ($)', fontsize=14, fontweight='bold')
+            ax.set_title('Deposit Connection: Responder vs NR by Offer',
+                         fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'],
+                         pad=20, loc='left')
+            ax.text(0.0, 1.02, 'Z5 snapshot deposit metrics',
+                    transform=ax.transAxes, fontsize=12,
+                    color=GEN_COLORS['muted'], style='italic')
+            ax.legend(fontsize=12, loc='best')
+            gen_clean_axes(ax, keep_left=True, keep_bottom=True)
+            ax.yaxis.grid(True, color=GEN_COLORS.get('grid', '#E0E0E0'),
+                          linewidth=0.5, alpha=0.7)
+            ax.set_axisbelow(True)
+            plt.tight_layout()
+            plt.show()
     else:
-        print("    No mailers with deposit data.")
+        print("    No offers with deposit data.")

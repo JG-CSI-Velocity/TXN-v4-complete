@@ -1,8 +1,8 @@
 # ===========================================================================
-# COHORT DID: Pre/Post Swipe & Spend by Mailer (3mo pre, 6mo post)
+# COHORT DID: Pre/Post Swipe & Spend by Offer (3mo pre, 6mo post)
 # ===========================================================================
-# For each mailer: Responder vs Non-Responder
-# Pre = 3-month avg before mailer, Post = 1-3mo and 4-6mo after
+# For each offer: Responder vs Non-Responder
+# Pre = 3-month avg before offer, Post = 1-3mo and 4-6mo after
 # DID = (Resp change) - (NR change)
 #
 # Depends on: rewards_df (00-setup/08), _acct (cell 04), GEN_COLORS
@@ -80,7 +80,7 @@ else:
         _post3_spend = _window_cols(_spend_cols, _spend_dates, _wave_date, 1, 3)
         _post6_spend = _window_cols(_spend_cols, _spend_dates, _wave_date, 4, 6)
 
-        _row = {'Mailer': _month, 'R N': _r_mask.sum(), 'NR N': _nr_mask.sum()}
+        _row = {'Offer': _month, 'R N': _r_mask.sum(), 'NR N': _nr_mask.sum()}
 
         for metric, pre_cols, p3_cols, p6_cols in [
             ('Swipes', _pre_swipe, _post3_swipe, _post6_swipe),
@@ -117,7 +117,7 @@ else:
         _df = pd.DataFrame(_cohort_rows)
 
         for _rc in _df.columns:
-            if _rc not in ('Mailer', 'R N', 'NR N') and _df[_rc].dtype in ('float64', 'float32'):
+            if _rc not in ('Offer', 'R N', 'NR N') and _df[_rc].dtype in ('float64', 'float32'):
                 _df[_rc] = _df[_rc].round(1)
 
         def _color_did(col):
@@ -128,7 +128,7 @@ else:
 
         _fmt = {'R N': '{:,.0f}', 'NR N': '{:,.0f}'}
         for c in _df.columns:
-            if c in ('Mailer', 'R N', 'NR N'): continue
+            if c in ('Offer', 'R N', 'NR N'): continue
             elif 'Spend' in c or 'DID' in c and 'Spend' in c: _fmt[c] = '${:,.1f}'
             elif 'DID' in c: _fmt[c] = '{:,.1f}'
             else: _fmt[c] = '{:,.1f}'
@@ -139,7 +139,7 @@ else:
             .apply(_color_did)
             .set_properties(**{'font-size': '11px', 'font-weight': 'bold',
                 'text-align': 'center', 'border': '1px solid #E9ECEF', 'padding': '6px 8px'})
-            .set_properties(subset=['Mailer'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
+            .set_properties(subset=['Offer'], **{'text-align': 'left', 'color': GEN_COLORS['primary']})
             .set_table_styles([
                 {'selector': 'th', 'props': [('background-color', GEN_COLORS['primary']),
                     ('color', 'white'), ('font-size', '11px'), ('font-weight', 'bold'),
@@ -147,12 +147,71 @@ else:
                 {'selector': 'caption', 'props': [('font-size', '22px'), ('font-weight', 'bold'),
                     ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '12px')]},
             ])
-            .set_caption("Cohort DID: Pre/Post Swipes & Spend by Mailer (3mo pre, 6mo post)")
+            .set_caption("Cohort DID: Pre/Post Swipes & Spend by Offer (3mo pre, 6mo post)")
         )
         display(_styled)
 
-        print(f"\n  {len(_cohort_rows)} mailers with pre/post data")
+        print(f"\n  {len(_cohort_rows)} offers with pre/post data")
         print(f"  DID = (Resp post-pre change) - (NR post-pre change)")
-        print(f"  Positive DID = program working for that mailer")
+        print(f"  Positive DID = program working for that offer")
+
+        # ── Chart: Pre vs Post Grouped Bar (Swipes & Spend) ─────────
+        import matplotlib.pyplot as plt
+
+        _offers = _df['Offer'].tolist()
+        _n_offers = len(_offers)
+        _bar_w = 0.35
+        _x = np.arange(_n_offers)
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 7))
+
+        # -- Swipes panel --
+        _pre_sw = _df.get('R Swipes Pre', pd.Series([np.nan] * _n_offers)).fillna(0).values
+        _post_sw = _df.get('R Swipes +3mo', pd.Series([np.nan] * _n_offers)).fillna(0).values
+
+        ax1.bar(_x - _bar_w / 2, _pre_sw, _bar_w, color=GEN_COLORS['muted'],
+                label='Pre (3mo avg)', edgecolor='white', zorder=3)
+        ax1.bar(_x + _bar_w / 2, _post_sw, _bar_w, color=GEN_COLORS['success'],
+                label='Post (+3mo avg)', edgecolor='white', zorder=3)
+        ax1.set_xticks(_x)
+        ax1.set_xticklabels(_offers, fontsize=11, fontweight='bold')
+        ax1.set_ylabel('Avg Monthly Swipes', fontsize=13, fontweight='bold')
+        ax1.set_title('Responder Swipes: Pre vs Post',
+                      fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'],
+                      pad=20, loc='left')
+        ax1.text(0.0, 1.02, '3mo pre vs 3mo post by offer',
+                 transform=ax1.transAxes, fontsize=12,
+                 color=GEN_COLORS['muted'], style='italic')
+        ax1.legend(fontsize=11, loc='best')
+        gen_clean_axes(ax1, keep_left=True, keep_bottom=True)
+        ax1.yaxis.grid(True, color=GEN_COLORS.get('grid', '#E0E0E0'),
+                       linewidth=0.5, alpha=0.7)
+        ax1.set_axisbelow(True)
+
+        # -- Spend panel --
+        _pre_sp = _df.get('R Spend Pre', pd.Series([np.nan] * _n_offers)).fillna(0).values
+        _post_sp = _df.get('R Spend +3mo', pd.Series([np.nan] * _n_offers)).fillna(0).values
+
+        ax2.bar(_x - _bar_w / 2, _pre_sp, _bar_w, color=GEN_COLORS['muted'],
+                label='Pre (3mo avg)', edgecolor='white', zorder=3)
+        ax2.bar(_x + _bar_w / 2, _post_sp, _bar_w, color=GEN_COLORS['success'],
+                label='Post (+3mo avg)', edgecolor='white', zorder=3)
+        ax2.set_xticks(_x)
+        ax2.set_xticklabels(_offers, fontsize=11, fontweight='bold')
+        ax2.set_ylabel('Avg Monthly Spend ($)', fontsize=13, fontweight='bold')
+        ax2.set_title('Responder Spend: Pre vs Post',
+                      fontsize=22, fontweight='bold', color=GEN_COLORS['dark_text'],
+                      pad=20, loc='left')
+        ax2.text(0.0, 1.02, '3mo pre vs 3mo post by offer',
+                 transform=ax2.transAxes, fontsize=12,
+                 color=GEN_COLORS['muted'], style='italic')
+        ax2.legend(fontsize=11, loc='best')
+        gen_clean_axes(ax2, keep_left=True, keep_bottom=True)
+        ax2.yaxis.grid(True, color=GEN_COLORS.get('grid', '#E0E0E0'),
+                       linewidth=0.5, alpha=0.7)
+        ax2.set_axisbelow(True)
+
+        plt.tight_layout()
+        plt.show()
     else:
-        print("    No mailers with sufficient pre/post data.")
+        print("    No offers with sufficient pre/post data.")

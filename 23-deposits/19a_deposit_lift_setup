@@ -24,10 +24,10 @@ else:
     print("  This cell doesn't produce tables or charts. It does two things:")
     print()
     print("  1. Connects your two data sources:")
-    print("     - ODDD file (rewards_df) = knows who got mailed each wave")
+    print("     - ODDD file (rewards_df) = knows who got each offer wave")
     print("     - Z accounts file (deposit_long) = knows deposit amounts")
     print("     It finds the common account ID between them so the next cells")
-    print("     can ask: 'this person got mailed -- what were their deposits?'")
+    print("     can ask: 'this person got an offer -- what were their deposits?'")
     print()
     print("  2. Defines shared helper functions for cells 19b, 19c, 19d, 19e")
     print("     (chart styling, table formatting, segment classification).")
@@ -133,10 +133,9 @@ else:
         gen_clean_axes(ax, keep_left=True, keep_bottom=True)
         ax.yaxis.grid(True, color=GEN_COLORS.get('grid', '#E0E0E0'), linewidth=0.5, alpha=0.7)
         ax.set_axisbelow(True)
-        fig.suptitle(title, fontsize=24, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.04)
-        fig.text(0.5, 0.99, subtitle,
-                 ha='center', fontsize=13, color=GEN_COLORS['muted'], style='italic')
-        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        ax.set_title(f"{title}\n", fontsize=20, fontweight='bold', color=GEN_COLORS['dark_text'], pad=20, loc='left')
+        ax.text(0.0, 1.02, subtitle, transform=ax.transAxes, fontsize=11, color=GEN_COLORS.get('muted', '#6C757D'), style='italic')
+        plt.tight_layout()
         plt.show()
 
     # -----------------------------------------------------------------

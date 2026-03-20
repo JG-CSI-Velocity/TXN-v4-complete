@@ -42,7 +42,7 @@ else:
 
     _eligible = rewards_df.reindex(_acct.index)
 
-    # Find first response mailer per account
+    # Find first response offer per account
     _first_resp_date = pd.Series(pd.NaT, index=_acct.index)
     for mc in _mail_cols:
         _month = mc.replace(' Mail', '')
@@ -76,7 +76,7 @@ else:
 
             _ref = _fd if _is_r else None
 
-            # For NR, use median mailer date as reference
+            # For NR, use median offer date as reference
             if not _is_r:
                 _mailed_dates = []
                 for mc in _mail_cols:
@@ -145,7 +145,7 @@ else:
         display(_styled)
 
         print(f"\n  Offset relative to first response date")
-        print(f"  NR reference = median mailer date for each NR account")
+        print(f"  NR reference = median offer date for each NR account")
 
         # =================================================================
         # Chart: Dual panel -- Swipes and Spend trajectory
@@ -206,10 +206,10 @@ else:
         ax2.set_axisbelow(True)
 
         fig.suptitle("First-Time Responder Trajectory: Swipes & Spend",
-                     fontsize=24, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.04)
-        fig.text(0.5, 0.99,
+                     fontsize=20, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.06)
+        fig.text(0.5, 1.01,
                  "3 months pre, 6 months post first response",
-                 ha='center', fontsize=13, color=GEN_COLORS['muted'], style='italic')
+                 ha='center', fontsize=11, color=GEN_COLORS.get('muted', '#6C757D'), style='italic')
 
-        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
         plt.show()

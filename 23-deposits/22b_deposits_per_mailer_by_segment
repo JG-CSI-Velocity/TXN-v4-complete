@@ -1,7 +1,7 @@
 # ===========================================================================
-# DEPOSIT LAYER: Per-Mailer by Segment
+# DEPOSIT LAYER: Per-Offer by Segment
 # ===========================================================================
-# One table per mailer. Rows = segments. Shows deposit metrics
+# One table per offer. Rows = segments. Shows deposit metrics
 # for Responder vs Non-Responder within each segment.
 #
 # Depends on: _segment_cohort_df (cell 22), _acct (cell 04),
@@ -37,12 +37,12 @@ else:
 
     _eligible = rewards_df.reindex(_acct.index)
 
-    _mailers = sorted(_segment_cohort_df['Mailer'].unique(),
+    _offers = sorted(_segment_cohort_df['Offer'].unique(),
                        key=lambda m: pd.to_datetime(m, format='%b%y'))
 
-    for mailer in _mailers:
-        mc = f"{mailer} Mail"
-        _rc = f"{mailer} Resp"
+    for offer in _offers:
+        mc = f"{offer} Mail"
+        _rc = f"{offer} Resp"
         if mc not in _eligible.columns or _rc not in _eligible.columns:
             continue
 
@@ -113,7 +113,7 @@ else:
                 {'selector': 'caption', 'props': [('font-size', '18px'), ('font-weight', 'bold'),
                     ('color', GEN_COLORS['dark_text']), ('text-align', 'left'), ('padding-bottom', '8px')]},
             ])
-            .set_caption(f"{mailer} Mailer -- Deposits by Segment "
+            .set_caption(f"{offer} Offer -- Deposits by Segment "
                           f"({_total_mailed:,} mailed, {_total_resp:,} responded)")
         )
         display(_styled)
