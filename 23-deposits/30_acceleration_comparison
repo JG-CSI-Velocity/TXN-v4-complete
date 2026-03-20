@@ -289,16 +289,15 @@ else:
                        edgecolor=GEN_COLORS['grid'])
 
             fig.suptitle("Same Deposit Base, More Card Revenue",
-                          fontsize=22, fontweight='bold',
-                          color=GEN_COLORS['dark_text'], y=1.02)
-            fig.text(0.5, 0.98,
+                          fontsize=24, fontweight='bold',
+                          color=GEN_COLORS['dark_text'], y=1.04)
+            fig.text(0.5, 0.99,
                      "Deposits are comparable across groups  |  "
                      "The difference is card engagement",
-                     ha='center', fontsize=12,
+                     ha='center', fontsize=13,
                      color=GEN_COLORS['muted'], style='italic')
 
-            plt.tight_layout()
-            plt.subplots_adjust(top=0.86)
+            plt.tight_layout(rect=[0, 0, 1, 0.95])
             plt.show()
 
         # =============================================================

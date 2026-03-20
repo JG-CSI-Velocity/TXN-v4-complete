@@ -368,16 +368,15 @@ else:
                       facecolor='white', edgecolor=GEN_COLORS['grid'])
 
         fig.suptitle("Post-Response Trajectory: Balanced Panel",
-                      fontsize=22, fontweight='bold',
-                      color=GEN_COLORS['dark_text'], y=1.02)
-        fig.text(0.5, 0.98,
+                      fontsize=24, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], y=1.04)
+        fig.text(0.5, 0.99,
                  "Same accounts at every T bucket (no cohort-mix bias)  |  "
                  "Faded = all accounts, Solid = balanced panel",
-                 ha='center', fontsize=12,
+                 ha='center', fontsize=13,
                  color=GEN_COLORS['muted'], style='italic')
 
-        plt.tight_layout()
-        plt.subplots_adjust(top=0.88)
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
         plt.show()
 
     # =================================================================
@@ -424,16 +423,15 @@ else:
                       facecolor='white', edgecolor=GEN_COLORS['grid'])
 
         fig.suptitle("Relative Change: Indexed to Pre-Response Baseline (=100)",
-                      fontsize=22, fontweight='bold',
-                      color=GEN_COLORS['dark_text'], y=1.02)
-        fig.text(0.5, 0.98,
+                      fontsize=24, fontweight='bold',
+                      color=GEN_COLORS['dark_text'], y=1.04)
+        fig.text(0.5, 0.99,
                  "Balanced panel  |  Baseline = avg of T-3 to T-1  |  "
                  "> 100 = improvement over pre-response level",
-                 ha='center', fontsize=12,
+                 ha='center', fontsize=13,
                  color=GEN_COLORS['muted'], style='italic')
 
-        plt.tight_layout()
-        plt.subplots_adjust(top=0.88)
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
         plt.show()
 
     # =================================================================

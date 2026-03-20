@@ -192,12 +192,12 @@ else:
             ax2.set_axisbelow(True)
 
         fig.suptitle("First-Time Responder: Deposit Trajectory (Z Account Snapshots)",
-                     fontsize=26, fontweight='bold', color=GEN_COLORS['dark_text'], y=0.98)
-        fig.text(0.5, 0.93,
-                 f"Early vs Latest snapshot comparison  |  {_DEP_LABEL if '_DEP_LABEL' in dir() else CLIENT_NAME if 'CLIENT_NAME' in dir() else ''}",
-                 ha='center', fontsize=14, color=GEN_COLORS['muted'], style='italic')
+                     fontsize=24, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.04)
+        fig.text(0.5, 0.99,
+                 "Early vs Latest snapshot comparison",
+                 ha='center', fontsize=13, color=GEN_COLORS['muted'], style='italic')
 
-        plt.tight_layout(rect=[0, 0, 1, 0.91])
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
         plt.show()
 
         # Print delta summary

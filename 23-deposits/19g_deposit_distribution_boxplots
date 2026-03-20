@@ -184,15 +184,14 @@ else:
             Patch(facecolor=GEN_COLORS.get('success', '#2A9D8F'), label=f'Post ({_post_snap[0]})', alpha=0.8),
         ], fontsize=13, loc='upper right')
 
-        _label_text = _DEP_LABEL if '_DEP_LABEL' in dir() else ''
         fig.suptitle(f"{_label} Offer: Deposit Distribution by Segment",
-                     fontsize=24, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
-        fig.text(0.5, 0.96,
-                 f"Box = IQR (25th-75th pct), capped at 95th pct  |  {_label_text}",
-                 ha='center', fontsize=14, color=GEN_COLORS.get('muted', '#6C757D'),
+                     fontsize=24, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.04)
+        fig.text(0.5, 0.99,
+                 "Box = IQR (25th-75th pct), capped at 95th pct",
+                 ha='center', fontsize=13, color=GEN_COLORS.get('muted', '#6C757D'),
                  style='italic')
 
-        plt.tight_layout(rect=[0, 0, 1, 0.93])
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
         plt.show()
         _charts_made += 1
 
