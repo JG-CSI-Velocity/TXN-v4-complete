@@ -1,0 +1,199 @@
+# ===========================================================================
+# SEGMENT COMBO: Spend + Swipe Pre/Post Bars (Per-Offer)
+# ===========================================================================
+# One figure per offer wave: 2 rows x N segment columns.
+# Row 1: Avg Monthly Spend (pre vs post).  Row 2: Avg Monthly Swipes (pre vs post).
+# Combines cells 24 (spend) and 25 (swipes) into a single chart.
+#
+# Depends on: segment_cohort_raw (cell 22), camp_summary (cell 01)
+
+if 'segment_cohort_raw' not in dir() or len(segment_cohort_raw) == 0:
+    print("    No segment cohort data. Run cell 22 first.")
+else:
+    _SEG_ORDER = ['NU', 'TH-10', 'TH-15', 'TH-20', 'TH-25']
+    _SEG_COLORS = {
+        'NU':    GEN_COLORS.get('info', '#457B9D'),
+        'TH-10': GEN_COLORS.get('success', '#2A9D8F'),
+        'TH-15': GEN_COLORS.get('warning', '#E9C46A'),
+        'TH-20': GEN_COLORS.get('accent', '#F4A261'),
+        'TH-25': GEN_COLORS.get('negative', '#E76F51'),
+    }
+
+    _DARK = GEN_COLORS.get('dark_text', '#00274C')
+    _MUTED = GEN_COLORS.get('muted', '#6C757D')
+    _GRID = GEN_COLORS.get('grid', '#E7E6E6')
+    _RESP_COLOR = GEN_COLORS.get('success', '#5BCCFD')
+    _NONRESP_COLOR = GEN_COLORS.get('warning', '#F8971D')
+
+    # Spend: 3mo pre/post
+    _spend_pre = [c for c in segment_cohort_raw.columns
+                  if c.startswith('m-') and int(c.split('-')[1]) <= 3]
+    _spend_post = [c for c in segment_cohort_raw.columns
+                   if c.startswith('m+') and int(c.split('+')[1]) <= 3]
+
+    # Swipes: 3mo pre/post
+    _swipe_pre = [c for c in segment_cohort_raw.columns
+                  if c.startswith('sw-') and int(c.split('-')[1]) <= 3]
+    _swipe_post = [c for c in segment_cohort_raw.columns
+                   if c.startswith('sw+') and int(c.split('+')[1]) <= 3]
+
+    _has_spend = len(_spend_pre) > 0 and len(_spend_post) > 0
+    _has_swipes = len(_swipe_pre) > 0 and len(_swipe_post) > 0
+
+    if not _has_spend and not _has_swipes:
+        print("    Not enough pre/post columns for comparison.")
+    else:
+        if _has_spend:
+            segment_cohort_raw['_spend_pre'] = segment_cohort_raw[_spend_pre].mean(axis=1)
+            segment_cohort_raw['_spend_post'] = segment_cohort_raw[_spend_post].mean(axis=1)
+        if _has_swipes:
+            segment_cohort_raw['_swipe_pre'] = segment_cohort_raw[_swipe_pre].mean(axis=1)
+            segment_cohort_raw['_swipe_post'] = segment_cohort_raw[_swipe_post].mean(axis=1)
+
+        _waves = (
+            segment_cohort_raw[['wave', 'wave_date']]
+            .drop_duplicates()
+            .sort_values('wave_date')['wave']
+            .tolist()
+        )
+
+        _available_segs = [s for s in _SEG_ORDER if s in segment_cohort_raw['segment'].values]
+        _extra_segs = [s for s in segment_cohort_raw['segment'].unique()
+                       if s not in _SEG_ORDER and s != 'Unknown']
+        _all_segs = _available_segs + sorted(_extra_segs)
+
+        if len(_all_segs) == 0:
+            print("    No valid segments found.")
+        else:
+            from matplotlib.patches import Patch
+
+            n_panels = len(_all_segs)
+            n_rows = (_has_spend + _has_swipes)
+
+            _camp_lookup = {}
+            if 'camp_summary' in dir() and len(camp_summary) > 0:
+                for _, _row in camp_summary.iterrows():
+                    _camp_lookup[_row['period']] = _row
+
+            # Row configs: (pre_col, post_col, ylabel, val_fmt)
+            _row_configs = []
+            if _has_spend:
+                _row_configs.append(('_spend_pre', '_spend_post',
+                                     'Avg Monthly Spend ($)', '${:,.0f}'))
+            if _has_swipes:
+                _row_configs.append(('_swipe_pre', '_swipe_post',
+                                     'Avg Monthly Swipes', '{:,.1f}'))
+
+            for wave in _waves:
+                _wdata = segment_cohort_raw[segment_cohort_raw['wave'] == wave]
+                if len(_wdata) == 0:
+                    continue
+
+                fig, axes = plt.subplots(n_rows, n_panels,
+                                          figsize=(3.5 * n_panels, 4.5 * n_rows),
+                                          squeeze=False)
+
+                _wave_date = _wdata['wave_date'].iloc[0]
+                _wave_label = _wave_date.strftime('%b %Y')
+
+                _suptitle = f"Offer: {_wave_label}"
+                if wave in _camp_lookup:
+                    _ci = _camp_lookup[wave]
+                    _suptitle += (f"   |   {int(_ci['mailed']):,} Offered"
+                                  f"   |   {int(_ci['responded']):,} Responded"
+                                  f"   |   {_ci['response_rate']:.1f}% Response Rate")
+
+                for r_idx, (pre_col, post_col, ylabel, val_fmt) in enumerate(_row_configs):
+                    for s_idx, seg in enumerate(_all_segs):
+                        ax = axes[r_idx][s_idx]
+                        _sdata = _wdata[_wdata['segment'] == seg]
+
+                        _resp = _sdata[_sdata['status'] == 'Responder']
+                        _nonresp = _sdata[_sdata['status'] == 'Non-Responder']
+                        n_r = len(_resp)
+                        n_nr = len(_nonresp)
+
+                        if n_r == 0 and n_nr == 0:
+                            ax.text(0.5, 0.5, 'No Data', ha='center', va='center',
+                                    transform=ax.transAxes, fontsize=14,
+                                    color=_MUTED, style='italic')
+                            if r_idx == 0:
+                                ax.set_title(seg, fontsize=18, fontweight='bold',
+                                             color=_SEG_COLORS.get(seg, _DARK), pad=8)
+                            ax.axis('off')
+                            continue
+
+                        bar_labels = []
+                        pre_vals = []
+                        post_vals = []
+
+                        if n_r > 0:
+                            bar_labels.append(f'Resp\n({n_r:,})')
+                            pre_vals.append(_resp[pre_col].mean())
+                            post_vals.append(_resp[post_col].mean())
+                        if n_nr > 0:
+                            bar_labels.append(f'Non-R\n({n_nr:,})')
+                            pre_vals.append(_nonresp[pre_col].mean())
+                            post_vals.append(_nonresp[post_col].mean())
+
+                        x = np.arange(len(bar_labels))
+                        w = 0.35
+
+                        # Pre bars (lighter)
+                        for i in range(len(x)):
+                            ax.bar(x[i] - w/2, pre_vals[i], width=w,
+                                   color=_RESP_COLOR if i == 0 else _NONRESP_COLOR,
+                                   alpha=0.35, edgecolor='white', linewidth=0.5)
+                        # Post bars (solid)
+                        for i in range(len(x)):
+                            ax.bar(x[i] + w/2, post_vals[i], width=w,
+                                   color=_RESP_COLOR if i == 0 else _NONRESP_COLOR,
+                                   edgecolor='white', linewidth=0.5)
+
+                        ax.set_xticks(x)
+                        ax.set_xticklabels(bar_labels, fontsize=12, fontweight='bold')
+
+                        # Value labels on post bars with delta
+                        for i in range(len(x)):
+                            delta = post_vals[i] - pre_vals[i]
+                            delta_color = GEN_COLORS.get('success', '#5BCCFD') if delta >= 0 else GEN_COLORS.get('negative', '#EB2A2E')
+                            if '$' in val_fmt:
+                                label = f"${post_vals[i]:,.0f}\n({delta:+,.0f})"
+                            else:
+                                label = f"{post_vals[i]:,.1f}\n({delta:+,.1f})"
+                            ax.text(x[i] + w/2, post_vals[i] + 1,
+                                    label, ha='center', va='bottom', fontsize=13,
+                                    fontweight='bold', color=delta_color)
+
+                        # Segment title only on top row
+                        if r_idx == 0:
+                            ax.set_title(seg, fontsize=18, fontweight='bold',
+                                         color=_SEG_COLORS.get(seg, _DARK), pad=8)
+
+                        if s_idx == 0:
+                            ax.set_ylabel(ylabel, fontsize=14,
+                                          fontweight='bold', color=_DARK, labelpad=6)
+
+                        if '$' in val_fmt:
+                            ax.yaxis.set_major_formatter(plt.FuncFormatter(
+                                lambda v, _: f"${v:,.0f}"))
+
+                        gen_clean_axes(ax, keep_left=(s_idx == 0), keep_bottom=True)
+                        ax.yaxis.grid(True, color=_GRID, linewidth=0.5, alpha=0.5)
+                        ax.set_axisbelow(True)
+
+                # Legend below
+                _legend_elements = [
+                    Patch(facecolor=_MUTED, alpha=0.35, label='Pre (3mo avg before offer)'),
+                    Patch(facecolor=_MUTED, alpha=1.0, label='Post (3mo avg after offer)'),
+                ]
+                fig.legend(handles=_legend_elements, loc='lower center',
+                           ncol=2, fontsize=13, frameon=False,
+                           bbox_to_anchor=(0.5, -0.02))
+
+                fig.suptitle(_suptitle,
+                             fontsize=16, fontweight='bold', color=_DARK, y=1.02)
+
+                plt.tight_layout()
+                plt.subplots_adjust(hspace=0.35, bottom=0.1)
+                plt.show()
