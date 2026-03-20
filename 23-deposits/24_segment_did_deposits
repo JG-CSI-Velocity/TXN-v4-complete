@@ -11,6 +11,8 @@ if '_segment_cohort_df' not in dir() or len(_segment_cohort_df) == 0:
     print("    Run cell 22 first.")
 elif '_acct' not in dir():
     print("    Run cell 04 first.")
+elif 'program_segment' not in _acct.columns:
+    print("    No program_segment column in _acct. Run cell 04 with mail columns available.")
 else:
     from IPython.display import display
 
