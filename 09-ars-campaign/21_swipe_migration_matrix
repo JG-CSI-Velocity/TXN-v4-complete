@@ -115,7 +115,7 @@ else:
                                      color=GEN_COLORS['dark_text'], pad=12)
 
                         # Stats below chart with clear spacing
-                        _stats_color = GEN_COLORS['success'] if _improve_pct > _decline_pct else GEN_COLORS['accent']
+                        _stats_color = GEN_COLORS['success'] if _improve_pct > _decline_pct else GEN_COLORS.get('negative', GEN_COLORS['accent'])
                         ax.text(0.5, -0.22,
                                 f"Improving: {_improve_pct:.1f}%  |  "
                                 f"Stable: {_stable_pct:.1f}%  |  "

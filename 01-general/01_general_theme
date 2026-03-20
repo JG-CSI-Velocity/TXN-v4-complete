@@ -19,15 +19,17 @@ from matplotlib.colors import LinearSegmentedColormap
 # Color palette (bold, high-contrast, projector-safe)
 # ---------------------------------------------------------------------------
 GEN_COLORS = {
-    'primary':     '#1B2A4A',   # deep navy
-    'accent':      '#E63946',   # signal red
-    'success':     '#2EC4B6',   # teal
-    'warning':     '#FF9F1C',   # amber
-    'info':        '#457B9D',   # steel blue
+    'primary':     '#00274C',   # CSI Navy (brand primary)
+    'accent':      '#F15D22',   # CSI Orange (brand accent)
+    'success':     '#5BCCFD',   # CSI Cyan (positive/growth)
+    'warning':     '#F8971D',   # CSI Gold/Amber
+    'info':        '#546DF7',   # CSI Blue/Purple
     'light_bg':    '#F8F9FA',   # off-white
-    'dark_text':   '#1B2A4A',
-    'muted':       '#6C757D',
-    'grid':        '#E9ECEF',
+    'dark_text':   '#00274C',   # CSI Navy
+    'muted':       '#6C757D',   # gray
+    'grid':        '#E7E6E6',   # CSI Light Gray (lt2)
+    'negative':    '#EB2A2E',   # CSI Red (decline)
+    'dark_red':    '#B12324',   # CSI Dark Red
 }
 
 # Bracket palette (8 spending bins, ordered light-to-dark)

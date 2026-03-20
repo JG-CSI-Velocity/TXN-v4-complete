@@ -122,7 +122,7 @@ else:
             _top = max(row['Pre Med Dep $'], row['Post Med Dep $'])
             _d, _p = row['Change $'], row['Change %']
             _s = '+' if _d >= 0 else ''
-            _c = GEN_COLORS['success'] if _d >= 0 else GEN_COLORS['accent']
+            _c = GEN_COLORS['success'] if _d >= 0 else GEN_COLORS.get('negative', GEN_COLORS['accent'])
             ax.text(i, _top * 1.03, f"{_s}${_d:,.0f} ({_s}{_p:.1f}%)",
                     ha='center', va='bottom', fontsize=13, fontweight='bold', color=_c)
         ax.set_xticks(x)
@@ -133,8 +133,8 @@ else:
         gen_clean_axes(ax, keep_left=True, keep_bottom=True)
         ax.yaxis.grid(True, color=GEN_COLORS.get('grid', '#E0E0E0'), linewidth=0.5, alpha=0.7)
         ax.set_axisbelow(True)
-        ax.set_title(f"{title}\n", fontsize=20, fontweight='bold', color=GEN_COLORS['dark_text'], pad=20, loc='left')
-        ax.text(0.0, 1.02, subtitle, transform=ax.transAxes, fontsize=11, color=GEN_COLORS.get('muted', '#6C757D'), style='italic')
+        ax.set_title(title, fontsize=20, fontweight='bold', color=GEN_COLORS['dark_text'], pad=18, loc='left')
+        ax.text(0.0, 1.005, subtitle, transform=ax.transAxes, fontsize=11, color=GEN_COLORS.get('muted', '#6C757D'), style='italic')
         plt.tight_layout(rect=[0, 0.08, 1, 1])
         plt.show()
 

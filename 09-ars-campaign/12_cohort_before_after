@@ -38,7 +38,7 @@ else:
     for i, (_, row) in enumerate(cohort_summary.iterrows()):
         delta = row['resp_spend_delta']
         sign = '+' if delta >= 0 else ''
-        color = GEN_COLORS['success'] if delta >= 0 else GEN_COLORS['accent']
+        color = GEN_COLORS['success'] if delta >= 0 else GEN_COLORS.get('negative', GEN_COLORS['accent'])
         ax.text(i - 0.5 * bar_w, row['resp_post_spend'] + ax.get_ylim()[1] * 0.015,
                 f"{sign}${delta:,.0f}", ha='center', va='bottom',
                 fontsize=14, fontweight='bold', color=color)
@@ -46,7 +46,7 @@ else:
         # Non-resp delta
         nd = row['nonresp_spend_delta']
         nsign = '+' if nd >= 0 else ''
-        ncolor = GEN_COLORS['success'] if nd >= 0 else GEN_COLORS['accent']
+        ncolor = GEN_COLORS['success'] if nd >= 0 else GEN_COLORS.get('negative', GEN_COLORS['accent'])
         ax.text(i + 1.5 * bar_w, row['nonresp_post_spend'] + ax.get_ylim()[1] * 0.015,
                 f"{nsign}${nd:,.0f}", ha='center', va='bottom',
                 fontsize=14, fontweight='bold', color=ncolor)

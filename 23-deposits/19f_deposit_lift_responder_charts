@@ -87,7 +87,7 @@ else:
                 _d = row['Change $']
                 _p = row['Change %']
                 _s = '+' if _d >= 0 else ''
-                _c = GEN_COLORS['success'] if _d >= 0 else GEN_COLORS['accent']
+                _c = GEN_COLORS['success'] if _d >= 0 else GEN_COLORS.get('negative', GEN_COLORS['accent'])
                 _top = max(row['Pre Med Dep $'], row['Post Med Dep $'])
                 _y = _top + _ymax * 0.08
                 ax.text(i, _y, f"{_s}${_d:,.0f} ({_s}{_p:.1f}%)",

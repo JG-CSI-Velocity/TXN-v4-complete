@@ -156,7 +156,7 @@ else:
             _chart_df = _df[_df['Offer'] != 'ALL OFFERS'].copy()
             _offers = _chart_df['Offer'].tolist()
             _vals = _chart_df['Spend DID'].fillna(0).values
-            _colors = [GEN_COLORS['success'] if v >= 0 else GEN_COLORS['accent'] for v in _vals]
+            _colors = [GEN_COLORS['success'] if v >= 0 else GEN_COLORS.get('negative', GEN_COLORS['accent']) for v in _vals]
 
             fig, ax = plt.subplots(figsize=(14, 6))
             _bars = ax.bar(range(len(_offers)), _vals, color=_colors,

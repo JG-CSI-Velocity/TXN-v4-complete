@@ -14,7 +14,7 @@ else:
     x = np.arange(n_waves)
 
     # Color bars: green if positive lift, red if negative
-    colors = [GEN_COLORS['success'] if v >= 0 else GEN_COLORS['accent']
+    colors = [GEN_COLORS['success'] if v >= 0 else GEN_COLORS.get('negative', GEN_COLORS['accent'])
               for v in cohort_did['did_spend_lift']]
 
     bars = ax.bar(x, cohort_did['did_spend_lift'],
