@@ -94,17 +94,25 @@ else:
 
     # Need deposit data + spend data
     _has_deps = 'mo_dep_amt' in _acct.columns and _acct['mo_dep_amt'].notna().any()
-    _has_spend = 'mo_spend_12mo' in _acct.columns
+    # Try multiple spend column names
+    _spend_col = None
+    for _try in ['mo_spend_12mo', 'mo_spend_3mo', 'MonthlySpend12', 'MonthlySpend3']:
+        if _try in _acct.columns:
+            _spend_col = _try
+            break
+    _has_spend = _spend_col is not None
 
     if not _has_deps:
         print("    No deposit data on _acct. Run cell 01 + 04.")
+        print(f"    Available columns with 'dep': {[c for c in _acct.columns if 'dep' in c.lower()]}")
     elif not _has_spend:
         print("    No spend data on _acct. Run cell 04.")
+        print(f"    Available columns with 'spend': {[c for c in _acct.columns if 'spend' in c.lower()]}")
     else:
         # Compute activation ratio: spend / deposits
         _acct['activation_ratio'] = np.where(
             _acct['mo_dep_amt'] > 0,
-            _acct['mo_spend_12mo'] / _acct['mo_dep_amt'],
+            _acct[_spend_col] / _acct['mo_dep_amt'],
             np.nan
         )
 
