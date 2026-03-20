@@ -129,13 +129,13 @@ else:
         ax.set_xticklabels(wdf['Offer'], fontsize=14, fontweight='bold', rotation=45, ha='right')
         ax.set_ylabel("Median Monthly Deposits ($/mo)", fontsize=16, fontweight='bold')
         ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_count))
-        ax.legend(fontsize=14)
+        ax.legend(fontsize=12, loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2, frameon=False)
         gen_clean_axes(ax, keep_left=True, keep_bottom=True)
         ax.yaxis.grid(True, color=GEN_COLORS.get('grid', '#E0E0E0'), linewidth=0.5, alpha=0.7)
         ax.set_axisbelow(True)
         ax.set_title(f"{title}\n", fontsize=20, fontweight='bold', color=GEN_COLORS['dark_text'], pad=20, loc='left')
         ax.text(0.0, 1.02, subtitle, transform=ax.transAxes, fontsize=11, color=GEN_COLORS.get('muted', '#6C757D'), style='italic')
-        plt.tight_layout()
+        plt.tight_layout(rect=[0, 0.08, 1, 1])
         plt.show()
 
     # -----------------------------------------------------------------
