@@ -34,8 +34,8 @@ else:
     if 'Mailer' in _sdf.columns and 'Offer' not in _sdf.columns:
         _sdf = _sdf.rename(columns={'Mailer': 'Offer'})
 
-    # Drop non-responders
-    _sdf = _sdf[_sdf['Segment'] != 'Non-Responder'].copy()
+    # Drop non-responders and NU 1-4
+    _sdf = _sdf[~_sdf['Segment'].isin(['Non-Responder', 'NU 1-4'])].copy()
 
     if len(_sdf) == 0:
         print("  No responder segment data available.")
@@ -97,11 +97,11 @@ else:
 
             _label_text = _DEP_LABEL if '_DEP_LABEL' in dir() else ''
             fig.suptitle(f"{offer} Offer: Deposit Lift by Segment",
-                         fontsize=24, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.02)
-            fig.text(0.5, 0.96,
-                     f"Responder segments only  |  {_label_text}",
-                     ha='center', fontsize=14, color=GEN_COLORS.get('muted', '#6C757D'),
+                         fontsize=24, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.04)
+            fig.text(0.5, 0.99,
+                     "Responder segments only (NU 1-4 and Non-Responders excluded)",
+                     ha='center', fontsize=13, color=GEN_COLORS.get('muted', '#6C757D'),
                      style='italic')
 
-            plt.tight_layout(rect=[0, 0, 1, 0.93])
+            plt.tight_layout(rect=[0, 0, 1, 0.95])
             plt.show()

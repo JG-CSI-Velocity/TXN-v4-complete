@@ -133,10 +133,10 @@ else:
         gen_clean_axes(ax, keep_left=True, keep_bottom=True)
         ax.yaxis.grid(True, color=GEN_COLORS.get('grid', '#E0E0E0'), linewidth=0.5, alpha=0.7)
         ax.set_axisbelow(True)
-        fig.suptitle(title, fontsize=26, fontweight='bold', color=GEN_COLORS['dark_text'], y=0.98)
-        fig.text(0.5, 0.93, subtitle,
-                 ha='center', fontsize=14, color=GEN_COLORS['muted'], style='italic')
-        plt.tight_layout(rect=[0, 0, 1, 0.91])
+        fig.suptitle(title, fontsize=24, fontweight='bold', color=GEN_COLORS['dark_text'], y=1.04)
+        fig.text(0.5, 0.99, subtitle,
+                 ha='center', fontsize=13, color=GEN_COLORS['muted'], style='italic')
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
         plt.show()
 
     # -----------------------------------------------------------------
@@ -165,7 +165,7 @@ else:
 
     # Build a deposit-friendly label (DATASET_LABEL may say "N/A no transactions")
     if 'CLIENT_NAME' in dir() and 'CLIENT_ID' in dir():
-        _DEP_LABEL = f"{CLIENT_ID} - {CLIENT_NAME}"
+        _DEP_LABEL = ''
     elif 'SNAPSHOT_ORDER' in dir() and len(SNAPSHOT_ORDER) > 0:
         _DEP_LABEL = f"Snapshots: {', '.join(SNAPSHOT_ORDER)}"
     else:
