@@ -234,7 +234,7 @@ else:
                     ax.text(bar.get_x() + bar.get_width() / 2,
                             bar.get_height() + 20,
                             f"${val:,.0f}",
-                            ha='center', va='bottom', fontsize=11,
+                            ha='center', va='bottom', fontsize=14,
                             fontweight='bold', color=GEN_COLORS['success'])
 
             for bar, val in zip(bars_nr, _nr_vals):
@@ -242,19 +242,19 @@ else:
                     ax.text(bar.get_x() + bar.get_width() / 2,
                             bar.get_height() + 20,
                             f"${val:,.0f}",
-                            ha='center', va='bottom', fontsize=11,
+                            ha='center', va='bottom', fontsize=14,
                             fontweight='bold', color=GEN_COLORS['muted'])
 
             ax.set_xticks(_x)
-            ax.set_xticklabels(_seg_order, fontsize=13, fontweight='bold')
-            ax.set_ylabel("Median Monthly Deposit ($)", fontsize=14,
+            ax.set_xticklabels(_seg_order, fontsize=16, fontweight='bold')
+            ax.set_ylabel("Median Monthly Deposit ($)", fontsize=16,
                            fontweight='bold', labelpad=10)
             ax.yaxis.set_major_formatter(mticker.FuncFormatter(gen_fmt_dollar))
             gen_clean_axes(ax)
             ax.yaxis.grid(True, color=GEN_COLORS['grid'], linewidth=0.5, alpha=0.7)
             ax.set_axisbelow(True)
-            ax.legend(fontsize=13, loc='upper left', frameon=True,
-                      facecolor='white', edgecolor=GEN_COLORS['grid'])
+            ax.legend(fontsize=14, loc='upper center', bbox_to_anchor=(0.5, -0.12),
+                      ncol=2, frameon=False)
 
             ax.set_title("2024 Responder vs Non-Responder: Median Monthly Deposits",
                           fontsize=22, fontweight='bold',
@@ -265,5 +265,5 @@ else:
                     transform=ax.transAxes, fontsize=12,
                     color=GEN_COLORS['muted'], style='italic')
 
-            plt.tight_layout()
+            plt.tight_layout(rect=[0, 0.08, 1, 1])
             plt.show()
